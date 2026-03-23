@@ -417,3 +417,78 @@
 .h-date { color: #64748b; font-size: 12px; margin-top: 6px; }
 
 /* (keep your commented !important block) */
+/* === EManagement: remove toolbar and fix heights (no floating) === */
+
+/* 1) Zero out toolbar height token for this page */
+:root {
+  --toolbar-h: 0px; /* no toolbar */
+}
+
+/* 2) Hide any existing toolbar block if still mounted */
+.evac-toolbar { display: none !important; }
+
+/* 3) The lock container still starts under the app header */
+.evac-screen-lock {
+  top: var(--header-h);
+}
+
+/* 4) Main split (map | panel) should fill the space under the header only
+      (stop subtracting a non-existent toolbar) */
+.evac-page {
+  grid-template-columns: 1fr var(--panel-w);
+  height: calc(100vh - var(--header-h)) !important;
+  min-height: calc(100vh - var(--header-h)) !important;
+}
+
+/* 5) On wide screens you already expand panel via --panel-w-lg */
+@media (min-width: 1400px) {
+  .evac-page { grid-template-columns: 1fr var(--panel-w-lg); }
+}
+/* === EManagement: occupy the top; remove floating white space === */
+
+/* 1) No toolbar on this screen */
+:root {
+  --toolbar-h: 0px; /* ensure any height calc doesn't subtract a toolbar */
+}
+
+/* 2) When rendered inside DashboardShell (.admin-content),
+      don't offset from a header—fill the lane completely */
+.admin-content .evac-screen-lock {
+  position: absolute;    /* anchor to the content lane, not the viewport */
+  inset: 0;              /* top:0; right:0; bottom:0; left:0 */
+  top: 0 !important;     /* override previous top: var(--header-h) */
+  background: #f2f5fb;
+  overflow: hidden;      /* page itself won’t scroll */
+}
+
+/* Safety: if your layout uses relative containers, make sure the lane is a positioning context */
+.admin-content { position: relative; }
+
+/* 3) The split grid (map | panel) must fill all available height in the lane */
+.admin-content .evac-page {
+  height: 100% !important;
+  min-height: 100% !important;
+  grid-template-columns: 1fr var(--panel-w);
+}
+
+/* On very wide screens keep your larger panel width */
+@media (min-width: 1400px) {
+  .admin-content .evac-page { grid-template-columns: 1fr var(--panel-w-lg); }
+}
+
+/* 4) Ensure the map always stretches fully vertically */
+.admin-content .evac-map,
+.admin-content .evac-map > * {
+  height: 100% !important;
+  min-height: 0;
+}
+
+/* 5) If any earlier styles subtracted header/toolbar from heights, neutralize them */
+.evac-page {
+  /* some older rules might still do: calc(100vh - var(--header-h) - var(--toolbar-h)) */
+  height: 100% !important;
+  min-height: 100% !important;
+}
+
+/* 6) OPTIONAL: if you don’t have a global header on this route, also zero header token */
+/* :root { --header-h: 0px; } */

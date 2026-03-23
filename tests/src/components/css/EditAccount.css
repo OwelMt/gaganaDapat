@@ -526,3 +526,304 @@
     z-index: 1000 !important;
   }
 }
+/* === Move toolbar into right panel: hide the old top bar === */
+.ea-toolbar { display: none !important; }
+
+/* === New inline header beside the sidebar (inside .ea-editor) === */
+.ea-inlinebar {
+  /* sits at the top of the right panel */
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border);
+  position: sticky;    /* optional: keep visible while scrolling the form */
+  top: 0;
+  z-index: 5;
+}
+
+.ea-inline-left {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ea-inline-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Reuse your existing input/button styles; adjust for the light header */
+.ea-input-inline {
+  height: 34px;
+  background: #fff;
+  color: #0f172a;
+  border-color: var(--border-strong);
+}
+.ea-input-inline::placeholder { color: #64748b; }
+
+.ea-back-inline {
+  height: 34px;
+  background: #1f2937;
+  border-color: #374151;
+}
+
+/* Ensure the editor content scrolls nicely under the sticky inline header */
+.ea-editor {
+  display: grid;
+  grid-template-rows: auto 1fr; /* header + content */
+  min-height: 0;
+}
+/* === Remove the old full-width top toolbar === */
+.ea-toolbar { display: none !important; }
+
+/* === LEFT: sticky search bar at top of the list === */
+.ea-sidebar {
+  display: grid;
+  grid-template-rows: auto 1fr;   /* search bar + list */
+  padding: 0;                      /* the list tiles already have padding */
+}
+.ea-listbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #ffffff;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.ea-list-search {
+  width: 100%;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  padding: 0 12px;
+  outline: none;
+  background: #fff;
+  color: var(--text);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.ea-list-search::placeholder { color: #94a3b8; }
+.ea-list-search:focus { border-color: var(--accent); box-shadow: var(--ring); }
+
+/* Left list area scrolls under the sticky search */
+.ea-list {
+  overflow-y: auto;
+  padding: 12px;
+}
+
+/* === RIGHT: thin count bar across the top of the editor === */
+.ea-editor {
+  display: grid;
+  grid-template-rows: auto 1fr;  /* count bar + content */
+  min-height: 0;
+}
+.ea-countbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  color: #9aa5b1;                /* muted label text */
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Keep the right panel card/form scrolling nicely */
+.ea-placeholder,
+.ea-form {
+  margin: 12px;
+}
+/* === Tweaks: smaller left panel + fix cut-off inputs on the right === */
+
+/* 1) Width knobs you can adjust */
+.edit-account {
+  --ea-left: 300px;       /* left list column width (was 340px). Try 280–320px */
+  --ea-label-w: 180px;    /* label column width on the right */
+  --ea-input-min: 320px;  /* minimal comfortable input width */
+}
+
+/* 2) Shrink the left column of the two-panel grid */
+.ea-two-col {
+  grid-template-columns: var(--ea-left) minmax(0, 1fr) !important;
+}
+
+/* 3) Make sure the left column contents don’t clip and still scroll nicely */
+.ea-sidebar {
+  min-width: 0;      /* allow shrinking without overflow */
+  overflow: hidden;  /* we control scroll in the list area */
+}
+.ea-list { overflow-y: auto; }
+
+/* 4) Right editor: make the form use a label column + flexible input column
+      so inputs never get cut on the right side. */
+.ea-editor { min-width: 0; } /* allow the editor to shrink without forcing overflow */
+
+.ea-form {
+  /* label column + input column that can grow */
+  grid-template-columns: var(--ea-label-w) minmax(0, 1fr) !important;
+  column-gap: 14px;
+}
+
+/* Ensure every label/input pair stays on one row */
+.ea-form > label { grid-column: 1; align-self: center; min-width: 0; }
+.ea-form > input { grid-column: 2; min-width: 0; }
+
+/* Inputs fill the available space and never overflow their grid cell */
+.ea-form > input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 5) Buttons row still spans full width */
+.ea-actions { grid-column: 1 / -1; }
+
+/* 6) Responsive: on smaller screens, stack the form to 1 column */
+@media (max-width: 1080px) {
+  .ea-form {
+    grid-template-columns: 1fr !important;
+  }
+  .ea-form > label { grid-column: 1; }
+  .ea-form > input { grid-column: 1; }
+}
+
+/* 7) If any container adds padding that shrinks the usable area,
+      ensure the editor’s content can scroll inside without clipping */
+.ea-placeholder,
+.ea-form {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* 8) Safety: prevent any accidental horizontal scrolling due to long text */
+.ea-editor,
+.ea-form,
+.ea-list {
+  overflow-x: hidden;
+}/* === Smaller LEFT panel + safe RIGHT inputs (v2) === */
+
+/* 1) Width knobs — adjust these if you want it tighter/wider */
+.edit-account {
+  --ea-left: 272px;      /* left list width (try 260–280px). Previously 300px */
+  --ea-label-w: 168px;   /* label column width on the right (try 150–180px) */
+  --ea-input-min: 300px; /* minimum comfy input width on the right */
+}
+
+/* 2) Apply the slimmer left column */
+.ea-two-col {
+  grid-template-columns: var(--ea-left) minmax(0, 1fr) !important;
+  min-width: 0;
+}
+
+/* 3) Left panel safety: allow shrink & scroll correctly */
+.ea-sidebar {
+  min-width: 0;         /* enables grid to shrink without overflow */
+  overflow: hidden;     /* scroll is on .ea-list */
+}
+.ea-list { overflow-y: auto; }
+
+/* 4) Right editor: label column + flexible input column. No cut-offs. */
+.ea-editor { min-width: 0; }   /* lets inputs use remaining width */
+
+.ea-form {
+  grid-template-columns: var(--ea-label-w) minmax(var(--ea-input-min), 1fr) !important;
+  column-gap: 14px;
+  min-width: 0;
+}
+
+/* Labels & inputs stay on the same row */
+.ea-form > label { grid-column: 1; align-self: center; min-width: 0; }
+.ea-form > input { 
+  grid-column: 2; 
+  min-width: 0;           /* allow shrinking */
+  width: 100%;            /* fill the flexible column */
+  box-sizing: border-box; 
+}
+
+/* 5) Buttons row spans both columns */
+.ea-actions { grid-column: 1 / -1; }
+
+/* 6) Responsive: stack to single column when narrower */
+@media (max-width: 1080px) {
+  .ea-form { grid-template-columns: 1fr !important; }
+  .ea-form > label { grid-column: 1; }
+  .ea-form > input { grid-column: 1; }
+}
+
+/* 7) No horizontal scroll leaks */
+.ea-editor, .ea-form, .ea-list { overflow-x: hidden; }
+/* === LEFT PANEL a bit smaller + RIGHT inputs capped (no cut-offs) === */
+
+/* 1) Knobs you can tune quickly */
+.edit-account {
+  --ea-left: 256px;       /* left list column width (was 272/300/340). Try 248–264px */
+  --ea-label-w: 160px;    /* label column width on the right (try 150–170px) */
+  --ea-input-min: 280px;  /* minimum comfortable input width */
+  --ea-input-max: 680px;  /* ⬅️ CAP input/row max width to avoid “too wide” */
+  --ea-form-pad-x: 16px;  /* inner horizontal padding for the right card */
+}
+
+/* 2) Apply slimmer left column */
+.ea-two-col {
+  grid-template-columns: var(--ea-left) minmax(0, 1fr) !important;
+  min-width: 0;
+}
+
+/* Left column safety */
+.ea-sidebar { min-width: 0; overflow: hidden; }
+.ea-list    { overflow-y: auto; }
+
+/* 3) Right editor grid: label column + flexible input column */
+.ea-editor { min-width: 0; }
+
+.ea-form {
+  grid-template-columns: var(--ea-label-w) minmax(var(--ea-input-min), 1fr) !important;
+  column-gap: 14px;
+  min-width: 0;
+  /* keep card readable width + avoid edge-to-edge stretching on huge screens */
+  max-width: calc(var(--ea-label-w) + var(--ea-input-max) + var(--ea-form-pad-x) * 2);
+  margin-inline: var(--ea-form-pad-x);
+}
+
+/* Keep countbar aligned with the form cap */
+.ea-countbar {
+  padding-inline: var(--ea-form-pad-x);
+}
+
+/* Labels & inputs on the same row; inputs fill available column */
+.ea-form > label { grid-column: 1; align-self: center; min-width: 0; }
+.ea-form > input {
+  grid-column: 2;
+  min-width: 0;
+  width: 100%;
+  max-width: var(--ea-input-max);  /* ⬅️ hard cap so fields don’t become too wide */
+  box-sizing: border-box;
+}
+
+/* Buttons row spans both columns and respects the cap */
+.ea-actions {
+  grid-column: 1 / -1;
+  max-width: calc(var(--ea-label-w) + var(--ea-input-max));
+  width: 100%;
+}
+
+/* 4) Responsive: stack to single column on narrower screens */
+@media (max-width: 1080px) {
+  .ea-form {
+    grid-template-columns: 1fr !important;
+    max-width: min(92vw, var(--ea-input-max));
+  }
+  .ea-form > label,
+  .ea-form > input {
+    grid-column: 1 !important;
+  }
+  .ea-actions {
+    max-width: min(92vw, var(--ea-input-max));
+  }
+}
+
+/* 5) No horizontal scroll leaks */
+.ea-editor, .ea-form, .ea-list { overflow-x: hidden; }

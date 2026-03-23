@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Header from '../Header';
-import '../css/Register.css'; // keep your design
+import '../css/Register.css';
+import DashboardShell from '../layout/DashboardShell';
 
 export default function Register() {
   const navigate = useNavigate();
@@ -10,15 +10,15 @@ export default function Register() {
   useEffect(() => {
     const storedRole = localStorage.getItem('role');
     if (!storedRole) {
-      navigate('/'); // redirect to login if no role
+      navigate('/');
     }
   }, [navigate]);
 
   // ---------- FORM STATE ----------
-  const [role, setRole] = useState('barangay');
+  const [role, setRole] = useState('drrmo');
+
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
-  const [barangay, setBarangay] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -26,9 +26,11 @@ export default function Register() {
   const [address, setAddress] = useState('');
   const [errors, setErrors] = useState({});
 
+  const [touched, setTouched] = useState({});
+
   const barangays = Array.from({ length: 25 }, (_, i) => `Brgy ${i + 1}`);
 
-  // ---------- VALIDATORS (same functionality you shared) ----------
+  // ---------- VALIDATORS ----------
   function validatePassword(pw) {
     if (!pw) return 'Password is required';
     if (!/^[A-Z]/.test(pw)) return 'Password must start with a capital letter';
@@ -36,6 +38,7 @@ export default function Register() {
     if (pw.length < 8) return 'Password must be at least 8 characters';
     return '';
   }
+
   function validateEmail(value) {
     if (!value) return 'Email is required';
     if (!value.includes('@') || !value.includes('.com')) {
@@ -43,6 +46,7 @@ export default function Register() {
     }
     return '';
   }
+
   function validatePhone(value) {
     if (!value) return 'Phone number is required';
     if (!/^\d{10,11}$/.test(value)) return 'Enter valid phone number (10-11 digits)';
@@ -53,44 +57,105 @@ export default function Register() {
   useEffect(() => {
     const nextErrors = {};
 
-    if (!username) nextErrors.username = 'Username is required';
+    if (touched.username && !username)
+      nextErrors.username = 'Username is required';
 
-    const emailError = validateEmail(email);
-    if (emailError) nextErrors.email = emailError;
-
-    if (!phoneNumber) nextErrors.phoneNumber = 'Phone number is required';
-    else {
-      const phoneErr = validatePhone(phoneNumber);
-      if (phoneErr) nextErrors.phoneNumber = phoneErr;
+    if (touched.email) {
+      const emailError = validateEmail(email);
+      if (emailError) nextErrors.email = emailError;
     }
 
-    if (!address) nextErrors.address = 'Address is required';
+    if (touched.phoneNumber) {
+      if (!phoneNumber)
+        nextErrors.phoneNumber = 'Phone number is required';
+      else {
+        const phoneErr = validatePhone(phoneNumber);
+        if (phoneErr) nextErrors.phoneNumber = phoneErr;
+      }
+    }
 
-    const pwError = validatePassword(password);
-    if (pwError) nextErrors.password = pwError;
+    if (touched.address && !address)
+      nextErrors.address = 'Address is required';
 
-    if (password !== confirmPassword)
+    if (touched.password) {
+      const pwError = validatePassword(password);
+      if (pwError) nextErrors.password = pwError;
+    }
+
+    if (touched.confirmPassword && password !== confirmPassword)
       nextErrors.confirmPassword = 'Passwords do not match';
 
-    if (role === 'barangay' && !barangay)
-      nextErrors.barangay = 'Please select a barangay';
-
     setErrors(nextErrors);
-  }, [username, email, barangay, password, confirmPassword, phoneNumber, address, role]);
+  }, [username, email, password, confirmPassword, phoneNumber, address, role, touched]);
 
-  // Helper to compute fresh errors at submit time
+  // ---------- SUBMIT VALIDATION ----------
   function computeErrors() {
     const nextErrors = {};
-    if (!username) nextErrors.username = 'Username is required';
-    const emailError = validateEmail(email);
-    if (emailError) nextErrors.email = emailError;
-    const phoneError = validatePhone(phoneNumber);
-    if (phoneError) nextErrors.phoneNumber = phoneError;
-    if (!address) nextErrors.address = 'Address is required';
-    const pwError = validatePassword(password);
-    if (pwError) nextErrors.password = pwError;
-    if (password !== confirmPassword) nextErrors.confirmPassword = 'Passwords do not match';
-    if (role === 'barangay' && !barangay) nextErrors.barangay = 'Please select a barangay';
+
+    if (touched.username && !username)
+      nextErrors.username = 'Username is required';
+
+    if (touched.email) {
+      const emailError = validateEmail(email);
+      if (emailError) nextErrors.email = emailError;
+    }
+
+    if (touched.phoneNumber) {
+      if (!phoneNumber)
+        nextErrors.phoneNumber = 'Phone number is required';
+      else {
+        const phoneErr = validatePhone(phoneNumber);
+        if (phoneErr) nextErrors.phoneNumber = phoneErr;
+      }
+    }
+
+    if (touched.address && !address)
+      nextErrors.address = 'Address is required';
+
+    if (touched.password) {
+      const pwError = validatePassword(password);
+      if (pwError) nextErrors.password = pwError;
+    }
+
+    if (touched.confirmPassword && password !== confirmPassword)
+      nextErrors.confirmPassword = 'Passwords do not match';
+
+    setErrors(nextErrors);
+  }
+
+  // ---------- SUBMIT VALIDATION ----------
+  function computeErrors() {
+    const nextErrors = {};
+
+    if (touched.username && !username)
+      nextErrors.username = 'Username is required';
+
+    if (touched.email) {
+      const emailError = validateEmail(email);
+      if (emailError) nextErrors.email = emailError;
+    }
+
+    if (touched.phoneNumber) {
+      if (!phoneNumber)
+        nextErrors.phoneNumber = 'Phone number is required';
+      else {
+        const phoneErr = validatePhone(phoneNumber);
+        if (phoneErr) nextErrors.phoneNumber = phoneErr;
+      }
+    }
+
+    if (touched.address && !address)
+      nextErrors.address = 'Address is required';
+
+    if (touched.password) {
+      const pwError = validatePassword(password);
+      if (pwError) nextErrors.password = pwError;
+    }
+
+    if (touched.confirmPassword && password !== confirmPassword)
+      nextErrors.confirmPassword = 'Passwords do not match';
+
+    
     return nextErrors;
   }
 
@@ -98,6 +163,7 @@ export default function Register() {
   function handleRegister() {
     const freshErrors = computeErrors();
     setErrors(freshErrors);
+
     if (Object.keys(freshErrors).length > 0) {
       alert('Please fix the errors first');
       return;
@@ -108,7 +174,6 @@ export default function Register() {
       password,
       role,
       email,
-      barangay: role === 'barangay' ? barangay : undefined,
       phoneNumber,
       hotline: hotline || undefined,
       address
@@ -133,43 +198,23 @@ export default function Register() {
       });
   }
 
-  // ---------- UI (unchanged design) ----------
+  // ---------- UI ----------
   return (
-    <div className="register-page">
-      {/* Blue top header you already have */}
-      <Header />
-
-      {/* App shell: left sidebar + right panel */}
-      <div className="shell">
-        {/* LEFT SIDEBAR (static UI; no functionality change) */}
-        <aside className="sidebar">
-          <div className="brand">
-            <div className="brand-text">
-              <div className="org">Create an account</div>
-              <div className="sub">Add Administrator</div>
-            </div>
-          </div>
-
-          <nav className="nav">
-            <button type="button" className="nav-item active">Create an account</button>
-            <button type="button" className="nav-item">Add Administrator</button>
-          </nav>
-        </aside>
-
-        {/* RIGHT CONTENT */}
-        <main className="content">
-          <section className="panel">
-            <header className="panel-header">
-              <h2>Create Admin account</h2>
-              <p className="panel-desc">
+    <DashboardShell>
+      <div className="register-page">
+        {/* Content area only; no left panel; no white card */}
+        <div className="shell" style={{ padding: 16, justifyContent: 'center' }}>
+          <main className="content" style={{ maxWidth: 1200, width: '100%' }}>
+            {/* Simple header */}
+            <header className="panel-header" style={{ border: 'none', padding: 0, marginBottom: 16 }}>
+              <h2 style={{ margin: '0 0 6px' }}>Create Admin account</h2>
+              <p className="panel-desc" style={{ margin: 0 }}>
                 Use this form to create an administrator account. Each admin is assigned a role and
-                specific permissions that define what parts of the system they can access. For
-                security and accountability, admin accounts are created only by Super Admins and
-                should be granted the minimum access necessary.
+                specific permissions that define what parts of the system they can access.
               </p>
             </header>
 
-            {/* Centered column form like the screenshot */}
+            {/* Form */}
             <div className="form-body">
               <form
                 className="form-grid"
@@ -178,35 +223,10 @@ export default function Register() {
                   handleRegister();
                 }}
               >
-                {/* Role selection */}
-                <div className="section">
-                  <div className="section-head">
-                    <div className="section-title">Account Role</div>
-                    <div className="section-sub">Select the role for this user.</div>
-                  </div>
-                  <div className="section-control">
-                    <div className="radio-row radio-row-inline radio-row-spaced">
-                      {['admin', 'drrmo', 'barangay'].map((r) => (
-                        <label className="radio" key={r}>
-                          <input
-                            type="radio"
-                            checked={role === r}
-                            onChange={() => setRole(r)}
-                          />
-                          {r.toUpperCase()}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <hr className="divider" />
-
                 {/* Username */}
                 <div className="section">
                   <div className="section-head">
                     <div className="section-title">Username</div>
-                    <div className="section-sub">Unique handle for sign-in.</div>
                   </div>
                   <div className="section-control">
                     <div className="field">
@@ -214,43 +234,24 @@ export default function Register() {
                         className={`input ${errors.username ? 'invalid' : ''}`}
                         placeholder="Username"
                         value={username}
-                        onChange={e => setUsername(e.target.value)}
+                        onChange={e => {
+                          setUsername(e.target.value);
+                          setTouched(prev => ({ ...prev, username: true }));
+                        }}
+                        // onChange={e => {
+                        //   setUsername(e.target.value);
+                        //   setTouched(prev => ({ ...prev, username: true }));
+                        // }}
                       />
                       {errors.username && <span className="error">{errors.username}</span>}
                     </div>
                   </div>
                 </div>
 
-                {/* Barangay (role = barangay only) */}
-                {role === 'barangay' && (
-                  <div className="section">
-                    <div className="section-head">
-                      <div className="section-title">Barangay</div>
-                      <div className="section-sub">Select your barangay.</div>
-                    </div>
-                    <div className="section-control">
-                      <div className="field">
-                        <select
-                          className={`input ${errors.barangay ? 'invalid' : ''}`}
-                          value={barangay}
-                          onChange={e => setBarangay(e.target.value)}
-                        >
-                          <option value="">Select Barangay</option>
-                          {barangays.map(b => (
-                            <option key={b} value={b}>{b}</option>
-                          ))}
-                        </select>
-                        {errors.barangay && <span className="error">{errors.barangay}</span>}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 {/* Email */}
                 <div className="section">
                   <div className="section-head">
                     <div className="section-title">Email Address</div>
-                    <div className="section-sub">We’ll send account info here.</div>
                   </div>
                   <div className="section-control">
                     <div className="field">
@@ -258,7 +259,10 @@ export default function Register() {
                         className={`input ${errors.email ? 'invalid' : ''}`}
                         placeholder="Email"
                         value={email}
-                        onChange={e => setEmail(e.target.value)}
+                        onChange={e => {
+                          setEmail(e.target.value);
+                          setTouched(prev => ({ ...prev, email: true }));
+                        }}
                       />
                       {errors.email && <span className="error">{errors.email}</span>}
                     </div>
@@ -269,7 +273,6 @@ export default function Register() {
                 <div className="section">
                   <div className="section-head">
                     <div className="section-title">Phone Number</div>
-                    <div className="section-sub">10–11 digits.</div>
                   </div>
                   <div className="section-control">
                     <div className="field">
@@ -277,18 +280,20 @@ export default function Register() {
                         className={`input ${errors.phoneNumber ? 'invalid' : ''}`}
                         placeholder="Phone Number"
                         value={phoneNumber}
-                        onChange={e => setPhoneNumber(e.target.value)}
+                        onChange={e => {
+                          setPhoneNumber(e.target.value);
+                          setTouched(prev => ({ ...prev, phoneNumber: true }));
+                        }}
                       />
                       {errors.phoneNumber && <span className="error">{errors.phoneNumber}</span>}
                     </div>
                   </div>
                 </div>
 
-                {/* Hotline (optional) */}
+                {/* Hotline */}
                 <div className="section">
                   <div className="section-head">
                     <div className="section-title">Hotline (optional)</div>
-                    <div className="section-sub">Local hotline if available.</div>
                   </div>
                   <div className="section-control">
                     <div className="field">
@@ -296,7 +301,10 @@ export default function Register() {
                         className="input"
                         placeholder="Hotline (optional)"
                         value={hotline}
-                        onChange={e => setHotline(e.target.value)}
+                        onChange={e => {
+                          setHotline(e.target.value);
+                          setTouched(prev => ({ ...prev, hotline: true }));
+                        }}
                       />
                     </div>
                   </div>
@@ -306,7 +314,6 @@ export default function Register() {
                 <div className="section">
                   <div className="section-head">
                     <div className="section-title">Address</div>
-                    <div className="section-sub">Complete address.</div>
                   </div>
                   <div className="section-control">
                     <div className="field">
@@ -315,6 +322,7 @@ export default function Register() {
                         placeholder="Address"
                         value={address}
                         onChange={e => setAddress(e.target.value)}
+                        onBlur={() => setTouched(prev => ({ ...prev, address: true }))}
                       />
                       {errors.address && <span className="error">{errors.address}</span>}
                     </div>
@@ -325,7 +333,6 @@ export default function Register() {
                 <div className="section">
                   <div className="section-head">
                     <div className="section-title">Password</div>
-                    <div className="section-sub">Start with a capital letter & include a number.</div>
                   </div>
                   <div className="section-control">
                     <div className="field">
@@ -334,7 +341,10 @@ export default function Register() {
                         className={`input ${errors.password ? 'invalid' : ''}`}
                         placeholder="Password"
                         value={password}
-                        onChange={e => setPassword(e.target.value)}
+                        onChange={e => {
+                          setPassword(e.target.value);
+                          setTouched(prev => ({ ...prev, password: true }));
+                        }}
                       />
                       {errors.password && <span className="error">{errors.password}</span>}
                     </div>
@@ -345,7 +355,6 @@ export default function Register() {
                 <div className="section">
                   <div className="section-head">
                     <div className="section-title">Confirm Password</div>
-                    <div className="section-sub">Must match the password.</div>
                   </div>
                   <div className="section-control">
                     <div className="field">
@@ -354,7 +363,10 @@ export default function Register() {
                         className={`input ${errors.confirmPassword ? 'invalid' : ''}`}
                         placeholder="Confirm Password"
                         value={confirmPassword}
-                        onChange={e => setConfirmPassword(e.target.value)}
+                        onChange={e => {
+                          setConfirmPassword(e.target.value);
+                          setTouched(prev => ({ ...prev, confirmPassword: true }));
+                        }}
                       />
                       {errors.confirmPassword && (
                         <span className="error">{errors.confirmPassword}</span>
@@ -363,33 +375,25 @@ export default function Register() {
                   </div>
                 </div>
 
-                {/* Actions */}
+                {/* Submit */}
                 <div className="section">
-                  <div className="section-head" />
                   <div className="section-control actions-right">
                     <button type="submit" className="btn btn-commit">Create Account</button>
                   </div>
                 </div>
 
-                {/* Back link */}
+                {/* Back */}
                 <div className="section">
-                  <div className="section-head" />
                   <div className="section-control actions-right">
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => navigate('/admin/dashboard')}
-                      style={{ width: 220 }}
-                    >
-                      Go Back to Dashboard
-                    </button>
+                  
                   </div>
                 </div>
+
               </form>
             </div>
-          </section>
-        </main>
+          </main>
+        </div>
       </div>
-    </div>
+    </DashboardShell>
   );
 }

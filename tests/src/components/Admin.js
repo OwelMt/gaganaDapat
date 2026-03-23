@@ -1,13 +1,12 @@
+// src/components/admin/Admin.js
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import Header from './Header';
 import { MapContainer, TileLayer, Marker, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import incidentImage from '../assets/images/incident-icon.png';
 
-// Custom icon using public folder
 const incidentIcon = new L.Icon({
   iconUrl: incidentImage,
   iconSize: [35, 35],
@@ -25,6 +24,7 @@ const PASIG_BOUNDS = {
 
 export default function Admin() {
   const navigate = useNavigate();
+  const [selectedIncident, setSelectedIncident] = useState(null);
   const [incidents, setIncidents] = useState([]);
   const [statusMap, setStatusMap] = useState({});
 
@@ -48,19 +48,26 @@ export default function Admin() {
   }, []);
 
   const handleChange = async (id, value) => {
-    const incident = incidents.find(i => i._id === id);
-
-    await axios.post('http://localhost:8000/history/registerHistory', {
-      action: 'STATUS_UPDATE',
-      placeName: incident.location,
-      details: incident.description,
-    });
-
-    setIncidents(prev => prev.map(i => i._id === id ? { ...i, status: value } : i));
-    setStatusMap(prev => ({ ...prev, [id]: value }));
-
     try {
-      await axios.put(`http://localhost:8000/incident/updateStatus/${id}`, { status: value });
+      const incident = incidents.find(i => i._id === id);
+
+      // Update status in DB
+      await axios.put(`http://localhost:8000/incident/updateStatus/${id}`, {
+        status: value
+      });
+
+      // Save history
+      await axios.post('http://localhost:8000/history/registerHistory', {
+        action: 'STATUS_UPDATE',
+        placeName: incident.location,
+        details: incident.description,
+      });
+
+      // Update UI
+      setIncidents(prev =>
+        prev.map(i => i._id === id ? { ...i, status: value } : i)
+      );
+      setStatusMap(prev => ({ ...prev, [id]: value }));
     } catch (err) {
       console.error(err);
     }
@@ -89,9 +96,8 @@ export default function Admin() {
   };
 
   return (
-    <div>
-      <Header />
-      <h1>Admin Page</h1>
+    <div style={{ padding: '16px' }}>
+      <h1>Incident Administration</h1>
 
       <h3>Incident Map</h3>
       <div style={{ height: '400px', marginBottom: '20px' }}>
@@ -115,6 +121,9 @@ export default function Admin() {
                 key={incident._id}
                 position={[incident.latitude, incident.longitude]}
                 icon={incidentIcon}
+                eventHandlers={{
+                  click: () => setSelectedIncident(incident)
+                }}
               >
                 <Tooltip direction="top" offset={[0, -10]} opacity={1}>
                   <div>
@@ -132,41 +141,57 @@ export default function Admin() {
       </div>
 
       <h3>Manage Incident Statuses</h3>
-      <table border="1" cellPadding="8" cellSpacing="0">
-        <thead>
-          <tr>
-            <th>Type</th>
-            <th>Level</th>
-            <th>Description</th>
-            <th>Location</th>
-            <th>Status</th>
-            <th>Delete</th>
-          </tr>
-        </thead>
-        <tbody>
-          {incidents.map(inc => (
-            <tr key={inc._id}>
-              <td>{inc.type}</td>
-              <td>{inc.level}</td>
-              <td>{inc.description}</td>
-              <td>{inc.location}</td>
-              <td>
-                <select
-                  value={statusMap[inc._id] || inc.status || ''}
-                  onChange={e => handleChange(inc._id, e.target.value)}
-                >
-                  <option value="">Reported</option>
-                  <option value="onProcess">On Process</option>
-                  <option value="resolved">Resolved</option>
-                </select>
-              </td>
-              <td>
-                <button onClick={() => handleDelete(inc._id)}>Delete</button>
-              </td>
+      <div style={{ overflowX: 'auto' }}>
+        <table border="1" cellPadding="6" cellSpacing="0" style={{ width: '100%', fontSize: 14 }}>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Level</th>
+              <th>Description</th>
+              <th>Location</th>
+              <th>Status</th>
+              <th>Delete</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {incidents.map(inc => (
+              <tr key={inc._id}>
+                <td>{inc.type}</td>
+                <td>{inc.level}</td>
+                <td>{inc.description}</td>
+                <td>{inc.location}</td>
+                <td>
+                  <select
+                    value={statusMap[inc._id] || inc.status || ''}
+                    onChange={e => handleChange(inc._id, e.target.value)}
+                  >
+                    <option value="">Reported</option>
+                    <option value="onProcess">On Process</option>
+                    <option value="resolved">Resolved</option>
+                  </select>
+                </td>
+                <td>
+                  <button onClick={() => handleDelete(inc._id)}>Delete</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {selectedIncident && (
+        <div className="modal">
+          <h2>{selectedIncident.type}</h2>
+          <p>Status: {selectedIncident.status}</p>
+          <p>Severity: {selectedIncident.level}</p>
+          <p>{selectedIncident.location}</p>
+          <p>{selectedIncident.description}</p>
+          <p> Username: {selectedIncident.usernames}</p>
+          <p> Phone: {selectedIncident.phone}</p>
+
+          <button onClick={() => setSelectedIncident(null)}>Close</button>
+        </div>
+      )}
     </div>
   );
 }

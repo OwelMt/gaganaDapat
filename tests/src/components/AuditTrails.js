@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import Header from './Header';
 
 const AuditTrails = () => {
   const navigate = useNavigate();
@@ -35,7 +34,7 @@ const AuditTrails = () => {
 
   return (
     <div>
-      <Header/>
+    
       <h1>AuditTrails</h1>
       <h3>Manage Trails</h3>
       <table border="1" cellPadding="8" cellSpacing="0">

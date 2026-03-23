@@ -5,25 +5,42 @@ import "./SplashScreen.css";
 import JaenLogo from "../../assets/images/jaenlogo.png";
 import SagipBayanLogo from "../../assets/images/sagipbayanlogo.png";
 
-function SplashScreen({ onFinish }) {
+/**
+ * SplashScreen
+ * Props:
+ *  - durationMs?: number       // how long to show before calling onFinish (default 4000)
+ *  - dotPeriodMs?: number      // speed of the dot animation (default 300)
+ *  - message?: string          // text below the dots (default "Connecting to the main server")
+ *  - onFinish?: () => void     // called once when duration elapses
+ */
+function SplashScreen({
+  durationMs = 4000,
+  dotPeriodMs = 300,
+  message = "Connecting to the main server",
+  onFinish,
+}) {
   const [dotCount, setDotCount] = useState(0);
 
-  // Animate dots 0 → 3 → repeat, and auto-finish at ~4s
   useEffect(() => {
+    // Animate dots 0 → 1 → 2 → 0 → ...
     const interval = setInterval(() => {
-      setDotCount((prev) => (prev + 1) % 4);
-    }, 300);
+      setDotCount((prev) => (prev + 1) % 3);
+    }, dotPeriodMs);
 
-    const timeout = setTimeout(() => {
-      clearInterval(interval);
-      if (onFinish) onFinish();
-    }, 4000);
+    // Auto-finish after durationMs
+    let timeout;
+    if (durationMs > 0) {
+      timeout = setTimeout(() => {
+        clearInterval(interval);
+        onFinish?.();
+      }, durationMs);
+    }
 
     return () => {
       clearInterval(interval);
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
     };
-  }, [onFinish]);
+  }, [dotPeriodMs, durationMs, onFinish]);
 
   return (
     <div className="splash-overlay" role="dialog" aria-label="Loading">
@@ -49,7 +66,7 @@ function SplashScreen({ onFinish }) {
       </div>
 
       {/* Text */}
-      <h2 className="splash-text">Connecting to the main server</h2>
+      <h2 className="splash-text">{message}</h2>
     </div>
   );
 }

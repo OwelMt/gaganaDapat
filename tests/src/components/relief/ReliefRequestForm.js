@@ -1,8 +1,8 @@
+// src/components/relief/ReliefRequestForm.js
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import DashboardCard from '../../components/DashboardCard';
-import Header from '../Header';
 import '../css/ReliefRequestForm.css';
+import DashboardShell from '../layout/DashboardShell';
 
 export default function ReliefRequestForm() {
   const navigate = useNavigate();
@@ -103,107 +103,117 @@ export default function ReliefRequestForm() {
   }
 
   return (
-    <div className="rrf-app">
-      <Header />
-      <div className="rrf-page">
-        {/* Toolbar */}
-        <div className="rrf-toolbar">
-          <h2 className="rrf-title">Relief Request</h2>
-          <div className="rrf-toolbar-right">
-            <button className="rrf-btn" onClick={() => navigate('/barangay/dashboard')}>
-              ← Back to Dashboard
-            </button>
-          </div>
-        </div>
-
-        {/* Content */}
-        <main className="rrf-main">
-          {/* Category grid */}
-          <section className="rrf-section">
-            <h3 className="rrf-section-title">Choose a Category</h3>
-            <div className="rrf-grid">
-              {categories.map((category) => {
-                const locked = isLocked(category.key);
-                return (
-                  <div key={category.key} className="rrf-card-wrap">
-                    <DashboardCard
-                      title={category.label}
-                      description={locked ? 'Pending / In Progress' : 'Request relief'}
-                      onClick={() => !locked && setActiveCategory(category)}
-                      className={locked ? 'rrf-locked' : ''}
-                    />
-                    {locked && <div className="rrf-badge">Locked</div>}
-                  </div>
-                );
-              })}
+    <DashboardShell>
+      <div className="rrf-app">
+        <div className="rrf-page">
+          {/* Toolbar */}
+          <div className="rrf-toolbar">
+            <h2 className="rrf-title">Relief Request</h2>
+            <div className="rrf-toolbar-right">
+              <button className="rrf-btn" onClick={() => navigate('/barangay/dashboard')}>
+                ← Back to Dashboard
+              </button>
             </div>
-          </section>
+          </div>
 
-          {/* Selections */}
-          {activeCategory && (
+          {/* Content */}
+          <main className="rrf-main">
+            {/* Category grid */}
             <section className="rrf-section">
-              <h3 className="rrf-section-title">{activeCategory.label}</h3>
+              <h3 className="rrf-section-title">Choose a Category</h3>
+              <div className="rrf-grid">
+                {categories.map((category) => {
+                  const locked = isLocked(category.key);
+                  return (
+                    <div key={category.key} className="rrf-card-wrap">
+                      {/* Replaces <DashboardCard/> with an accessible button "card" */}
+                      <button
+                        type="button"
+                        className={`rrf-card ${locked ? 'rrf-locked' : ''}`}
+                        onClick={() => !locked && setActiveCategory(category)}
+                        disabled={locked}
+                        aria-disabled={locked}
+                        aria-label={`${category.label}${locked ? ' (Locked)' : ''}`}
+                      >
+                        <div className="rrf-card-title">{category.label}</div>
+                        <div className="rrf-card-desc">
+                          {locked ? 'Pending / In Progress' : 'Request relief'}
+                        </div>
+                      </button>
 
-              {/* People Range */}
-              <div className="rrf-fieldset">
-                <div className="rrf-label">Affected People / Families</div>
-                <div className="rrf-radio-group">
-                  {peopleRanges.map((range) => (
-                    <label key={range} className="rrf-radio">
-                      <input
-                        type="radio"
-                        name="peopleRange"
-                        checked={peopleRange === range}
-                        onChange={() => setPeopleRange(range)}
-                      />
-                      <span>{range} people</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Urgency (NEW) */}
-              <div className="rrf-fieldset">
-                <div className="rrf-label">Urgency</div>
-                <div className="rrf-radio-group">
-                  {urgencyLevels.map((u) => (
-                    <label key={u.key} className="rrf-radio">
-                      <input
-                        type="radio"
-                        name="urgency"
-                        checked={urgency === u.key}
-                        onChange={() => setUrgency(u.key)}
-                      />
-                      <span>{u.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Confirm */}
-              <div className="rrf-actions">
-                <button
-                  className="rrf-btn"
-                  onClick={() => {
-                    setActiveCategory(null);
-                    setPeopleRange('');
-                    setUrgency('');
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="rrf-btn rrf-primary"
-                  disabled={!peopleRange || !urgency}
-                  onClick={confirmRequest}
-                >
-                  Confirm Request
-                </button>
+                      {locked && <div className="rrf-badge">Locked</div>}
+                    </div>
+                  );
+                })}
               </div>
             </section>
-          )}
-        </main>
+
+            {/* Selections */}
+            {activeCategory && (
+              <section className="rrf-section">
+                <h3 className="rrf-section-title">{activeCategory.label}</h3>
+
+                {/* People Range */}
+                <div className="rrf-fieldset">
+                  <div className="rrf-label">Affected People / Families</div>
+                  <div className="rrf-radio-group">
+                    {peopleRanges.map((range) => (
+                      <label key={range} className="rrf-radio">
+                        <input
+                          type="radio"
+                          name="peopleRange"
+                          checked={peopleRange === range}
+                          onChange={() => setPeopleRange(range)}
+                        />
+                        <span>{range} people</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Urgency (NEW) */}
+                <div className="rrf-fieldset">
+                  <div className="rrf-label">Urgency</div>
+                  <div className="rrf-radio-group">
+                    {urgencyLevels.map((u) => (
+                      <label key={u.key} className="rrf-radio">
+                        <input
+                          type="radio"
+                          name="urgency"
+                          checked={urgency === u.key}
+                          onChange={() => setUrgency(u.key)}
+                        />
+                        <span>{u.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Confirm */}
+                <div className="rrf-actions">
+                  <button
+                    className="rrf-btn"
+                    onClick={() => {
+                      setActiveCategory(null);
+                      setPeopleRange('');
+                      setUrgency('');
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="rrf-btn rrf-primary"
+                    disabled={!peopleRange || !urgency}
+                    onClick={confirmRequest}
+                  >
+                    Confirm Request
+                  </button>
+                </div>
+              </section>
+            )}
+          </main>
+        </div>
       </div>
-    </div>
+    </DashboardShell>
   );
 }

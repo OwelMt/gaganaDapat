@@ -1,8 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import DashboardCard from '../../components/DashboardCard';
-import Header from '../Header';
-import '../css/BarangayDashboard.css';
+import DashboardShell from '../layout/DashboardShell';
 
 function BarangayDashboard() {
   const navigate = useNavigate();
@@ -15,53 +13,49 @@ function BarangayDashboard() {
   }, [navigate]);
 
   return (
-    <div className="admin-wrapper">
-      <Header />
+    <DashboardShell>
+      <div className="admin-wrapper">
+        <div className="admin-container">
+          {/* Page title (styled like admin) */}
+          <h2 className="admin-title">Barangay Dashboard</h2>
 
-      <div className="admin-container">
-        {/* Page title (styled like admin) */}
-        <h2 className="admin-title">Barangay Dashboard</h2>
+          {/* Quick Actions (replaces the old DashboardCard grid) */}
+          <section className="quick-actions">
+            <div className="qa-grid">
+              <button
+                className="qa-item"
+                onClick={() => navigate('/barangay/relief-request')}
+              >
+                Relief Request
+              </button>
 
-        {/* EXACT same 3× desktop grid system as AdminDashboard */}
-        <div className="cards-grid">
-          {/* Each card sits on the same premium "card-surface" as Admin */}
-          <div className="card-surface" role="button" onClick={() => navigate('/barangay/relief-request')} tabIndex={0}>
-            <DashboardCard
-              title="Relief Request"
-              description="Submit relief requests to the DRRMO for affected residents."
-              onClick={() => navigate('/barangay/relief-request')}
-            />
-          </div>
+              <button
+                className="qa-item"
+                onClick={() => navigate('/barangay/messages')}
+              >
+                Messages &amp; Announcements
+              </button>
 
-          <div className="card-surface" role="button" onClick={() => navigate('/barangay/messages')} tabIndex={0}>
-            <DashboardCard
-              title="Messages & Announcements"
-              description="View messages and advisories from the DRRMO."
-              onClick={() => navigate('/barangay/messages')}
-            />
-          </div>
+              <button
+                className="qa-item"
+                onClick={() => navigate('/barangay/relief-status')}
+              >
+                Relief Distribution Status
+              </button>
 
-          <div className="card-surface" role="button" onClick={() => navigate('/barangay/relief-status')} tabIndex={0}>
-            <DashboardCard
-              title="Relief Distribution Status"
-              description="Track the status of requested and ongoing relief operations."
-              onClick={() => navigate('/barangay/relief-status')}
-            />
-          </div>
-
-          {/*
-          // If/when you add more:
-          <div className="card-surface" role="button" onClick={() => navigate('/barangay/account-settings')} tabIndex={0}>
-            <DashboardCard
-              title="Edit Accounts"
-              description="View and manage your account."
-              onClick={() => navigate('/barangay/account-settings')}
-            />
-          </div>
-          */}
+              {/* If/when you add more:
+              <button
+                className="qa-item"
+                onClick={() => navigate('/barangay/account-settings')}
+              >
+                Edit Accounts
+              </button>
+              */}
+            </div>
+          </section>
         </div>
       </div>
-    </div>
+    </DashboardShell>
   );
 }
 

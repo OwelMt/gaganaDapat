@@ -1,690 +1,220 @@
-:root{
-  --bg:#f3f4f6;
-  --panel-bg:#e2e6ee;           /* slightly darker than #eef1f5 */
-  --sidebar-gray:#e5e7eb;
+/* ============================================================
+   REGISTER — clean 2‑column, green borders, scroll enabled
+=============================================================== */
+:root {
+  --ink: #1c2533;
+  --muted: #5f6b81;
 
-  --card:#f7f9fc;               /* off-white card for a darker look vs pure #fff */
-  --ink:#1c2533;
-  --muted:#5f6b81;              /* slightly darker helper text for readability */
+  /* Greens (match your screenshot) */
+  --green: #0f5a20;        /* label & border color */
+  --green-strong: #063a12; /* button background */
+  --green-hover: #052f0e;  /* button hover */
 
-  --accent:#2d5b8a;
-  --accent-600:#244a72;
-  --line:#dfe4ec;               /* slightly darker border for panels */
-  --danger:#d64545;
-  --focus:#3b82f6;
+  --input-bg: #ffffff;
+  --input-border: var(--green);    /* visible green border */
+  --input-border-hover: #0c4d1b;
+  --input-border-focus: #0c4d1b;
 
-  /* Input-specific borders */
-  --input-border:#c8d1de;       /* default input border */
-  --input-border-hover:#aeb9ca; /* hover state */
-  --input-border-focus:#3b82f6; /* focus state */
-  --input-border-invalid:#d64545; /* invalid state */
-  --input-bg:#ffffff;           /* input background */
+  --btn: var(--green-strong);
+  --btn-hover: var(--green-hover);
+  --btn-text: #fffbdb;
 
-  /* Layout / sizing knobs */
-  --panel-max: 1064px;
-  --center-width: 100%;
-  --field-gap: 10px;
-  --field-height: 44px;         /* comfy control height */
   --radius: 10px;
-  --header-h: 56px;
-  --well-bg: #edf1f8;
+  --field-h: 44px;
 
-  --panel-min-h: 480px;
+  /* Width caps so fields never over-extend */
+  --form-max: 980px;         /* total form width cap */
+  --col-min: 300px;          /* slightly wider as requested */
+  --col-max: 480px;
 }
 
-/* Global */
-*,
-*::before,
-*::after { box-sizing: border-box; }
-
-html, body, #root { height: 100%; }
-body {
+/* Let the page scroll normally on Register */
+html, body, #root {
+  height: auto;
+  min-height: 100vh;
+  overflow: auto;
   margin: 0;
-  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  padding: 0;
+  background: #e7e7e7;        /* light gray like your sample */
+}
+
+/* Root container */
+.register-page {
+  width: 100%;
+  min-height: 100vh;
   color: var(--ink);
-  background: var(--bg);
-  overflow: hidden;           /* Page itself doesn't scroll */
+  display: flex;
+  flex-direction: column;
+}
+
+/* Center the content */
+.register-page .shell {
+  display: flex;
+  justify-content: center;
+  padding: 18px 20px;
+}
+
+/* Remove any legacy left-panel if still present */
+.register-page .sidebar,
+.register-page .reg-sidebar { display: none !important; }
+
+/* Main content wrapper */
+.register-page .content {
+  width: min(100%, var(--form-max));
+  background: transparent;
+}
+
+/* Header */
+.register-page .panel-header { margin: 0 0 18px; }
+.register-page .panel-header h2 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--ink);
+}
+.register-page .panel-desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* GRID — two compact columns with nice spacing */
+.register-page .form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(var(--col-min), var(--col-max)));
+  justify-content: center;           /* center both columns as a block */
+  gap: 20px 28px;                    /* row gap / column gap */
+}
+
+/* Single column on narrow */
+@media (max-width: 900px) {
+  .register-page .form-grid {
+    grid-template-columns: minmax(320px, 560px);
+  }
+}
+
+/* Flat sections (no tiles/panels) */
+.register-page .section { display: grid; row-gap: 8px; background: transparent; }
+
+/* Full width sections (confirm password, actions) */
+.register-page .section.full,
+.register-page .section:has(.actions-right) { grid-column: 1 / -1; }
+
+/* Titles (green) */
+.register-page .section-title {
+  font-size: 14px;
+  font-weight: 800;
+  margin: 0;
+  color: var(--green);
+}
+.register-page .section-sub {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* Fields */
+.register-page .field { display: grid; row-gap: 8px; }
+
+/* Inputs — green border, rounded, spacing */
+.register-page .input {
+  height: var(--field-h);
+  padding: 0 12px;
+  border-radius: var(--radius);
+  background: var(--input-bg);
+  border: 2px solid var(--input-border);     /* thicker green border like screenshot */
+  font-size: 14px;
+  color: var(--ink);
+  outline: none;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+.register-page .input:hover  { border-color: var(--input-border-hover); }
+.register-page .input:focus  { border-color: var(--input-border-focus); box-shadow: 0 0 0 2px rgba(12,77,27,0.18); }
+
+/* Error */
+.register-page .error { color: #c0392b; font-size: 12.5px; }
+
+/* Actions — big green CTA aligned right */
+.register-page .actions-right {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.register-page .btn {
+  height: var(--field-h);
+  padding: 0 28px;
+  border-radius: var(--radius);
+  border: none;
+  background: var(--btn);
+  color: var(--btn-text);
+  font-weight: 800;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background .18s ease, transform .06s ease;
+}
+.register-page .btn:hover  { background: var(--btn-hover); }
+.register-page .btn:active { transform: scale(.985); }
+.register-page .btn-commit { width: 280px; }  /* wide CTA like your sample */
+
+/* === REGISTER: bring CTA closer to fields & make it full width === */
+
+/* The section that holds the button spans full width already.
+   Reduce the vertical gap before it so it sits closer to the last input. */
+.register-page .section:has(.actions-right) {
+  margin-top: 6px;              /* tighter gap under last input */
+}
+
+/* Keep the actions row compact and stable */
+.register-page .actions-right {
+  margin-top: 0;                /* remove extra spacing from utility styles */
+  gap: 8px;                     /* small horizontal gap if you add more CTAs later */
+}
+
+/* Make the "Create Account" button the same width as the fields */
+.register-page .btn-commit {
+  width: 100%;                  /* match input width */
+  max-width: none;              /* no cap; follows container width */
+  align-self: stretch;          /* fill grid cell horizontally */
+  height: var(--field-h);       /* match input height */
+  padding-left: 16px;           /* keep padding comfortable */
+  padding-right: 16px;
+}
+/* === REGISTER: lock viewport (no page scroll), content can scroll if needed === */
+html, body, #root {
+  height: 100vh !important;
+  overflow: hidden !important;   /* lock the page */
+  margin: 0;
+  padding: 0;
 }
 
 .register-page {
   height: 100%;
-  display: flex;
-  flex-direction: column;
+  overflow: hidden;              /* lock the register root */
 }
 
-/* Shell = viewport minus header */
-.shell{
-  display:flex;
-  height: calc(100vh - var(--header-h));
-  min-height: calc(100vh - var(--header-h));
-}
-
-/* LEFT SIDEBAR (slimmer) */
-.sidebar{
-  width:256px;
-  background: var(--sidebar-gray);
-  color:#0f172a;
-  padding:12px 10px;
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-  overflow: hidden;
-  border-right: 1px solid #dce1e7;
-}
-.brand{ display:flex; align-items:center; gap:8px; padding:6px 8px; }
-.brand-text .org{font-weight:700}
-.brand-text .sub{font-size:12px; color:#475569; }
-.nav{ display:flex; flex-direction:column; gap:6px; }
-.nav-item{
-  width:100%;
-  text-align:left;
-  padding:8px 10px;
-  border-radius:8px;
-  color:#111827;
-  background:#f4f6f9;
-  border:1px solid #e5e7eb;
-  cursor:pointer;
-  font-size: 14px;
-}
-.nav-item:hover{ background:#e9eef6; }
-.nav-item.active{
-  background:#dde5ef;
-  border-color:#cdd7e3;
-  box-shadow: inset 0 0 0 1px #cdd7e3;
-}
-
-/* RIGHT AREA — single vertical scrollbar lives here */
-.content{
-  flex:1;
-  padding:14px 16px;
-  background: var(--panel-bg); /* darker panel area */
-  overflow-y: auto;            /* allow scrolling here */
-  overflow-x: hidden;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-}
-
-/* PANEL (white card) */
-.panel{
-  width: 100%;
-  max-width: var(--panel-max);
-  background: var(--card);     /* slightly darker card */
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 16px 18px;          /* a bit more breathing room */
-  box-shadow: 0 1px 2px rgba(16,24,40,0.06);
-  display: flex;
-  flex-direction: column;
-  overflow: visible;           /* let .content handle scrolling */
-  min-height: var(--panel-min-h);
-  max-height: none;
-}
-
-/* Panel header */
-.panel-header{
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 12px;
-}
-.panel-header h2{
-  margin:0 0 2px;
-  font-size:20px;             /* slightly larger */
-  font-weight:800;
-}
-.panel-desc{
-  margin:0;
-  color:var(--muted);
-  font-size:13.5px;           /* slightly larger helper text */
-  line-height:1.5;
-}
-
-/* FORM LAYOUT */
-.form-body{
-  width: 100%;
-  display: block;              /* avoid flex growth that pushes footer down */
-}
-.form-grid{
-  display: grid;
-  grid-template-columns: 1fr 1fr;    /* TWO COLUMNS */
-  column-gap: 16px;
-  row-gap: 12px;
-  width: 100%;
-  min-height: 0;
-  padding-bottom: 6px;
-
-  align-items: start;
-  grid-auto-rows: min-content;
-}
-
-/* Each field ‘section’ */
-.section{
-  display: grid;
-  grid-template-columns: 1fr;
-  align-items: start;
-  gap: 10px;                   /* a touch more gap for larger text */
-  background: transparent;
-  break-inside: avoid;
-  min-height: 78px;            /* slightly taller row baseline */
-}
-
-/* Full-width sections */
-.section:has(.radio-row),
-.section:has(.actions-right) {
-  grid-column: 1 / -1;
-}
-
-/* Divider spans both columns */
-.divider{
-  height: 1px;
-  border: none;
-  background: #e0e5ec;
-  margin: 4px 0;
-  grid-column: 1 / -1;
-}
-
-/* Title/desc within a section */
-.section-head{ display:flex; flex-direction:column; gap:6px; }
-.section-title{
-  font-weight: 800;
-  color: #1f2937;
-  font-size: 15px;            /* larger title above inputs */
-}
-.section-sub{
-  color: var(--muted);
-  font-size: 13px;            /* larger helper text above inputs */
-  line-height: 1.45;
-}
-
-/* Field & control */
-.section-control{ width: 100%; }
-.field{
-  display:flex;
-  flex-direction:column;
-  gap: var(--field-gap);
-}
-.label{
-  font-size: 14px;            /* larger labels above inputs */
-  font-weight:600;
-}
-
-/* Controls (base) */
-.input{
-  width: 100%;
-  height: var(--field-height);                 /* unified with button */
-  border: 1px solid var(--input-border);       /* explicit input border color */
-  border-radius: 8px;
-  padding: 0 12px;                             
-  font-size: 14px;
-  line-height: normal;
-  outline: none;
-  background: var(--input-bg);
-  color: var(--ink);
-  display: inline-flex;
-  align-items: center;
-  transition: border-color .15s ease, box-shadow .15s ease;
-}
-
-.input:hover{
-  border-color: var(--input-border-hover);
-}
-
-.input:focus{
-  border-color: var(--input-border-focus);
-  box-shadow: 0 0 0 3px rgba(59,130,246,0.16);
-}
-
-.input.invalid{
-  border-color: var(--input-border-invalid);
-  box-shadow: 0 0 0 3px rgba(214,69,69,0.12);
-}
-
-/* Select with custom chevron */
-select.input{
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
-  background-color:#fff;
-  background-image:
-    linear-gradient(45deg, transparent 50%, #65748b 50%),
-    linear-gradient(135deg, #65748b 50%, transparent 50%),
-    linear-gradient(to right, #d1d5db, #d1d5db);
-  background-position:
-    right 12px center,     /* chevron tip */
-    right 6px center,      /* chevron base */
-    right 36px center;     /* divider line */
-  background-size:
-    6px 6px,
-    6px 6px,
-    1px 60%;
-  background-repeat: no-repeat;
-  padding-right: 44px;      /* space for the chevron */
-}
-select.input::-ms-expand { display:none; }
-
-/* Textarea (if used) */
-textarea.input{
-  height: auto;
-  min-height: 120px;
-  padding: 10px 12px;
-  line-height: 1.5;
-  align-items: flex-start;
-}
-
-/* Radios */
-.radio-row{
-  display:flex;
-  gap:14px;
-  align-items:center;
-  flex-wrap:wrap;
-  justify-content: flex-start;
-}
-.radio{ display:flex; gap:8px; align-items:center; font-size:14px; color:#0f172a; }
-
-/* Errors */
-.error{
-  color:var(--danger);
-  margin:2px 0 0;
-  font-size:12.5px;           /* slightly larger error text */
-}
-
-/* Actions (RIGHT aligned) */
-.actions-right{
-  display:flex;
-  justify-content: flex-end;
-  margin-top: 10px;
-}
-
-/* Buttons — EXACTLY same size as inputs */
-.btn{
-  height: var(--field-height);   /* same height as .input */
-  background:var(--accent);
-  color:#fff;
-  border:none;
-  border-radius:8px;
-  padding:0 16px;
-  font-weight:700;
-  cursor:pointer;
-  font-size:14px;                /* same text size as inputs */
-  letter-spacing: .2px;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-}
-.btn:hover{ background:var(--accent-600) }
-.btn-commit{ width: 240px; }     /* can be 100% on narrow */
-
- /* ========== RESPONSIVE ========== */
-@media (max-width: 960px){
-  .form-grid{ grid-template-columns: 1fr; }
-  .content { padding: 12px; }
-  .panel   { padding: 14px 16px; }
-  .btn-commit{ width: 100%; }    /* wide button on narrow screens */
-}
-@media (max-width: 720px){
-  .shell{ flex-direction:column; }
-  .sidebar{ width:100%; flex-direction:row; gap:8px; }
-  .nav{ flex-direction:row; flex:1; overflow:hidden; }
-}/* ============================================================
-   REGISTER — DARK STICKY TOOLBAR (MATCH OTHER SCREENS)
-   ============================================================ */
-.register-page .reg-toolbar {
-  position: sticky;
-  top: 0;                 /* sits right under Header */
-  z-index: 20;
-  background: #111827;    /* dark toolbar */
-  color: #e5e7eb;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  padding: 10px 14px;
-  border-bottom: 1px solid #1f2937;
-}
-.register-page .reg-toolbar-left { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.register-page .reg-title { margin: 0; font-size: 17px; font-weight: 800; color: #ffffff; letter-spacing: 0.2px; }
-.register-page .reg-meta { font-size: 12px; color: #9ca3af; }
-.register-page .reg-toolbar-right { display: flex; gap: 10px; align-items: center; }
-
-/* Role badge on the right side */
-.register-page .reg-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: #1f2937;
-  color: #e5e7eb;
-  font-size: 12px;
-  font-weight: 700;
-  border: 1px solid #374151;
-}
-
-@media (max-width: 768px) {
-  .register-page .reg-toolbar { grid-template-columns: 1fr; row-gap: 6px; }
-  .register-page .reg-toolbar-right { justify-content: flex-start; }
-}
-
-/* ============================================================
-   DESIGN TOKENS
-   ============================================================ */
-:root{
-  --bg:#f3f4f6;
-  --panel-bg:#e2e6ee;
-  --sidebar-gray:#e5e7eb;
-
-  --card:#f7f9fc;
-  --ink:#1c2533;
-  --muted:#5f6b81;
-
-  --accent:#2d5b8a;
-  --accent-600:#244a72;
-  --line:#dfe4ec;
-  --danger:#d64545;
-  --focus:#3b82f6;
-
-  /* Input borders */
-  --input-border:#c8d1de;
-  --input-border-hover:#aeb9ca;
-  --input-border-focus:#3b82f6;
-  --input-border-invalid:#d64545;
-  --input-bg:#ffffff;
-
-  /* Layout / sizing */
-  --panel-max: 1064px;
-  --center-width: 100%;
-  --field-gap: 10px;
-  --field-height: 44px;
-  --radius: 10px;
-  --header-h: 56px;
-  --well-bg: #edf1f8;
-
-  --panel-min-h: 480px;
-}
-
-/* ============================================================
-   GLOBAL (minimal reset)
-   ============================================================ */
-*,
-*::before,
-*::after { box-sizing: border-box; }
-
-/* ============================================================
-   PAGE ROOT
-   ============================================================ */
-.register-page{
+.register-page .shell {
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  color: var(--ink);
-  background: var(--bg);
-  overflow: hidden; /* page wrapper — right side scrolls */
-  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  overflow: hidden;              /* keep the shell fixed */
 }
 
-/* ============================================================
-   SHELL (viewport minus header + toolbar)
-   ============================================================ */
-.register-page .shell{
-  display:flex;
-  height: calc(100vh - var(--header-h));
-  min-height: calc(100vh - var(--header-h));
-  background:#fff; /* unify underlayer to pure white */
-}
-
-/* ============================================================
-   LEFT PANEL — WHITE (NO TIPS, NO ROLE PICKER)
-   ============================================================ */
-.register-page .reg-sidebar{
-  width:256px;
-  background: #ffffff;                 /* pure white left panel */
-  color:#0f172a;
-  padding:12px 10px;
-  display:flex;
-  flex-direction:column;
-  gap:12px;
-  overflow-y: auto;
-  border-right: 1px solid #e5e7eb;     /* soft divider */
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.02) inset; /* faint inner hairline */
-}
-.register-page .reg-sidebar-head { padding: 4px 2px 6px; }
-.register-page .reg-sidebar-title { font-weight: 800; font-size: 14px; color: #0f172a; }
-.register-page .reg-sidebar-sub { font-size: 12.5px; color: #64748b; }
-
-/* (Space reserved in case you add brand/logo blocks later) */
-
-/* ============================================================
-   RIGHT AREA — Single vertical scrollbar lives here
-   ============================================================ */
-.register-page .content{
-  flex:1;
-  padding:14px 16px;
-  background: var(--panel-bg); /* light tint to separate from white sidebar */
-  overflow-y: auto;
+.register-page .content {
+  height: 100%;                  /* take all remaining height */
+  overflow-y: auto;              /* only this area scrolls if needed */
   overflow-x: hidden;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
+  padding-bottom: 20px;          /* avoid last-row clipping on small screens */
 }
 
-/* ============================================================
-   PANEL (card)
-   ============================================================ */
-.register-page .panel{
+/* (Keep your existing 2-column grid and inputs—no visual change.) */
+
+/* Optional: Button sits closer to last field and matches input height/width */
+.register-page .section:has(.actions-right) { margin-top: 6px; }
+.register-page .actions-right { margin-top: 0; gap: 8px; }
+.register-page .btn-commit {
   width: 100%;
-  max-width: var(--panel-max);
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 16px 18px;
-  box-shadow: 0 1px 2px rgba(16,24,40,0.06);
-  display: flex;
-  flex-direction: column;
-  overflow: visible;
-  min-height: var(--panel-min-h);
-  max-height: none;
-}
-
-/* Panel header */
-.register-page .panel-header{
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 12px;
-}
-.register-page .panel-header h2{
-  margin:0 0 2px;
-  font-size:20px;
-  font-weight:800;
-}
-.register-page .panel-desc{
-  margin:0;
-  color:var(--muted);
-  font-size:13.5px;
-  line-height:1.5;
-}
-
-/* ============================================================
-   FORM LAYOUT
-   ============================================================ */
-.register-page .form-body{
-  width: 100%;
-  display: block;              /* avoid flex growth that pushes footer down */
-}
-
-.register-page .form-grid{
-  display: grid;
-  grid-template-columns: 1fr 1fr;    /* TWO COLUMNS */
-  column-gap: 16px;
-  row-gap: 12px;
-  width: 100%;
-  min-height: 0;
-  padding-bottom: 6px;
-
-  align-items: start;
-  grid-auto-rows: min-content;
-}
-
-/* Each field ‘section’ */
-.register-page .section{
-  display: grid;
-  grid-template-columns: 1fr;
-  align-items: start;
-  gap: 10px;
-  background: transparent;
-  break-inside: avoid;
-  min-height: 78px;            /* slightly taller row baseline */
-}
-
-/* Full-width sections (for action rows) */
-.register-page .section:has(.actions-right) {
-  grid-column: 1 / -1;
-}
-
-/* Divider spans both columns (kept if needed) */
-.register-page .divider{
-  height: 1px;
-  border: none;
-  background: #e0e5ec;
-  margin: 4px 0;
-  grid-column: 1 / -1;
-}
-
-/* Title/desc within a section */
-.register-page .section-head{ display:flex; flex-direction:column; gap:6px; }
-.register-page .section-title{
-  font-weight: 800;
-  color: #1f2937;
-  font-size: 15px;            /* larger title above inputs */
-}
-.register-page .section-sub{
-  color: var(--muted);
-  font-size: 13px;            /* helper text above inputs */
-  line-height: 1.45;
-}
-
-/* Field & control */
-.register-page .section-control{ width: 100%; }
-.register-page .field{
-  display:flex;
-  flex-direction:column;
-  gap: var(--field-gap);
-}
-.register-page .label{
-  font-size: 14px;
-  font-weight:600;
-}
-
-/* ============================================================
-   CONTROLS (base)
-   ============================================================ */
-.register-page .input{
-  width: 100%;
-  height: var(--field-height);                 /* unified with button */
-  border: 1px solid var(--input-border);       /* explicit input border color */
-  border-radius: 8px;
-  padding: 0 12px;
-  font-size: 14px;
-  line-height: normal;
-  outline: none;
-  background: var(--input-bg);
-  color: var(--ink);
-  display: inline-flex;
-  align-items: center;
-  transition: border-color .15s ease, box-shadow .15s ease;
-}
-.register-page .input:hover{
-  border-color: var(--input-border-hover);
-}
-.register-page .input:focus{
-  border-color: var(--input-border-focus);
-  box-shadow: 0 0 0 3px rgba(59,130,246,0.16);
-}
-.register-page .input.invalid{
-  border-color: var(--input-border-invalid);
-  box-shadow: 0 0 0 3px rgba(214,69,69,0.12);
-}
-
-/* Select (if used) */
-.register-page select.input{
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
-  background-color:#fff;
-  background-image:
-    linear-gradient(45deg, transparent 50%, #65748b 50%),
-    linear-gradient(135deg, #65748b 50%, transparent 50%),
-    linear-gradient(to right, #d1d5db, #d1d5db);
-  background-position:
-    right 12px center,     /* chevron tip */
-    right 6px center,      /* chevron base */
-    right 36px center;     /* divider line */
-  background-size:
-    6px 6px,
-    6px 6px,
-    1px 60%;
-  background-repeat: no-repeat;
-  padding-right: 44px;      /* space for the chevron */
-}
-.register-page select.input::-ms-expand { display:none; }
-
-/* Radios */
-.register-page .radio-row{
-  display:flex;
-  gap:14px;
-  align-items:center;
-  flex-wrap:wrap;
-  justify-content: flex-start;
-}
-.register-page .radio{ display:flex; gap:8px; align-items:center; font-size:14px; color:#0f172a; }
-
-/* Errors */
-.register-page .error{
-  color:var(--danger);
-  margin:2px 0 0;
-  font-size:12.5px;
-}
-
-/* ============================================================
-   ACTIONS (RIGHT aligned)
-   ============================================================ */
-.register-page .actions-right{
-  display:flex;
-  justify-content: flex-end;
-  margin-top: 10px;
-}
-
-/* Buttons — EXACTLY same size as inputs */
-.register-page .btn{
-  height: var(--field-height);
-  background:var(--accent);
-  color:#fff;
-  border:none;
-  border-radius:8px;
-  padding:0 16px;
-  font-weight:700;
-  cursor:pointer;
-  font-size:14px;
-  letter-spacing: .2px;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-}
-.register-page .btn:hover{ background:var(--accent-600) }
-.register-page .btn-commit{ width: 240px; }     /* can be 100% on narrow */
-
-/* ============================================================
-   RESPONSIVE
-   ============================================================ */
-@media (max-width: 960px){
-  .register-page .form-grid{ grid-template-columns: 1fr; }
-  .register-page .content { padding: 12px; }
-  .register-page .panel   { padding: 14px 16px; }
-  .register-page .btn-commit{ width: 100%; }    /* wide button on narrow screens */
-
-  /* Stack columns; sidebar goes on top on mobile */
-  .register-page .shell{ flex-direction:column; }
-  .register-page .reg-sidebar{ width:100%; }
-}
-@media (max-width: 720px){
-  .register-page .reg-sidebar-sub { font-size: 12px; }
+  max-width: none;
+  align-self: stretch;
+  height: var(--field-h);
+  padding-left: 16px;
+  padding-right: 16px;
 }

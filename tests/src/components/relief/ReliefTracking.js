@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Header from '../Header';
 import '../css/ReliefTracking.css';
 
 const categoryLabels = {
@@ -226,7 +225,7 @@ export default function ReliefTracking() {
 
   return (
     <div className="rt-app" ref={appRef}>
-      <Header />
+
 
       {/* Sticky toolbar */}
       <div className="rt-toolbar">

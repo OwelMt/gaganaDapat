@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'; 
 import { useNavigate } from 'react-router-dom';
-import Header from '../Header';
 
 export default function ReliefRequestsList() {
   const navigate = useNavigate();
@@ -81,7 +80,6 @@ export default function ReliefRequestsList() {
 
   return (
     <div>
-      <Header/>
       <h2>Pending Relief Requests</h2>
       {rows.length === 0 ? (
         <p>No pending requests.</p>

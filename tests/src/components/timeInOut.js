@@ -1,7 +1,8 @@
+// src/components/timeInOut.js
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './css/timeInOut.css';
-import Header from './Header';
+import DashboardShell from './layout/DashboardShell';
 
 export default function TimeInOut() {
   const navigate = useNavigate();
@@ -54,7 +55,7 @@ export default function TimeInOut() {
     if (!app) return;
 
     const setVars = () => {
-      const headerEl = app.querySelector(':scope > *:first-child'); // <Header/>
+      const headerEl = app.querySelector(':scope > *:first-child'); // <Header/> previously; now toolbar will be first child
       const headerH = headerEl ? headerEl.offsetHeight : 0;
       const toolbarH = toolbarRef.current ? toolbarRef.current.offsetHeight : 0;
 
@@ -180,122 +181,122 @@ export default function TimeInOut() {
       : logs.length === PAGE_SIZE; // ultra-fallback
 
   return (
-    <div className="tio-app" ref={appRef}>
-      <Header />
-
-      {/* Sticky dark toolbar */}
-      <div className="tio-toolbar" ref={toolbarRef}>
-        <div className="tio-toolbar-left">
-          <h1 className="tio-title">Account Time Logs</h1>
-          <span className="tio-meta">
-            {loading ? 'Loading…' : hasLogs ? `${logs.length}/${PAGE_SIZE} rows` : 'No records'}
-          </span>
-        </div>
-
-        <div className="tio-toolbar-right">
-          <select
-            className="tio-select"
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value)}
-            aria-label="Filter by role"
-          >
-            <option value="">All Roles</option>
-            <option value="admin">Admin</option>
-            <option value="drrmo">DRRMO</option>
-            <option value="brgy">BRGY</option>
-          </select>
-
-          <input
-            className="tio-input"
-            type="date"
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            aria-label="Filter by date"
-          />
-          <button onClick={() => navigate(-1)} className="ea-back">Back</button>
-        </div>
-      </div>
-
-      {/* Main content region — PAGE never scrolls; PANEL scrolls */}
-      <main className="tio-main" role="main" ref={mainRef}>
-        {/* Two-row grid: [table area 1fr] + [pagination auto] */}
-        <section className="tio-table-region" aria-label="Time logs table" ref={regionRef}>
-          {/* ⬇️ This is the ONLY scrollable area */}
-          <div className="tio-table-wrap">
-            <table className="tio-table">
-              <thead>
-                <tr>
-                  <th>Username</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Time In</th>
-                  <th>Time Out</th>
-                  <th>Duration</th>
-                </tr>
-              </thead>
-              <tbody>
-                {!loading && !hasLogs && (
-                  <tr className="tio-empty-row">
-                    <td colSpan={6}>
-                      <div className="tio-empty-inline">
-                        <div className="tio-empty-emoji" aria-hidden="true">🕒</div>
-                        <div className="tio-empty-text">
-                          <strong>No logs found</strong>
-                          <span className="tio-muted">Adjust filters to see results.</span>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-
-                {hasLogs && logs.map((log) => (
-                  <tr key={log._id}>
-                    <td data-label="Username" title={log.username || ''}>
-                      {log.username || '—'}
-                    </td>
-                    <td data-label="Role" title={log.role || ''}>
-                      {log.role || '—'}
-                    </td>
-                    <td data-label="Status">
-                      {log.timeOut === null
-                        ? <span className="tio-status tio-online">Online</span>
-                        : <span className="tio-status tio-offline">Offline</span>}
-                    </td>
-                    <td data-label="Time In">{formatTime(log.timeIn)}</td>
-                    <td data-label="Time Out">{formatTime(log.timeOut)}</td>
-                    <td data-label="Duration">{getDuration(log.timeIn, log.timeOut)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination — always visible (grid row 2) */}
-          <div className="tio-pagination">
-            <button
-              className="tio-btn"
-              disabled={!canPrev}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              aria-label="Previous page"
-            >
-              ← Prev
-            </button>
-
-            <span className="tio-page">
-              Page {page} of {totalPagesUI || 1}
+    <DashboardShell>
+      <div className="tio-app" ref={appRef}>
+        {/* Sticky dark toolbar */}
+        <div className="tio-toolbar" ref={toolbarRef}>
+          <div className="tio-toolbar-left">
+            <h1 className="tio-title">Account Time Logs</h1>
+            <span className="tio-meta">
+              {loading ? 'Loading…' : hasLogs ? `${logs.length}/${PAGE_SIZE} rows` : 'No records'}
             </span>
-
-            <button
-              className="tio-btn"
-              disabled={!canNext}
-              onClick={() => setPage((p) => p + 1)}
-              aria-label="Next page"
-            >
-              Next →
-            </button>
           </div>
-        </section>
-      </main>
-    </div>
+
+          <div className="tio-toolbar-right">
+            <select
+              className="tio-select"
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              aria-label="Filter by role"
+            >
+              <option value="">All Roles</option>
+              <option value="admin">Admin</option>
+              <option value="drrmo">DRRMO</option>
+              <option value="brgy">BRGY</option>
+            </select>
+
+            <input
+              className="tio-input"
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              aria-label="Filter by date"
+            />
+            <button onClick={() => navigate(-1)} className="ea-back">Back</button>
+          </div>
+        </div>
+
+        {/* Main content region — PAGE never scrolls; PANEL scrolls */}
+        <main className="tio-main" role="main" ref={mainRef}>
+          {/* Two-row grid: [table area 1fr] + [pagination auto] */}
+          <section className="tio-table-region" aria-label="Time logs table" ref={regionRef}>
+            {/* ⬇️ This is the ONLY scrollable area */}
+            <div className="tio-table-wrap">
+              <table className="tio-table">
+                <thead>
+                  <tr>
+                    <th>Username</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Time In</th>
+                    <th>Time Out</th>
+                    <th>Duration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {!loading && !hasLogs && (
+                    <tr className="tio-empty-row">
+                      <td colSpan={6}>
+                        <div className="tio-empty-inline">
+                          <div className="tio-empty-emoji" aria-hidden="true">🕒</div>
+                          <div className="tio-empty-text">
+                            <strong>No logs found</strong>
+                            <span className="tio-muted">Adjust filters to see results.</span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+
+                  {hasLogs && logs.map((log) => (
+                    <tr key={log._id}>
+                      <td data-label="Username" title={log.username || ''}>
+                        {log.username || '—'}
+                      </td>
+                      <td data-label="Role" title={log.role || ''}>
+                        {log.role || '—'}
+                      </td>
+                      <td data-label="Status">
+                        {log.timeOut === null
+                          ? <span className="tio-status tio-online">Online</span>
+                          : <span className="tio-status tio-offline">Offline</span>}
+                      </td>
+                      <td data-label="Time In">{formatTime(log.timeIn)}</td>
+                      <td data-label="Time Out">{formatTime(log.timeOut)}</td>
+                      <td data-label="Duration">{getDuration(log.timeIn, log.timeOut)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination — always visible (grid row 2) */}
+            <div className="tio-pagination">
+              <button
+                className="tio-btn"
+                disabled={!canPrev}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                aria-label="Previous page"
+              >
+                ← Prev
+              </button>
+
+              <span className="tio-page">
+                Page {page} of {totalPagesUI || 1}
+              </span>
+
+              <button
+                className="tio-btn"
+                disabled={!canNext}
+                onClick={() => setPage((p) => p + 1)}
+                aria-label="Next page"
+              >
+                Next →
+              </button>
+            </div>
+          </section>
+        </main>
+      </div>
+    </DashboardShell>
   );
 }

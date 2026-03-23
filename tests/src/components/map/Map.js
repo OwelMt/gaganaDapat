@@ -7,6 +7,7 @@ import {
   Popup,
   useMapEvents,
   useMap,
+  Polyline,
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -39,7 +40,7 @@ const redIcon = new L.Icon({
   iconAnchor: [16, 32],
 });
 
-/* Keep your existing updater (center/zoom when position/zoom changes) */
+/* ---------------- Map Updater ---------------- */
 function MapUpdater({ position, zoom }) {
   const map = useMap();
   useEffect(() => {
@@ -48,7 +49,7 @@ function MapUpdater({ position, zoom }) {
   return null;
 }
 
-/* Keep your existing click handler for Add Place pick */
+/* ---------------- Map Click Handler ---------------- */
 function MapClickHandler({ setPosition, setPlaceName, onSelectLocation }) {
   useMapEvents({
     click(e) {
@@ -65,11 +66,7 @@ function MapClickHandler({ setPosition, setPlaceName, onSelectLocation }) {
           else if (res.data.address) {
             const a = res.data.address;
             const street =
-              a.road ||
-              a.pedestrian ||
-              a.suburb ||
-              a.village ||
-              "Unknown Street";
+              a.road || a.pedestrian || a.suburb || a.village || "Unknown Street";
             const city =
               a.city || a.town || a.village || a.county || "Unknown City";
             short = `${street}, ${city}`;
@@ -87,7 +84,7 @@ function MapClickHandler({ setPosition, setPlaceName, onSelectLocation }) {
   return null;
 }
 
-/* Bridge: listen for window.dispatchEvent(new CustomEvent('emap:flyTo', {detail:{lat,lng,zoom}})) */
+/* ---------------- MapBusBridge ---------------- */
 function MapBusBridge() {
   const map = useMap();
   useEffect(() => {
@@ -103,7 +100,7 @@ function MapBusBridge() {
   return null;
 }
 
-/* A small helper so a marker can make the map fly to itself on click */
+/* ---------------- FlyToOnClickMarker ---------------- */
 function FlyToOnClickMarker({ place, icon, onSelectLocation }) {
   const map = useMap();
   const lat = Number(place.latitude);
@@ -133,8 +130,14 @@ function FlyToOnClickMarker({ place, icon, onSelectLocation }) {
   );
 }
 
-/* =================== MAP COMPONENT (unchanged props) =================== */
-const Map = ({ onSelectLocation, places = [] }) => {
+/* =================== MAP COMPONENT =================== */
+const Map = ({
+  onSelectLocation,
+  places = [],
+  currentCoords = {},
+  evacCoords = {},
+  routeCoords = [],
+}) => {
   const [position, setPosition] = useState(PASIG_CENTER);
   const [zoom, setZoom] = useState(13);
   const [placeName, setPlaceName] = useState("Pasig City");
@@ -146,15 +149,12 @@ const Map = ({ onSelectLocation, places = [] }) => {
       style={{ height: "100%", width: "100%" }}
     >
       <MapBusBridge />
-
       <MapUpdater position={position} zoom={zoom} />
-
       <MapClickHandler
         setPosition={setPosition}
         setPlaceName={setPlaceName}
         onSelectLocation={onSelectLocation}
       />
-
       <TileLayer
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         attribution="© OpenStreetMap contributors"
@@ -183,7 +183,26 @@ const Map = ({ onSelectLocation, places = [] }) => {
           />
         );
       })}
+
+      {/* Current location marker */}
+      {currentCoords.lat && currentCoords.lng && (
+        <Marker position={[currentCoords.lat, currentCoords.lng]} icon={greenIcon}>
+          <Popup>Current Location</Popup>
+        </Marker>
+      )}
+
+      {/* Evacuation location marker */}
+      {evacCoords.lat && evacCoords.lng && (
+        <Marker position={[evacCoords.lat, evacCoords.lng]} icon={redIcon}>
+          <Popup>Evacuation Location</Popup>
+        </Marker>
+      )}
+
+      {/* OSRM Route Polyline */}
+      {routeCoords.length > 0 && <Polyline positions={routeCoords} color="blue" />}
     </MapContainer>
+
+    
   );
 };
 
