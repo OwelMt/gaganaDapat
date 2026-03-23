@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const session = require('express-session');
 const dotenv = require('dotenv');
-const fetch = require('node-fetch'); // keep this if you use fetch
+const fetch = require('node-fetch'); // needed for hazard route
 const path = require('path');
 const fs = require('fs');
 
@@ -31,7 +31,7 @@ const app = express();
 app.set('trust proxy', 1);
 
 // --------------------
-// Ensure uploads folders exist
+// Upload folders
 // --------------------
 const uploadDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -45,8 +45,11 @@ if (!fs.existsSync(guidelinesDir)) fs.mkdirSync(guidelinesDir, { recursive: true
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// IMPORTANT for Render / HTTPS
+app.set('trust proxy', 1);
+
 // --------------------
-// CORS
+// CORS (merged + FIXED)
 // --------------------
 const FRONTEND_URLS = [
   'http://localhost:3000',
@@ -66,16 +69,19 @@ app.use(cors({
 }));
 
 // --------------------
-// Session
+// Session (FIXED for cross-origin)
 // --------------------
+const isProd = process.env.NODE_ENV === 'production';
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'supersecretkey',
   resave: false,
   saveUninitialized: false,
+  proxy: isProd,
   cookie: {
-    secure: true,          // REQUIRED for Render HTTPS
+    secure: isProd,                 // true in Render
     httpOnly: true,
-    sameSite: 'none',      // REQUIRED for cross-origin cookies
+    sameSite: isProd ? 'none' : 'lax', // CRITICAL FIX
     maxAge: 1000 * 60 * 60 * 24
   }
 }));
@@ -84,13 +90,15 @@ app.use(session({
 // DEBUG middleware
 // --------------------
 app.use((req, res, next) => {
-  console.log("REQUEST HIT:", req.method, req.url, req.session);
+  console.log("REQUEST:", req.method, req.url);
+  console.log("SESSION:", req.session);
   next();
 });
 
+// --------------------
 // Debug route
+// --------------------
 app.get("/api/debug-express", (req, res) => {
-  console.log("SESSION DEBUG:", req.session);
   res.json({
     message: "EXPRESS WORKING",
     session: req.session
@@ -120,24 +128,53 @@ app.use("/connection", connectionRoutes);
 app.use('/api/timeinout', timeInOutRoutes);
 app.use('/api/edit', editRoutes);
 
-// Test route
+// --------------------
+// Hazard proxy (from 2nd file)
+// --------------------
+app.get("/hazards", async (req, res) => {
+  try {
+    const citiesRes = await fetch("https://api.mapakalamidad.ph/cities");
+    const citiesJson = await citiesRes.json();
+
+    const pasig = citiesJson.result?.find(
+      city => city.name.toLowerCase().includes("pasig") || city.code.toLowerCase().includes("pasig")
+    );
+
+    if (!pasig) {
+      return res.status(404).json({ error: "Pasig City not found" });
+    }
+
+    const reportsRes = await fetch(
+      `https://api.mapakalamidad.ph/reports?geoformat=geojson&admin=${pasig.code}`,
+      { headers: { "User-Agent": "MyHazardMapApp/1.0" } }
+    );
+
+    const reportsData = await reportsRes.json();
+    res.json(reportsData.result);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --------------------
+// Test routes
+// --------------------
 app.get("/api/tryserver", (req, res) => {
   res.json({ message: "Server is working!" });
 });
 
-// Root
 app.get("/", (req, res) => {
   res.send("ROOT WORKING");
 });
 
 // --------------------
-// React frontend fallback
+// React build (production)
 // --------------------
 if (process.env.NODE_ENV === "production") {
   const buildPath = path.join(__dirname, "..", "tests", "build");
   app.use(express.static(buildPath));
 
-  // Only catch non-API routes for React
   app.get(/^\/(?!api).*/, (req, res) => {
     res.sendFile(path.join(buildPath, "index.html"));
   });
@@ -149,6 +186,13 @@ if (process.env.NODE_ENV === "production") {
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Atlas connected"))
   .catch(err => console.error("MongoDB connection error:", err));
+
+mongoose.connection.once("open", async () => {
+  console.log("Connected DB:", mongoose.connection.name);
+
+  const collections = await mongoose.connection.db.listCollections().toArray();
+  console.log("Collections:", collections.map(c => c.name));
+});
 
 // --------------------
 // Start server
