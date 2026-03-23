@@ -73,7 +73,7 @@ export default function Login() {
   console.log("Attempting login with:", payload);
 
   try {
-    const res = await fetch(`${local}/api/auth/login`, {
+    const res = await fetch(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
