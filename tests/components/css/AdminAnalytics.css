@@ -1,0 +1,310 @@
+/* src/components/css/AdminAnalytics.css */
+
+/* Root: fill the shell's content area and use vertical scrolling only */
+.analytics-page {
+  --text: #0b1b12;          /* dark greenish text for headings/ticks */
+  --subtle: #14532d;        /* subtitle / labels */
+  --muted: #166534;         /* faint labels */
+  --ring: #14532d;          /* borders */
+  --card: #f0fdf4;          /* very light green */
+  --page: #ecfdf5;          /* page background */
+  --shadow: 0 8px 16px rgba(16, 185, 129, 0.18);
+
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;         /* allow child to manage overflow */
+  background: var(--page);
+  overflow: hidden;       /* prevent sideways scroll bleed */
+}
+
+/* This one actually scrolls vertically */
+.analytics-page .analytics-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;       /* ✅ vertical only */
+  overflow-x: hidden;     /* ✅ no horizontal scroll */
+}
+
+/* Container caps width to avoid right overlap and removes white margins */
+.analytics-page .analytics-container {
+  width: min(1200px, 98vw); /* tighter to shell edges */
+  margin-inline: auto;
+  padding: 10px 8px 18px 8px;  /* compact */
+  color: var(--text);
+}
+
+/* Header */
+.analytics-page .analytics-header {
+  margin: 0 0 8px 0;       /* compact, no top whitespace */
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+.analytics-page .analytics-title {
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0 0 2px 2px;
+  color: var(--text);      /* darker title as requested */
+}
+.analytics-page .analytics-subtitle {
+  color: var(--subtle);    /* darker subtitle as requested */
+  margin-left: 2px;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+/* KPIs grid */
+.analytics-page .analytics-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (max-width: 1100px) { .analytics-page .analytics-metric-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 900px)  { .analytics-page .analytics-metric-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 640px)  { .analytics-page .analytics-metric-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.analytics-page .a-metric-card {
+  background: var(--card);
+  border: 1px solid var(--ring);
+  border-radius: 10px;
+  padding: 8px;           /* compact */
+  box-shadow: var(--shadow);
+}
+.analytics-page .a-metric-label {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: .2px;
+}
+.analytics-page .a-metric-value {
+  margin-top: 2px;
+  font-weight: 800;
+  font-size: 19px;
+  color: var(--text);
+}
+
+/* Charts grid */
+.analytics-page .analytics-chart-grid {
+  margin-top: 10px;       /* compact spacing */
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 10px;
+}
+@media (max-width: 900px) {
+  .analytics-page .analytics-chart-grid { grid-template-columns: 1fr; }
+}
+
+.analytics-page .a-card {
+  background: var(--card);
+  border: 1px solid var(--ring);
+  border-radius: 10px;
+  padding: 8px;           /* compact */
+  box-shadow: var(--shadow);
+}
+.analytics-page .a-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: var(--subtle);
+}
+
+/* ✅ Ensure charts always render and never cause horizontal overflow */
+.analytics-page .a-chart-body {
+  position: relative;
+  height: 260px;          /* more compact height; adjust if needed */
+  width: 100%;
+}
+.analytics-page .a-chart-card--full .a-chart-body {
+  height: 300px;
+}
+
+/* Legends under charts (kept, compact, no extra white space) */
+.analytics-page .a-legend-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 6px;
+  color: var(--subtle);
+  font-size: 12px;
+}
+.analytics-page .a-legend-inline--tight { margin-bottom: 2px; } /* keep cards tight to next section */
+.analytics-page .a-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+  margin: 0 6px 0 2px;
+}
+/* ===========================
+   ANALYTICS: LAST-RESORT FIX
+   Paste at the very end of your CSS bundle
+   =========================== */
+
+/* Ensure the shell and page can stretch full height */
+html, body {
+  height: 100% !important;
+}
+
+/* Root analytics container fills available space in DashboardShell */
+.analytics-page {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;        /* allow child to control the scrolling */
+  overflow: hidden !important;      /* block horizontal leaks from children */
+  /* Optional: keep your green background */
+  background: #ecfdf5 !important;   /* mint green */
+  box-sizing: border-box !important;
+}
+
+/* The scroller: vertical scroll only, occupies rest of the panel */
+.analytics-page .analytics-scroll {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;      /* ✅ scroll down */
+  overflow-x: hidden !important;    /* ✅ no horizontal scroll */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Safe content width: never overflow to the right, remove extra white margins */
+.analytics-page .analytics-container {
+  width: min(1200px, 98vw) !important;   /* reduce to fit shell with a tiny gutter */
+  margin-inline: auto !important;
+  padding: 8px 6px 14px 6px !important;  /* compact padding to avoid cutoffs */
+  box-sizing: border-box !important;
+}
+
+/* Compact header and darker text, no stray gaps above/below */
+.analytics-page .analytics-header {
+  margin: 0 0 6px 0 !important;
+  padding: 0 !important;
+}
+.analytics-page .analytics-title {
+  color: #0b1b12 !important;     /* darker heading */
+  margin: 0 0 2px 2px !important;
+  line-height: 1.15 !important;
+}
+.analytics-page .analytics-subtitle {
+  color: #14532d !important;     /* darker subtitle */
+  margin: 0 0 0 2px !important;
+  line-height: 1.2 !important;
+}
+
+/* Metrics grid: compact and responsive */
+.analytics-page .analytics-metric-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  margin: 0 !important;
+}
+@media (max-width: 1100px) {
+  .analytics-page .analytics-metric-grid { grid-template-columns: repeat(4, 1fr) !important; }
+}
+@media (max-width: 900px) {
+  .analytics-page .analytics-metric-grid { grid-template-columns: repeat(3, 1fr) !important; }
+}
+@media (max-width: 640px) {
+  .analytics-page .analytics-metric-grid { grid-template-columns: repeat(2, 1fr) !important; }
+}
+
+/* Metric cards: prevent clipping of large numbers (e.g., Total Capacity) */
+.analytics-page .a-metric-card {
+  padding: 8px !important;
+  border-radius: 10px !important;
+  border: 1px solid #14532d !important;
+  background: #f0fdf4 !important;
+  box-shadow: 0 8px 16px rgba(16, 185, 129, 0.18) !important;
+  min-width: 0 !important;          /* prevent overflow inside grid cells */
+}
+.analytics-page .a-metric-label {
+  color: #166534 !important;
+  font-size: 12px !important;
+}
+.analytics-page .a-metric-value {
+  color: #0b1b12 !important;
+  font-weight: 800 !important;
+  font-size: 19px !important;
+  line-height: 1.1 !important;
+  word-break: break-word !important; /* long numbers won’t overflow */
+}
+
+/* Charts grid: compact, responsive, no horizontal overflow */
+.analytics-page .analytics-chart-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+  margin-top: 10px !important;
+}
+@media (max-width: 900px) {
+  .analytics-page .analytics-chart-grid { grid-template-columns: 1fr !important; }
+}
+
+/* Chart cards + titles */
+.analytics-page .a-card {
+  padding: 8px !important;
+  border-radius: 10px !important;
+  border: 1px solid #14532d !important;
+  background: #f0fdf4 !important;
+  box-shadow: 0 8px 16px rgba(16, 185, 129, 0.18) !important;
+}
+.analytics-page .a-card-title {
+  color: #14532d !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  margin: 0 0 6px 0 !important;
+}
+
+/* ✅ The key to visible charts: give the canvas a container height */
+.analytics-page .a-chart-body {
+  position: relative !important;
+  height: 260px !important;   /* adjust if you want taller charts */
+  width: 100% !important;
+  min-width: 0 !important;
+}
+.analytics-page .a-chart-card--full .a-chart-body {
+  height: 300px !important;
+}
+
+/* Legends under charts: keep visible and tight; includes Available/Limited/Full */
+.analytics-page .a-legend-inline {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 10px !important;
+  align-items: center !important;
+  margin-top: 6px !important;
+  margin-bottom: 2px !important;
+  color: #14532d !important;
+  font-size: 12px !important;
+}
+.analytics-page .a-legend-dot {
+  width: 10px !important;
+  height: 10px !important;
+  border-radius: 999px !important;
+  display: inline-block !important;
+  margin: 0 6px 0 2px !important;
+}
+
+/* Safety nets: prevent any child from forcing horizontal scroll */
+.analytics-page, 
+.analytics-page * {
+  box-sizing: border-box !important;
+  max-width: 100% !important;
+}
+
+/* If some global rule is adding margins/paddings to sections/cards, neutralize them here */
+.analytics-page section,
+.analytics-page .card,
+.analytics-page .a-card {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* Optional: if your shell injects inner padding around content, pull the analytics out to edges */
+.analytics-page .analytics-container {
+  /* Uncomment if you still see left/right gutters you don’t want */
+  /* padding-left: 0 !important;
+     padding-right: 0 !important; */
+}

@@ -1,0 +1,494 @@
+/* ======= Height knobs ======= */
+:root {
+  --panel-w: 480px;     /* wider default */
+  --panel-w-lg: 560px;  /* extra wide on large screens */
+  --header-h: 64px;     /* header height (Header.jsx) */
+  --toolbar-h: 48px;    /* toolbar height */
+
+  /* Look-and-feel tokens for panels */
+  --card-bg: #ffffff;
+  --card-line: #e5e7eb;
+  --card-shadow: 0 8px 24px rgba(0,0,0,0.08);
+  --ink-strong: #1f2937;
+  --ink-muted: #64748b;
+  --brand-green: #0F4D25;
+  --brand-green-strong: #0c3f1f;
+  --brand-green-soft: #EAF4EA;
+  --brand-line: #b7d4bd;
+}
+
+/* ===== Screen lock for this page only (no page scroll) ===== */
+.evac-screen-lock {
+  position: fixed;
+  left: 0; right: 0;
+  top: var(--header-h);
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;          /* page cannot scroll */
+  background: #f2f5fb;
+}
+
+/* ===== Toolbar (white title, stable height) ===== */
+.evac-toolbar {
+  flex: 0 0 var(--toolbar-h);
+  height: var(--toolbar-h);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  background: var(--brand-green);        /* deep matcha */
+  border-bottom: 1px solid #0b381b;
+}
+.evac-toolbar-left,
+.evac-toolbar-left strong {
+  color: #ffffff;
+  font-weight: 900;
+  letter-spacing: .2px;
+}
+.evac-toolbar-right { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+.tbtn {
+  height: 32px;
+  border: 1px solid rgba(255,255,255,0.38);
+  background: rgba(84, 143, 49, 0.08);
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.tbtn:hover { background: rgba(255,255,255,0.16); }
+
+/* ===== Split layout (map | panel) ===== */
+.evac-page {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 1fr var(--panel-w);
+  height: calc(100vh - var(--header-h) - var(--toolbar-h));
+  min-height: calc(100vh - var(--header-h) - var(--toolbar-h));
+  overflow: hidden;  /* map never scrolls the page; panel owns its scroll */
+  background: #f2f5fb;
+}
+.evac-page.collapsed { grid-template-columns: 1fr 0px; }
+
+@media (min-width: 1400px) {
+  .evac-page { grid-template-columns: 1fr var(--panel-w-lg); }
+}
+
+/* ===== Map (no scroll) ===== */
+.evac-map {
+  position: relative;
+  height: 100%;
+  min-height: 520px;
+  border-right: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+.evac-map > * {
+  height: 100%;
+  width: 100%;
+  display: block;
+}
+
+/* ===== Right Panel — original baseline ===== */
+.evac-panel {
+  background: #fff;
+  border-left: 1px solid #e2e8f0;
+  padding: 14px 16px;
+
+  /* original layout (will be overridden by slider overrides below) */
+  display: grid;
+  grid-template-rows:
+    auto
+    auto
+    minmax(0, 1fr)
+    auto
+    auto
+    auto
+    auto
+    auto
+    auto
+    auto;
+  gap: 10px;
+
+  /* original scrolling (moved to views below) */
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  height: 100%;
+}
+
+/* ---------- Brand ---------- */
+.evac-brand { display: flex; align-items: center; gap: 8px; }
+.evac-brand-logo { width: 28px; height: 28px; object-fit: contain; }
+.evac-brand-title { color: var(--ink-strong); font-weight: 800; font-size: 16px; }
+
+/* ---------- Search ---------- */
+.evac-search input {
+  width: 100%;
+  height: 38px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 14px;
+  outline: none;
+  background: #fff;
+  color: #111827;
+}
+.evac-search input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+}
+
+/* ---------- LIST (Dedicated scroll region) ---------- */
+.evac-list {
+  background: var(--card-bg);
+  border: 1px solid var(--card-line);
+  border-radius: 10px;
+  margin-bottom: 22px;        /* ★ spacing: more room below list */
+  padding: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 120px;
+  max-height: 100%;
+}
+.evac-list-item {
+  display: grid;
+  grid-template-columns: 18px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+  border-radius: 8px;
+  color: #0f172a;
+  cursor: pointer;
+}
+.evac-list-item:hover { background: #eef2f7; }
+.evac-list-item.selected { background: #e6f0ff; box-shadow: inset 0 0 0 1px #c7ddff; }
+.evac-list-item input[type="radio"] { margin: 0; }
+.evac-list-name { font-weight: 700; font-size: 14px; }
+.evac-list-loc { color: var(--ink-muted); font-size: 12px; }
+.evac-dot { width: 10px; height: 10px; border-radius: 50%; }
+.dot-green { background: #16a34a; }
+.dot-orange { background: #f59e0b; }
+.dot-red { background: #ef4444; }
+.evac-empty { text-align: center; color: var(--ink-muted); padding: 14px 0; font-size: 13px; }
+
+/* ---------- Legend ---------- */
+.evac-legend {
+  display: grid;
+  grid-template-columns: auto 16px auto 16px auto 16px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  color: #0f172a;
+  font-size: 12px;
+}
+.legend-title { color: #0f172a; }
+.legend-dot { width: 14px; height: 14px; border-radius: 50%; }
+.evac-legend .dot-green { background: #16a34a; }
+.evac-legend .dot-orange { background: #f59e0b; }
+.evac-legend .dot-red { background: #ef4444; }
+
+/* ---------- Capacity stepper ---------- */
+.evac-capacity {
+  display: grid;
+  grid-template-columns: 40px 1fr 40px;
+  gap: 12px;                 /* ★ spacing between - [input] + */
+  margin-top: 16px;          /* ★ breathing room above capacity */
+  margin-bottom: 14px;       /* ★ optional space below */
+}
+.cap-btn {
+  height: 42px;              /* ★ slightly taller buttons */
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff; color: #0f172a;
+  font-size: 20px; font-weight: 700; cursor: pointer;
+}
+.cap-btn:hover { background: #f3f4f6; }
+.cap-input {
+  height: 42px;              /* ★ match button height */
+  border: 1px solid #cbd5e1; border-radius: 10px;
+  padding: 0 10px; font-size: 14px;
+}
+
+/* ---------- Status selector ---------- */
+.evac-status {
+  display: grid; gap: 8px;   /* ★ a little more gap */
+  margin-top: 6px;           /* ★ space above status row */
+}
+.status-label { font-weight: 800; font-size: 13px; color: var(--ink-strong); }
+.status-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.status-pill {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px;
+  border-radius: 16px; border: 1px solid #cbd5e1; cursor: pointer; user-select: none;
+  background: #fff;
+}
+.status-pill input[type="radio"] { accent-color: #2563eb; }
+.pill-text { font-size: 13px; }
+
+/* ---------- Selected & Notes ---------- */
+.evac-selected { margin-top: 8px; }  /* ★ */
+.evac-notes    { margin-top: 8px; }  /* ★ */
+
+.evac-selected label, .evac-notes label {
+  display: block; font-size: 12px; font-weight: 700; color: var(--ink-strong); margin-bottom: 6px;
+}
+.evac-selected input, .evac-notes textarea {
+  width: 100%; border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px 12px; font-size: 14px; outline: none;  /* ★ bit more padding */
+}
+.evac-selected input:focus, .evac-notes textarea:focus {
+  border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+}
+
+/* ---------- Actions ---------- */
+.evac-actions {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 14px;                 /* ★ more gap between Back and Update */
+  margin-top: 12px;          /* ★ breathing room above buttons */
+}
+.btn {
+  height: 44px;              /* ★ taller buttons */
+  border-radius: 10px; border: 1px solid transparent;
+  font-weight: 800; letter-spacing: 0.2px; cursor: pointer;
+}
+.btn-back   { background: #FFFFFF; color: var(--brand-green); border: 1px solid var(--brand-line); }
+.btn-back:hover { background: #F7FBF7; }
+.btn-update { background: #119955; color: #ffffff; border: 1px solid #0f884b; }
+.btn-update:hover { background: #0e7f46; border-color: #0e7f46; }
+.btn[disabled] { opacity: .6; cursor: not-allowed; }
+
+/* ---------- Utilities ---------- */
+.evac-utils {
+  display: flex;
+  gap: 14px;                  /* ★ slightly more spacing */
+  flex-wrap: wrap;
+  margin-top: 10px;           /* ★ breathing room above utility links */
+}
+.link-btn { border: none; background: transparent; color: var(--brand-green); font-weight: 800; cursor: pointer; }
+.link-btn:hover { text-decoration: underline; }
+.link-btn.danger { color: #d64545; }
+
+/* ---------- History (original inline block) ---------- */
+.evac-history {
+  background: var(--card-bg);
+  border: 1px solid var(--card-line);
+  border-radius: 10px;
+  box-shadow: var(--card-shadow);
+  padding: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.history-title {
+  font-weight: 900;
+  font-size: 13px;
+  color: var(--ink-strong);
+  letter-spacing: .2px;
+  margin-bottom: 8px;
+}
+.history-list { display: grid; gap: 8px; }
+.history-item {
+  background: #f8fafc;
+  border: 1px solid var(--card-line);
+  border-radius: 8px;
+  padding: 8px;
+}
+.history-main {
+  display: flex; gap: 6px; align-items: baseline;
+  font-weight: 700; color: #111827;
+}
+.history-sub {
+  display: flex; justify-content: space-between;
+  color: var(--ink-muted); font-size: 12px; margin-top: 2px;
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 900px) {
+  .evac-page, .evac-page.collapsed { grid-template-columns: 1fr; }
+  .evac-panel {
+    position: absolute;
+    top: 0; right: 0;
+    height: 100%;
+    width: min(92vw, var(--panel-w));
+    box-shadow: -12px 0 30px rgba(0,0,0,0.18);
+    transform: translateX(0);
+    z-index: 50;
+    overflow: hidden; /* slider container on mobile too */
+  }
+  .evac-page.collapsed .evac-panel { transform: translateX(100%); pointer-events: none; }
+}
+
+/* ======== EManagement button color overrides ======== */
+.evac-screen-lock .evac-toolbar .evac-toolbar-right .tbtn {
+  background: rgba(255,255,255,0.08);
+  color: #ffffff;
+  border: 1px solid rgba(255,255,255,0.38);
+}
+.evac-screen-lock .evac-toolbar .evac-toolbar-right .tbtn:hover {
+  background: rgba(255,255,255,0.16);
+}
+.evac-screen-lock .evac-page .evac-panel .btn-back {
+  background: #FFFFFF;
+  color: var(--brand-green);
+  border: 1px solid var(--brand-line);
+}
+.evac-screen-lock .evac-page .evac-panel .btn-back:hover { background: #F7FBF7; }
+.evac-screen-lock .evac-page .evac-panel .btn-update {
+  background: #119955;
+  color: #ffffff;
+  border: 1px solid #0f884b;
+}
+.evac-screen-lock .evac-page .evac-panel .btn-update:hover {
+  background: #0e7f46;
+  border-color: #0e7f46;
+}
+.evac-screen-lock .evac-page .evac-panel .evac-utils .link-btn { color: var(--brand-green); font-weight: 800; }
+.evac-screen-lock .evac-page .evac-panel .evac-utils .link-btn:hover { text-decoration: underline; }
+.evac-screen-lock .evac-page .evac-panel .evac-utils .link-btn.danger { color: #d64545; }
+
+/* === ADDED: Slider overrides so views own the scroll === */
+.evac-panel {
+  /* make panel a slider container (override earlier grid & padding) */
+  padding: 0;
+  display: block;
+  overflow: hidden;
+}
+.panel-views {
+  height: 100%;
+  width: 200%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  transform: translateX(0%);
+  transition: transform .28s ease;
+}
+.evac-panel.history-open .panel-views { transform: translateX(-50%); }
+
+.view-main, .view-history {
+  height: 100%;
+  overflow: auto;         /* <-- views scroll */
+  padding: 14px 16px;     /* moved padding inside */
+  box-sizing: border-box;
+  display: grid;
+  grid-auto-rows: min-content;
+  gap: 10px;
+}
+
+/* History view header + search + cards (ADDED) */
+.history-toolbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto; /* Back | Search | Sort */
+  gap: 10px;
+  align-items: center;
+}
+.tbtn-light {
+  background: #fff;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+}
+.tbtn-light:hover { background: #f6f8fb; }
+
+.history-search input {
+  width: 100%;
+  height: 38px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 14px;
+  outline: none;
+}
+.history-search input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+}
+
+.history-body { overflow: auto; min-height: 0; }
+.evac-history-panel { display: grid; gap: 10px; }
+.history-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+  box-shadow: 0 1px 2px rgba(16,24,40,0.06);
+}
+.h-row { display: flex; gap: 6px; align-items: baseline; }
+.h-action { color: #0f172a; font-weight: 800; }
+.h-place { color: #64748b; }
+.h-sub { color: #334155; margin-top: 4px; }
+.h-date { color: #64748b; font-size: 12px; margin-top: 6px; }
+
+/* (keep your commented !important block) */
+/* === EManagement: remove toolbar and fix heights (no floating) === */
+
+/* 1) Zero out toolbar height token for this page */
+:root {
+  --toolbar-h: 0px; /* no toolbar */
+}
+
+/* 2) Hide any existing toolbar block if still mounted */
+.evac-toolbar { display: none !important; }
+
+/* 3) The lock container still starts under the app header */
+.evac-screen-lock {
+  top: var(--header-h);
+}
+
+/* 4) Main split (map | panel) should fill the space under the header only
+      (stop subtracting a non-existent toolbar) */
+.evac-page {
+  grid-template-columns: 1fr var(--panel-w);
+  height: calc(100vh - var(--header-h)) !important;
+  min-height: calc(100vh - var(--header-h)) !important;
+}
+
+/* 5) On wide screens you already expand panel via --panel-w-lg */
+@media (min-width: 1400px) {
+  .evac-page { grid-template-columns: 1fr var(--panel-w-lg); }
+}
+/* === EManagement: occupy the top; remove floating white space === */
+
+/* 1) No toolbar on this screen */
+:root {
+  --toolbar-h: 0px; /* ensure any height calc doesn't subtract a toolbar */
+}
+
+/* 2) When rendered inside DashboardShell (.admin-content),
+      don't offset from a header—fill the lane completely */
+.admin-content .evac-screen-lock {
+  position: absolute;    /* anchor to the content lane, not the viewport */
+  inset: 0;              /* top:0; right:0; bottom:0; left:0 */
+  top: 0 !important;     /* override previous top: var(--header-h) */
+  background: #f2f5fb;
+  overflow: hidden;      /* page itself won’t scroll */
+}
+
+/* Safety: if your layout uses relative containers, make sure the lane is a positioning context */
+.admin-content { position: relative; }
+
+/* 3) The split grid (map | panel) must fill all available height in the lane */
+.admin-content .evac-page {
+  height: 100% !important;
+  min-height: 100% !important;
+  grid-template-columns: 1fr var(--panel-w);
+}
+
+/* On very wide screens keep your larger panel width */
+@media (min-width: 1400px) {
+  .admin-content .evac-page { grid-template-columns: 1fr var(--panel-w-lg); }
+}
+
+/* 4) Ensure the map always stretches fully vertically */
+.admin-content .evac-map,
+.admin-content .evac-map > * {
+  height: 100% !important;
+  min-height: 0;
+}
+
+/* 5) If any earlier styles subtracted header/toolbar from heights, neutralize them */
+.evac-page {
+  /* some older rules might still do: calc(100vh - var(--header-h) - var(--toolbar-h)) */
+  height: 100% !important;
+  min-height: 100% !important;
+}
+
+/* 6) OPTIONAL: if you don’t have a global header on this route, also zero header token */
+/* :root { --header-h: 0px; } */
