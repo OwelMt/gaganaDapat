@@ -36,8 +36,6 @@ const placeSchema = new mongoose.Schema(
     potableWater: { type: Boolean, default: false },
     nonPotableWater: { type: Boolean, default: false },
 
-    foodPackCapacity: { type: Number, default: 0, min: 0 },
-
     // Flags
     isPermanent: { type: Boolean, default: false },
     isCovidFacility: { type: Boolean, default: false },
@@ -64,6 +62,11 @@ const placeSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    isRequestVisible: {
+  type: Boolean,
+  default: true,
+},
   },
   { timestamps: true }
 );

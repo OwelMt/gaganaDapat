@@ -8,6 +8,8 @@ router.post("/", uploadGuideline.array("attachments"), controller.createGuidelin
 
 router.get("/", controller.getGuidelines);
 router.get("/:id", controller.getGuidelineById);
+
+router.patch("/view/:id", controller.incrementViews);
 router.put("/:id", controller.updateGuideline);
 router.delete("/:id", controller.deleteGuideline);
 

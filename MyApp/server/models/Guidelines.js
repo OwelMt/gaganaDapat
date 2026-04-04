@@ -47,13 +47,18 @@ const PostingGuidelineSchema = new mongoose.Schema(
       {
         fileName: String,
         fileUrl: String,
+        public_id: String, // ✅ REQUIRED
       },
     ],
 
-    createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
+    isArchived: {
+      type: Boolean,
+      default: false,
+    },
+
+    views: {
+      type: Number,
+      default: 0,
     },
   },
   { timestamps: true }

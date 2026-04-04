@@ -14,7 +14,6 @@ const releaseItemSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // ✅ UPDATED — REMOVE ENUM
     category: {
       type: String,
       required: true,
@@ -69,6 +68,30 @@ const reliefReleaseSchema = new mongoose.Schema(
       trim: true,
     },
 
+    releaseMode: {
+      type: String,
+      enum: ["manual", "template"],
+      default: "manual",
+    },
+
+    foodPackTemplateId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "FoodPackTemplate",
+      default: null,
+    },
+
+    foodPackTemplateName: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    foodPacksReleased: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     items: {
       type: [releaseItemSchema],
       default: [],
@@ -118,16 +141,30 @@ const reliefReleaseSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+
+    isFinalRelease: {
+      type: Boolean,
+      default: false,
+    },
+    receivedBy: {
+  type: String,
+  default: "",
+  trim: true,
+},
+releaseSummary: {
+  totalLineItems: { type: Number, default: 0, min: 0 },
+  totalQuantityReleased: { type: Number, default: 0, min: 0 },
+},
+
   },
   { timestamps: true }
 );
 
-// Normalize fields before saving
 reliefReleaseSchema.pre("validate", function () {
   const items = this.items || [];
 
   this.items = items.map((item) => {
-    const normalizedItem = { ...item.toObject?.() ? item.toObject() : item };
+    const normalizedItem = { ...(item.toObject?.() ? item.toObject() : item) };
 
     if (normalizedItem.category) {
       normalizedItem.category = String(normalizedItem.category).toLowerCase().trim();
@@ -147,14 +184,30 @@ reliefReleaseSchema.pre("validate", function () {
 
     return normalizedItem;
   });
+
+  if (this.foodPackTemplateName) {
+    this.foodPackTemplateName = String(this.foodPackTemplateName).trim();
+  }
+
+  if (this.remarks) {
+    this.remarks = String(this.remarks).trim();
+  }
 });
 
 reliefReleaseSchema.pre("save", function () {
   const items = this.items || [];
-  this.totalItemsReleased = items.reduce(
+
+  const totalQuantityReleased = items.reduce(
     (sum, item) => sum + (Number(item.quantityReleased) || 0),
     0
   );
+
+  this.totalItemsReleased = totalQuantityReleased;
+
+  this.releaseSummary = {
+    totalLineItems: items.length,
+    totalQuantityReleased,
+  };
 });
 
 module.exports = mongoose.model("ReliefRelease", reliefReleaseSchema);

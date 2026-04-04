@@ -182,13 +182,6 @@ items.forEach((item) => {
   result[category] += Number(item.quantity || 0);
 });
 
-    items.forEach((item) => {
-      const category = String(item.category || '').toLowerCase();
-      if (result[category] !== undefined) {
-        result[category] += Number(item.quantity || 0);
-      }
-    });
-
     res.json(result);
   } catch (err) {
     console.error('Get Inventory Category Stats Error:', err);

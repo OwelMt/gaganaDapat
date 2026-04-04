@@ -5,11 +5,16 @@ const path = require("path");
 const ReliefRequest = require("../models/ReliefRequest");
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  connectionTimeout: 30000,
+  greetingTimeout: 30000,
+  socketTimeout: 30000,
 });
 
 function ensureDirectoryExists(dirPath) {
@@ -23,35 +28,84 @@ function safeText(value) {
   return String(value);
 }
 
-function drawLabelValue(doc, label, value, x, y, labelWidth = 120, valueWidth = 380) {
+function formatDateTime(value) {
+  if (!value) return "-";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return date.toLocaleString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatDateOnly(value) {
+  if (!value) return "-";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return date.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function drawLabelValue(doc, label, value, x, y, labelWidth = 120, valueWidth = 360) {
   doc
     .font("Helvetica-Bold")
     .fontSize(10)
-    .text(label, x, y, { width: labelWidth, continued: false });
+    .text(label, x, y, {
+      width: labelWidth,
+      lineBreak: false,
+    });
 
   doc
     .font("Helvetica")
     .fontSize(10)
-    .text(value || "-", x + labelWidth, y, { width: valueWidth });
+    .text(value || "-", x + labelWidth, y, {
+      width: valueWidth,
+    });
 }
 
 function drawTableHeader(doc, y) {
+  const startX = 40;
+
   const columns = [
-    { label: "No.", x: 40, width: 28, align: "center" },
-    { label: "Evacuation Center", x: 68, width: 150, align: "left" },
-    { label: "Households", x: 218, width: 48, align: "center" },
-    { label: "Families", x: 266, width: 45, align: "center" },
-    { label: "Male", x: 311, width: 38, align: "center" },
-    { label: "Female", x: 349, width: 42, align: "center" },
-    { label: "LGBTQ", x: 391, width: 38, align: "center" },
-    { label: "PWD", x: 429, width: 34, align: "center" },
-    { label: "Preg.", x: 463, width: 40, align: "center" },
-    { label: "Senior", x: 503, width: 38, align: "center" },
-    { label: "Food Packs", x: 541, width: 40, align: "center" },
+    { key: "no", label: "No.", width: 28, align: "center" },
+    { key: "evacuationCenterName", label: "Evacuation Center", width: 145, align: "left" },
+    { key: "households", label: "Households", width: 55, align: "center" },
+    { key: "families", label: "Families", width: 50, align: "center" },
+    { key: "male", label: "Male", width: 42, align: "center" },
+    { key: "female", label: "Female", width: 45, align: "center" },
+    { key: "lgbtq", label: "LGBTQ", width: 45, align: "center" },
+    { key: "pwd", label: "PWD", width: 38, align: "center" },
+    { key: "pregnant", label: "Preg.", width: 44, align: "center" },
+    { key: "senior", label: "Senior", width: 44, align: "center" },
+    { key: "requestedFoodPacks", label: "Food Packs", width: 60, align: "center" },
   ];
 
-  doc.save();
-  doc.rect(40, y, 541, 22).stroke();
+  let x = startX;
+  columns.forEach((col) => {
+    col.x = x;
+    x += col.width;
+  });
+
+  const totalWidth = columns.reduce((sum, col) => sum + col.width, 0);
+  const rowHeight = 24;
+
+  doc.rect(startX, y, totalWidth, rowHeight).stroke();
+
+  columns.forEach((col) => {
+    doc.moveTo(col.x, y).lineTo(col.x, y + rowHeight).stroke();
+  });
+  doc.moveTo(startX + totalWidth, y).lineTo(startX + totalWidth, y + rowHeight).stroke();
+
   doc.font("Helvetica-Bold").fontSize(8);
 
   columns.forEach((col) => {
@@ -61,103 +115,123 @@ function drawTableHeader(doc, y) {
     });
   });
 
-  doc.restore();
-  return columns;
+  return { columns, rowHeight, totalWidth, startX };
 }
 
-function drawTableRow(doc, row, index, y, columns) {
-  const values = [
-    String(index + 1),
-    safeText(row.evacuationCenterName),
-    String(Number(row.households) || 0),
-    String(Number(row.families) || 0),
-    String(Number(row.male) || 0),
-    String(Number(row.female) || 0),
-    String(Number(row.lgbtq) || 0),
-    String(Number(row.pwd) || 0),
-    String(Number(row.pregnant) || 0),
-    String(Number(row.senior) || 0),
-    String(Number(row.requestedFoodPacks) || 0),
-  ];
+function drawTableRow(doc, row, index, y, tableMeta) {
+  const { columns, totalWidth, startX } = tableMeta;
 
-  const rowHeight = 22;
+  const values = {
+    no: String(index + 1),
+    evacuationCenterName: safeText(row.evacuationCenterName) || "-",
+    households: String(Number(row.households) || 0),
+    families: String(Number(row.families) || 0),
+    male: String(Number(row.male) || 0),
+    female: String(Number(row.female) || 0),
+    lgbtq: String(Number(row.lgbtq) || 0),
+    pwd: String(Number(row.pwd) || 0),
+    pregnant: String(Number(row.pregnant) || 0),
+    senior: String(Number(row.senior) || 0),
+    requestedFoodPacks: String(Number(row.requestedFoodPacks) || 0),
+  };
 
-  doc.rect(40, y, 541, rowHeight).stroke();
-  doc.font("Helvetica").fontSize(8);
+  const rowHeight = 24;
 
-  columns.forEach((col, i) => {
-    doc.text(values[i], col.x + 2, y + 7, {
+  doc.rect(startX, y, totalWidth, rowHeight).stroke();
+
+  columns.forEach((col) => {
+    doc.moveTo(col.x, y).lineTo(col.x, y + rowHeight).stroke();
+  });
+  doc.moveTo(startX + totalWidth, y).lineTo(startX + totalWidth, y + rowHeight).stroke();
+
+  doc.font("Helvetica").fontSize(8.5);
+
+  columns.forEach((col) => {
+    doc.text(values[col.key], col.x + 2, y + 7, {
       width: col.width - 4,
       align: col.align,
+      ellipsis: true,
     });
   });
 
   return rowHeight;
 }
 
-function addPdfHeader(doc, request) {
+function addPdfHeader(doc, request, isContinuation = false) {
+  const pageWidth = doc.page.width;
+  const left = 40;
+  const right = 40;
+  const contentWidth = pageWidth - left - right;
+
+  let y = 36;
+
   doc
     .font("Helvetica-Bold")
-    .fontSize(16)
-    .text("MUNICIPAL DISASTER RISK REDUCTION AND MANAGEMENT OFFICE", 40, 40, {
+    .fontSize(18)
+    .text("MUNICIPAL DISASTER RISK REDUCTION AND MANAGEMENT OFFICE", left, y, {
+      width: contentWidth,
       align: "center",
-      width: 520,
     });
+
+  y = doc.y + 6;
 
   doc
     .font("Helvetica")
-    .fontSize(10)
-    .text("Relief Assistance Request Report", 40, 62, {
-      align: "center",
-      width: 520,
-    });
+    .fontSize(10.5)
+    .text(
+      isContinuation
+        ? "Relief Assistance Request Report (Continued)"
+        : "Relief Assistance Request Report",
+      left,
+      y,
+      {
+        width: contentWidth,
+        align: "center",
+      }
+    );
 
-  doc.moveTo(40, 82).lineTo(570, 82).stroke();
+  y = doc.y + 10;
 
-  let y = 98;
+  doc.moveTo(left, y).lineTo(pageWidth - right, y).stroke();
 
-  drawLabelValue(doc, "Request No:", safeText(request.requestNo), 40, y);
   y += 18;
-  drawLabelValue(doc, "Barangay:", safeText(request.barangayName), 40, y);
-  y += 18;
-  drawLabelValue(doc, "Disaster:", safeText(request.disaster), 40, y);
-  y += 18;
-  drawLabelValue(
-    doc,
-    "Request Date:",
-    request.requestDate ? new Date(request.requestDate).toLocaleString() : "-",
-    40,
-    y
-  );
-  y += 18;
-  drawLabelValue(doc, "Status:", safeText(request.status), 40, y);
-  y += 18;
-  drawLabelValue(doc, "Remarks:", safeText(request.remarks) || "-", 40, y, 120, 400);
-  y += 28;
+
+  drawLabelValue(doc, "Request No:", safeText(request.requestNo), left, y);
+  y += 20;
+
+  drawLabelValue(doc, "Barangay:", safeText(request.barangayName), left, y);
+  y += 20;
+
+  drawLabelValue(doc, "Disaster:", safeText(request.disaster), left, y);
+  y += 20;
+
+  drawLabelValue(doc, "Request Date:", formatDateTime(request.requestDate), left, y);
+  y += 20;
+
+  drawLabelValue(doc, "Status:", safeText(request.status), left, y);
+  y += 20;
+
+  drawLabelValue(doc, "Remarks:", safeText(request.remarks) || "-", left, y, 120, 390);
+  y = doc.y + 16;
 
   return y;
 }
 
 function addPdfFooter(doc) {
-  const bottomY = 740;
-
-  doc
-    .font("Helvetica")
-    .fontSize(9)
-    .text("Prepared by: ________________________________", 40, bottomY);
-
-  doc
-    .font("Helvetica")
-    .fontSize(9)
-    .text("Received by: ________________________________", 320, bottomY);
+  const footerY = doc.page.height - 55;
+  const left = 40;
+  const contentWidth = doc.page.width - 80;
 
   doc
     .font("Helvetica-Oblique")
     .fontSize(8)
-    .text("System Generated Document", 40, bottomY + 24, {
+    .fillColor("#555")
+    .text("System Generated Document", left, footerY, {
+      width: contentWidth,
       align: "center",
-      width: 520,
     });
+
+  doc.fillColor("black");
 }
 
 function generateReliefRequestPdf(request) {
@@ -171,73 +245,80 @@ function generateReliefRequestPdf(request) {
       const relativeFilePath = `/uploads/relief-requests/${fileName}`;
 
       const doc = new PDFDocument({
-        margin: 40,
         size: "A4",
+        margin: 40,
       });
 
       const stream = fs.createWriteStream(absoluteFilePath);
       doc.pipe(stream);
 
-      let y = addPdfHeader(doc, request);
+      let y = addPdfHeader(doc, request, false);
 
       doc
         .font("Helvetica-Bold")
-        .fontSize(11)
+        .fontSize(11.5)
         .text("Evacuation Details", 40, y);
-
-      y += 18;
-
-      let columns = drawTableHeader(doc, y);
-      y += 22;
-
-      (request.rows || []).forEach((row, index) => {
-        if (y > 680) {
-          addPdfFooter(doc);
-          doc.addPage();
-          y = addPdfHeader(doc, request);
-          doc
-            .font("Helvetica-Bold")
-            .fontSize(11)
-            .text("Evacuation Details (continued)", 40, y);
-          y += 18;
-          columns = drawTableHeader(doc, y);
-          y += 22;
-        }
-
-        y += drawTableRow(doc, row, index, y, columns);
-      });
 
       y += 20;
 
-      if (y > 640) {
-        addPdfFooter(doc);
-        doc.addPage();
-        y = addPdfHeader(doc, request);
-      }
+      let tableMeta = drawTableHeader(doc, y);
+      y += tableMeta.rowHeight;
+
+      const bottomLimit = doc.page.height - 90;
+
+      (request.rows || []).forEach((row, index) => {
+        if (y + 24 > bottomLimit) {
+          addPdfFooter(doc);
+          doc.addPage();
+          y = addPdfHeader(doc, request, true);
+
+          doc
+            .font("Helvetica-Bold")
+            .fontSize(11.5)
+            .text("Evacuation Details", 40, y);
+
+          y += 20;
+          tableMeta = drawTableHeader(doc, y);
+          y += tableMeta.rowHeight;
+        }
+
+        y += drawTableRow(doc, row, index, y, tableMeta);
+      });
+
+      y += 22;
 
       const totals = request.totals || {};
 
-      doc.font("Helvetica-Bold").fontSize(11).text("Totals Summary", 40, y);
+      if (y + 90 > bottomLimit) {
+        addPdfFooter(doc);
+        doc.addPage();
+        y = addPdfHeader(doc, request, true);
+      }
+
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(11.5)
+        .text("Totals Summary", 40, y);
+
       y += 18;
 
       doc.font("Helvetica").fontSize(10);
-      doc.text(`Households: ${Number(totals.households) || 0}`, 40, y);
-      doc.text(`Families: ${Number(totals.families) || 0}`, 200, y);
-      doc.text(`Male: ${Number(totals.male) || 0}`, 360, y);
+
+      doc.text(`Households: ${Number(totals.households) || 0}`, 40, y, { width: 160 });
+      doc.text(`Families: ${Number(totals.families) || 0}`, 215, y, { width: 160 });
+      doc.text(`Male: ${Number(totals.male) || 0}`, 390, y, { width: 150 });
       y += 18;
 
-      doc.text(`Female: ${Number(totals.female) || 0}`, 40, y);
-      doc.text(`LGBTQ: ${Number(totals.lgbtq) || 0}`, 200, y);
-      doc.text(`PWD: ${Number(totals.pwd) || 0}`, 360, y);
+      doc.text(`Female: ${Number(totals.female) || 0}`, 40, y, { width: 160 });
+      doc.text(`LGBTQ: ${Number(totals.lgbtq) || 0}`, 215, y, { width: 160 });
+      doc.text(`PWD: ${Number(totals.pwd) || 0}`, 390, y, { width: 150 });
       y += 18;
 
-      doc.text(`Pregnant: ${Number(totals.pregnant) || 0}`, 40, y);
-      doc.text(`Senior: ${Number(totals.senior) || 0}`, 200, y);
-      doc.text(
-        `Requested Food Packs: ${Number(totals.requestedFoodPacks) || 0}`,
-        360,
-        y
-      );
+      doc.text(`Pregnant: ${Number(totals.pregnant) || 0}`, 40, y, { width: 160 });
+      doc.text(`Senior: ${Number(totals.senior) || 0}`, 215, y, { width: 160 });
+      doc.text(`Requested Food Packs: ${Number(totals.requestedFoodPacks) || 0}`, 390, y, {
+        width: 150,
+      });
 
       addPdfFooter(doc);
       doc.end();
@@ -266,23 +347,26 @@ const sendReliefRequestEmail = async (request) => {
     throw new Error("No DRRMO_EMAIL recipients found in environment variables.");
   }
 
+  console.log("EMAIL_USER:", process.env.EMAIL_USER);
+  console.log("Sending relief request email to:", recipients);
+
   const rowsHtml = (request.rows || [])
     .map(
       (row, index) => `
-      <tr>
-        <td>${index + 1}</td>
-        <td>${safeText(row.evacuationCenterName)}</td>
-        <td>${Number(row.households) || 0}</td>
-        <td>${Number(row.families) || 0}</td>
-        <td>${Number(row.male) || 0}</td>
-        <td>${Number(row.female) || 0}</td>
-        <td>${Number(row.lgbtq) || 0}</td>
-        <td>${Number(row.pwd) || 0}</td>
-        <td>${Number(row.pregnant) || 0}</td>
-        <td>${Number(row.senior) || 0}</td>
-        <td>${Number(row.requestedFoodPacks) || 0}</td>
-      </tr>
-    `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${safeText(row.evacuationCenterName) || "-"}</td>
+          <td>${Number(row.households) || 0}</td>
+          <td>${Number(row.families) || 0}</td>
+          <td>${Number(row.male) || 0}</td>
+          <td>${Number(row.female) || 0}</td>
+          <td>${Number(row.lgbtq) || 0}</td>
+          <td>${Number(row.pwd) || 0}</td>
+          <td>${Number(row.pregnant) || 0}</td>
+          <td>${Number(row.senior) || 0}</td>
+          <td>${Number(row.requestedFoodPacks) || 0}</td>
+        </tr>
+      `
     )
     .join("");
 
@@ -302,57 +386,59 @@ const sendReliefRequestEmail = async (request) => {
   });
 
   await transporter.sendMail({
-    from: process.env.EMAIL_USER,
+    from: `"MDRRMO Relief Request System" <${process.env.EMAIL_USER}>`,
     to: recipients,
     subject: `New Relief Request - ${request.requestNo}`,
     html: `
-      <h2>New Relief Request Submitted</h2>
-      <p><strong>Request No:</strong> ${safeText(request.requestNo)}</p>
-      <p><strong>Barangay:</strong> ${safeText(request.barangayName)}</p>
-      <p><strong>Disaster:</strong> ${safeText(request.disaster)}</p>
-      <p><strong>Date:</strong> ${
-        request.requestDate
-          ? new Date(request.requestDate).toLocaleDateString()
-          : "-"
-      }</p>
-      <p><strong>Remarks:</strong> ${safeText(request.remarks) || "-"}</p>
+      <div style="font-family: Arial, sans-serif; color: #222; line-height: 1.5;">
+        <h2 style="margin-bottom: 12px;">New Relief Request Submitted</h2>
 
-      <h3>Evacuation Details</h3>
-      <table border="1" cellpadding="6" cellspacing="0" style="border-collapse: collapse; width: 100%;">
-        <thead>
-          <tr>
-            <th>No.</th>
-            <th>Evacuation Center</th>
-            <th>Households</th>
-            <th>Families</th>
-            <th>Male</th>
-            <th>Female</th>
-            <th>LGBTQ</th>
-            <th>PWD</th>
-            <th>Pregnant</th>
-            <th>Senior</th>
-            <th>Requested Food Packs</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rowsHtml}
-        </tbody>
-      </table>
+        <p><strong>Request No:</strong> ${safeText(request.requestNo)}</p>
+        <p><strong>Barangay:</strong> ${safeText(request.barangayName)}</p>
+        <p><strong>Disaster:</strong> ${safeText(request.disaster)}</p>
+        <p><strong>Date:</strong> ${formatDateOnly(request.requestDate)}</p>
+        <p><strong>Status:</strong> ${safeText(request.status) || "-"}</p>
+        <p><strong>Remarks:</strong> ${safeText(request.remarks) || "-"}</p>
 
-      <h3>Totals</h3>
-      <ul>
-        <li>Households: ${Number(request.totals?.households) || 0}</li>
-        <li>Families: ${Number(request.totals?.families) || 0}</li>
-        <li>Male: ${Number(request.totals?.male) || 0}</li>
-        <li>Female: ${Number(request.totals?.female) || 0}</li>
-        <li>LGBTQ: ${Number(request.totals?.lgbtq) || 0}</li>
-        <li>PWD: ${Number(request.totals?.pwd) || 0}</li>
-        <li>Pregnant: ${Number(request.totals?.pregnant) || 0}</li>
-        <li>Senior: ${Number(request.totals?.senior) || 0}</li>
-        <li>Requested Food Packs: ${Number(request.totals?.requestedFoodPacks) || 0}</li>
-      </ul>
+        <h3 style="margin-top: 24px; margin-bottom: 10px;">Evacuation Details</h3>
+        <table border="1" cellpadding="6" cellspacing="0" style="border-collapse: collapse; width: 100%; font-size: 14px;">
+          <thead style="background: #f3f4f6;">
+            <tr>
+              <th>No.</th>
+              <th>Evacuation Center</th>
+              <th>Households</th>
+              <th>Families</th>
+              <th>Male</th>
+              <th>Female</th>
+              <th>LGBTQ</th>
+              <th>PWD</th>
+              <th>Pregnant</th>
+              <th>Senior</th>
+              <th>Requested Food Packs</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
 
-      <p><strong>Attached:</strong> PDF copy of the relief request</p>
+        <h3 style="margin-top: 24px; margin-bottom: 10px;">Totals Summary</h3>
+        <ul>
+          <li>Households: ${Number(request.totals?.households) || 0}</li>
+          <li>Families: ${Number(request.totals?.families) || 0}</li>
+          <li>Male: ${Number(request.totals?.male) || 0}</li>
+          <li>Female: ${Number(request.totals?.female) || 0}</li>
+          <li>LGBTQ: ${Number(request.totals?.lgbtq) || 0}</li>
+          <li>PWD: ${Number(request.totals?.pwd) || 0}</li>
+          <li>Pregnant: ${Number(request.totals?.pregnant) || 0}</li>
+          <li>Senior: ${Number(request.totals?.senior) || 0}</li>
+          <li>Requested Food Packs: ${Number(request.totals?.requestedFoodPacks) || 0}</li>
+        </ul>
+
+        <p style="margin-top: 20px;">
+          <strong>Attached:</strong> PDF copy of the relief request
+        </p>
+      </div>
     `,
     attachments: [
       {

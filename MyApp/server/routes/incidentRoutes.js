@@ -26,5 +26,4 @@ router.put("/updateStatus/:id", incidentController.updateStatus);
 // ✅ Delete incident
 router.delete("/delete/:id", incidentController.deleteIncident);
 
-
 module.exports = router;

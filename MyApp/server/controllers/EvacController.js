@@ -1,12 +1,16 @@
 const mongoose = require("mongoose");
 const Place = require("../models/EvacPlace.js");
 const EHistory = require("../models/EvacHistory.js");
-const BarangayStock = require("../models/BarangayStock");
-const BarangayStockTransaction = require("../models/BarangayStockTransaction");
 
-// Sanitize input
+// -----------------------------
+// HELPERS
+// -----------------------------
 const sanitizeText = (value) => {
   return String(value || "").replace(/<[^>]*>?/gm, "").trim();
+};
+
+const escapeRegex = (value) => {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 };
 
 const toNumber = (value, fallback = 0) => {
@@ -23,6 +27,32 @@ const toBoolean = (value) => {
   return Boolean(value);
 };
 
+const safeLower = (value) => String(value || "").toLowerCase().trim();
+
+const normalizeBarangayKey = (value) => {
+  return safeLower(value).replace(/[\s_-]+/g, "");
+};
+
+const buildBarangayLooseRegex = (value) => {
+  const cleaned = normalizeBarangayKey(value);
+  if (!cleaned) return null;
+
+  const chars = cleaned.split("").map((char) => escapeRegex(char));
+  return new RegExp(chars.join("[\\s_-]*"), "i");
+};
+
+const getSessionBarangayCandidates = (req) => {
+  const candidates = [
+    req.session?.barangayName,
+    req.session?.username,
+    req.session?.name,
+  ]
+    .map((item) => sanitizeText(item))
+    .filter(Boolean);
+
+  return [...new Set(candidates)];
+};
+
 const buildHistoryMeta = (
   req,
   place = null,
@@ -34,13 +64,198 @@ const buildHistoryMeta = (
     barangayName:
       sanitizeText(place?.barangayName) ||
       sanitizeText(fallbackBarangayName) ||
-      sanitizeText(req.session?.barangayName || req.session?.username),
-    performedBy: sanitizeText(req.session?.username || "unknown"),
+      sanitizeText(req.session?.barangayName || req.session?.username || req.session?.name),
+    performedBy: sanitizeText(req.session?.username || req.session?.name || "unknown"),
     performedByRole: sanitizeText(req.session?.role || ""),
   };
 };
 
+const isBarangayOwnerOfPlace = (req, place) => {
+  if (!place) return false;
+  if (req.session?.role !== "barangay") return true;
+
+  const userId = req.session?.userId;
+  const candidates = getSessionBarangayCandidates(req);
+
+  const idMatch =
+    userId &&
+    mongoose.Types.ObjectId.isValid(String(userId)) &&
+    String(place.barangayId) === String(userId);
+
+  const nameMatch = candidates.some((candidate) => {
+    const exact =
+      safeLower(place.barangayName) === safeLower(candidate);
+
+    const normalized =
+      normalizeBarangayKey(place.barangayName) === normalizeBarangayKey(candidate);
+
+    return exact || normalized;
+  });
+
+  return Boolean(idMatch || nameMatch);
+};
+
+const buildRoleAwarePlaceFilter = (req) => {
+  const role = req.session?.role;
+  const userId = req.session?.userId;
+  const barangayCandidates = getSessionBarangayCandidates(req);
+
+  const filter = { isArchived: false };
+
+  if (role === "barangay") {
+    const ownConditions = [];
+
+    if (userId && mongoose.Types.ObjectId.isValid(String(userId))) {
+      ownConditions.push({ barangayId: userId });
+    }
+
+    barangayCandidates.forEach((candidate) => {
+      if (!candidate) return;
+
+      ownConditions.push({ barangayName: candidate });
+
+      const looseRegex = buildBarangayLooseRegex(candidate);
+      if (looseRegex) {
+        ownConditions.push({ barangayName: looseRegex });
+      }
+    });
+
+    if (ownConditions.length > 0) {
+      filter.$or = ownConditions;
+    }
+  }
+
+  return filter;
+};
+
+const buildRoleAwareHistoryFilter = (req) => {
+  const role = req.session?.role;
+  const userId = req.session?.userId;
+  const barangayCandidates = getSessionBarangayCandidates(req);
+
+  const filter = {};
+
+  if (role === "barangay") {
+    const ownConditions = [];
+
+    if (userId && mongoose.Types.ObjectId.isValid(String(userId))) {
+      ownConditions.push({ barangayId: userId });
+    }
+
+    barangayCandidates.forEach((candidate) => {
+      if (!candidate) return;
+
+      ownConditions.push({ barangayName: candidate });
+
+      const looseRegex = buildBarangayLooseRegex(candidate);
+      if (looseRegex) {
+        ownConditions.push({ barangayName: looseRegex });
+      }
+    });
+
+    if (ownConditions.length > 0) {
+      filter.$or = ownConditions;
+    }
+  }
+
+  return filter;
+};
+
+const applyPlaceQueryFilters = (baseFilter, req) => {
+  const role = req.session?.role;
+
+  const selectedBarangayId = sanitizeText(req.query?.barangayId);
+  const selectedBarangayName = sanitizeText(req.query?.barangayName);
+  const status = safeLower(req.query?.status);
+  const search = sanitizeText(req.query?.search);
+
+  const filter = { ...baseFilter };
+
+  if (role !== "barangay") {
+    if (selectedBarangayId && mongoose.Types.ObjectId.isValid(selectedBarangayId)) {
+      filter.barangayId = selectedBarangayId;
+    } else if (
+      selectedBarangayName &&
+      safeLower(selectedBarangayName) !== "all barangays"
+    ) {
+      filter.barangayName = selectedBarangayName;
+    }
+  }
+
+  if (["available", "limited", "full"].includes(status)) {
+    filter.capacityStatus = status;
+  }
+
+  if (search) {
+    const regex = new RegExp(escapeRegex(search), "i");
+
+    const searchConditions = [
+      { name: regex },
+      { location: regex },
+      { barangayName: regex },
+      { remarks: regex },
+    ];
+
+    if (filter.$or && Array.isArray(filter.$or)) {
+      filter.$and = filter.$and || [];
+      filter.$and.push({ $or: filter.$or });
+      filter.$and.push({ $or: searchConditions });
+      delete filter.$or;
+    } else {
+      filter.$or = searchConditions;
+    }
+  }
+
+  return filter;
+};
+
+const applyHistoryQueryFilters = (baseFilter, req) => {
+  const role = req.session?.role;
+
+  const selectedBarangayId = sanitizeText(req.query?.barangayId);
+  const selectedBarangayName = sanitizeText(req.query?.barangayName);
+  const search = sanitizeText(req.query?.search);
+
+  const filter = { ...baseFilter };
+
+  if (role !== "barangay") {
+    if (selectedBarangayId && mongoose.Types.ObjectId.isValid(selectedBarangayId)) {
+      filter.barangayId = selectedBarangayId;
+    } else if (
+      selectedBarangayName &&
+      safeLower(selectedBarangayName) !== "all barangays"
+    ) {
+      filter.barangayName = selectedBarangayName;
+    }
+  }
+
+  if (search) {
+    const regex = new RegExp(escapeRegex(search), "i");
+
+    const searchConditions = [
+      { placeName: regex },
+      { details: regex },
+      { barangayName: regex },
+      { action: regex },
+      { performedBy: regex },
+    ];
+
+    if (filter.$or && Array.isArray(filter.$or)) {
+      filter.$and = filter.$and || [];
+      filter.$and.push({ $or: filter.$or });
+      filter.$and.push({ $or: searchConditions });
+      delete filter.$or;
+    } else {
+      filter.$or = searchConditions;
+    }
+  }
+
+  return filter;
+};
+
+// -----------------------------
 // CREATE PLACE
+// -----------------------------
 const createPlace = async (req, res) => {
   try {
     const {
@@ -60,11 +275,12 @@ const createPlace = async (req, res) => {
       commonCR,
       potableWater,
       nonPotableWater,
-      foodPackCapacity,
       isPermanent,
       isCovidFacility,
       remarks,
     } = req.body;
+
+    const sessionBarangayCandidates = getSessionBarangayCandidates(req);
 
     const finalBarangayId =
       barangayId || (req.session?.role === "barangay" ? req.session.userId : null);
@@ -72,9 +288,7 @@ const createPlace = async (req, res) => {
     const finalBarangayName =
       sanitizeText(barangayName) ||
       sanitizeText(barangay) ||
-      (req.session?.role === "barangay"
-        ? sanitizeText(req.session?.barangayName || req.session?.username)
-        : "");
+      (req.session?.role === "barangay" ? sessionBarangayCandidates[0] || "" : "");
 
     if (
       !sanitizeText(name) ||
@@ -123,7 +337,6 @@ const createPlace = async (req, res) => {
       commonCR: toBoolean(commonCR),
       potableWater: toBoolean(potableWater),
       nonPotableWater: toBoolean(nonPotableWater),
-      foodPackCapacity: toNumber(foodPackCapacity, 0),
       isPermanent: toBoolean(isPermanent),
       isCovidFacility: toBoolean(isCovidFacility),
       remarks: sanitizeText(remarks),
@@ -139,7 +352,7 @@ const createPlace = async (req, res) => {
       ...buildHistoryMeta(req, newPlace, finalBarangayId, finalBarangayName),
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "Place created successfully",
       place: newPlace,
     });
@@ -152,81 +365,50 @@ const createPlace = async (req, res) => {
       });
     }
 
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 };
 
-// GET ALL PLACES (ROLE-AWARE)
+// -----------------------------
+// GET ALL PLACES
+// -----------------------------
 const getPlaces = async (req, res) => {
   try {
-    const role = req.session?.role;
-    const userId = req.session?.userId;
-    const barangayName = sanitizeText(
-      req.session?.barangayName || req.session?.username
-    );
+    const baseFilter = buildRoleAwarePlaceFilter(req);
+    const finalFilter = applyPlaceQueryFilters(baseFilter, req);
 
-    let filter = { isArchived: false };
+    const places = await Place.find(finalFilter).sort({
+      barangayName: 1,
+      name: 1,
+      createdAt: -1,
+    });
 
-    if (role === "barangay") {
-      filter.$or = [];
-
-      if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-        filter.$or.push({ barangayId: userId });
-      }
-
-      if (barangayName) {
-        filter.$or.push({ barangayName });
-      }
-
-      if (filter.$or.length === 0) {
-        delete filter.$or;
-      }
-    }
-
-    const places = await Place.find(filter).sort({ createdAt: -1 });
-    res.json(places);
+    return res.json(places);
   } catch (err) {
     console.error("Get Places Error:", err);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 };
 
-// GET HISTORY (ROLE-AWARE)
+// -----------------------------
+// GET HISTORY
+// -----------------------------
 const getHistory = async (req, res) => {
   try {
-    const role = req.session?.role;
-    const userId = req.session?.userId;
-    const barangayName = sanitizeText(
-      req.session?.barangayName || req.session?.username
-    );
+    const baseFilter = buildRoleAwareHistoryFilter(req);
+    const finalFilter = applyHistoryQueryFilters(baseFilter, req);
 
-    let filter = {};
-
-    if (role === "barangay") {
-      filter.$or = [];
-
-      if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-        filter.$or.push({ barangayId: userId });
-      }
-
-      if (barangayName) {
-        filter.$or.push({ barangayName });
-      }
-
-      if (filter.$or.length === 0) {
-        delete filter.$or;
-      }
-    }
-
-    const logs = await EHistory.find(filter).sort({ createdAt: -1 });
-    res.json(logs);
+    const logs = await EHistory.find(finalFilter).sort({ createdAt: -1 });
+    return res.json(logs);
   } catch (err) {
     console.error("Get History Error:", err);
-    res.status(500).json({ message: "Failed to load history" });
+    return res.status(500).json({ message: "Failed to load history" });
   }
 };
 
+// -----------------------------
 // UPDATE PLACE
+// -----------------------------
 const updatePlace = async (req, res) => {
   try {
     const { id } = req.params;
@@ -234,6 +416,12 @@ const updatePlace = async (req, res) => {
     const existing = await Place.findById(id);
     if (!existing) {
       return res.status(404).json({ message: "Place not found" });
+    }
+
+    if (!isBarangayOwnerOfPlace(req, existing)) {
+      return res.status(403).json({
+        message: "You are not allowed to update this evacuation area",
+      });
     }
 
     const {
@@ -253,7 +441,6 @@ const updatePlace = async (req, res) => {
       commonCR,
       potableWater,
       nonPotableWater,
-      foodPackCapacity,
       isPermanent,
       isCovidFacility,
       remarks,
@@ -264,8 +451,13 @@ const updatePlace = async (req, res) => {
     existing.name = sanitizeText(name || existing.name);
     existing.location = sanitizeText(location || existing.location);
 
-    if (barangayId) existing.barangayId = barangayId;
-    if (finalBarangayName) existing.barangayName = finalBarangayName;
+    if (barangayId && req.session?.role !== "barangay") {
+      existing.barangayId = barangayId;
+    }
+
+    if (finalBarangayName && req.session?.role !== "barangay") {
+      existing.barangayName = finalBarangayName;
+    }
 
     if (latitude !== undefined) {
       const latNum = Number(latitude);
@@ -283,11 +475,21 @@ const updatePlace = async (req, res) => {
       existing.longitude = lngNum;
     }
 
-    if (capacityIndividual !== undefined) existing.capacityIndividual = toNumber(capacityIndividual, 0);
-    if (capacityFamily !== undefined) existing.capacityFamily = toNumber(capacityFamily, 0);
-    if (bedCapacity !== undefined) existing.bedCapacity = toNumber(bedCapacity, 0);
-    if (floorArea !== undefined) existing.floorArea = toNumber(floorArea, 0);
-    if (foodPackCapacity !== undefined) existing.foodPackCapacity = toNumber(foodPackCapacity, 0);
+    if (capacityIndividual !== undefined) {
+      existing.capacityIndividual = toNumber(capacityIndividual, 0);
+    }
+
+    if (capacityFamily !== undefined) {
+      existing.capacityFamily = toNumber(capacityFamily, 0);
+    }
+
+    if (bedCapacity !== undefined) {
+      existing.bedCapacity = toNumber(bedCapacity, 0);
+    }
+
+    if (floorArea !== undefined) {
+      existing.floorArea = toNumber(floorArea, 0);
+    }
 
     if (femaleCR !== undefined) existing.femaleCR = toBoolean(femaleCR);
     if (maleCR !== undefined) existing.maleCR = toBoolean(maleCR);
@@ -307,7 +509,7 @@ const updatePlace = async (req, res) => {
       ...buildHistoryMeta(req, existing),
     });
 
-    res.json({
+    return res.json({
       message: "Place updated successfully",
       place: existing,
     });
@@ -320,11 +522,13 @@ const updatePlace = async (req, res) => {
       });
     }
 
-    res.status(500).json({ message: "Update failed" });
+    return res.status(500).json({ message: "Update failed" });
   }
 };
 
+// -----------------------------
 // UPDATE CAPACITY STATUS
+// -----------------------------
 const updateCapacityStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -334,90 +538,79 @@ const updateCapacityStatus = async (req, res) => {
       return res.status(400).json({ message: "Invalid capacity status" });
     }
 
-    const updated = await Place.findByIdAndUpdate(
-      id,
-      { capacityStatus },
-      { new: true }
-    );
-
-    if (!updated) {
+    const existing = await Place.findById(id);
+    if (!existing) {
       return res.status(404).json({ message: "Place not found" });
     }
 
+    if (!isBarangayOwnerOfPlace(req, existing)) {
+      return res.status(403).json({
+        message: "You are not allowed to update this evacuation area",
+      });
+    }
+
+    existing.capacityStatus = capacityStatus;
+    await existing.save();
+
     await EHistory.create({
       action: "STATUS_UPDATE",
-      placeName: updated.name,
+      placeName: existing.name,
       details: `Status changed to ${capacityStatus}`,
-      ...buildHistoryMeta(req, updated),
+      ...buildHistoryMeta(req, existing),
     });
 
-    res.json(updated);
+    return res.json(existing);
   } catch (err) {
     console.error("Update Capacity Status Error:", err);
-    res.status(500).json({ message: "Update failed" });
+    return res.status(500).json({ message: "Update failed" });
   }
 };
 
-// DELETE PLACE
+// -----------------------------
+// DELETE / ARCHIVE PLACE
+// -----------------------------
 const deletePlace = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const deleted = await Place.findByIdAndUpdate(
-      id,
-      {
-        isArchived: true,
-        archivedAt: new Date(),
-      },
-      { new: true }
-    );
-
-    if (!deleted) {
+    const existing = await Place.findById(id);
+    if (!existing) {
       return res.status(404).json({ message: "Place not found" });
     }
 
+    if (!isBarangayOwnerOfPlace(req, existing)) {
+      return res.status(403).json({
+        message: "You are not allowed to archive this evacuation area",
+      });
+    }
+
+    existing.isArchived = true;
+    existing.archivedAt = new Date();
+    await existing.save();
+
     await EHistory.create({
       action: "DELETE",
-      placeName: deleted.name,
+      placeName: existing.name,
       details: "Place archived",
-      ...buildHistoryMeta(req, deleted),
+      ...buildHistoryMeta(req, existing),
     });
 
-    res.json({ message: "Place archived successfully" });
+    return res.json({ message: "Place archived successfully" });
   } catch (err) {
     console.error("Delete Place Error:", err);
-    res.status(500).json({ message: "Delete failed" });
+    return res.status(500).json({ message: "Delete failed" });
   }
 };
 
+// -----------------------------
 // ANALYTICS SUMMARY
+// -----------------------------
 const getAnalyticsSummary = async (req, res) => {
   try {
-    const role = req.session?.role;
-    const userId = req.session?.userId;
-    const barangayName = sanitizeText(
-      req.session?.barangayName || req.session?.username
-    );
+    const baseFilter = buildRoleAwarePlaceFilter(req);
+    const finalFilter = applyPlaceQueryFilters(baseFilter, req);
 
-    let filter = { isArchived: false };
-
-    if (role === "barangay") {
-      filter.$or = [];
-
-      if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-        filter.$or.push({ barangayId: userId });
-      }
-
-      if (barangayName) {
-        filter.$or.push({ barangayName });
-      }
-
-      if (filter.$or.length === 0) {
-        delete filter.$or;
-      }
-    }
-
-    const places = await Place.find(filter);
+    const places = await Place.find(finalFilter);
 
     const totalPlaces = places.length;
 
@@ -448,7 +641,42 @@ const getAnalyticsSummary = async (req, res) => {
     const permanentCount = places.filter((p) => p.isPermanent).length;
     const covidFacilities = places.filter((p) => p.isCovidFacility).length;
 
-    res.json({
+    const barangayBreakdownMap = places.reduce((acc, place) => {
+      const key = sanitizeText(place.barangayName) || "Unassigned";
+
+      if (!acc[key]) {
+        acc[key] = {
+          barangayName: key,
+          totalPlaces: 0,
+          available: 0,
+          limited: 0,
+          full: 0,
+          totalIndividualCapacity: 0,
+          totalFamilyCapacity: 0,
+          totalBedCapacity: 0,
+        };
+      }
+
+      const status = place.capacityStatus || "available";
+
+      acc[key].totalPlaces += 1;
+      acc[key][status] = (acc[key][status] || 0) + 1;
+      acc[key].totalIndividualCapacity += place.capacityIndividual || 0;
+      acc[key].totalFamilyCapacity += place.capacityFamily || 0;
+      acc[key].totalBedCapacity += place.bedCapacity || 0;
+
+      return acc;
+    }, {});
+
+    const barangayBreakdown = Object.values(barangayBreakdownMap).sort((a, b) =>
+      a.barangayName.localeCompare(b.barangayName)
+    );
+
+    const criticalBarangays = barangayBreakdown.filter(
+      (item) => item.full > 0 || item.available === 0
+    );
+
+    return res.json({
       totalPlaces,
       statusCounts,
       totalIndividualCapacity,
@@ -456,103 +684,12 @@ const getAnalyticsSummary = async (req, res) => {
       totalBedCapacity,
       permanentCount,
       covidFacilities,
+      barangayBreakdown,
+      criticalBarangays,
     });
   } catch (error) {
     console.error("Get Analytics Summary Error:", error);
-    res.status(500).json({ message: "Failed to fetch analytics" });
-  }
-};
-
-// ALLOCATE STOCK TO EVAC PLACE
-const allocateStockToPlace = async (req, res) => {
-  try {
-    const role = req.session?.role;
-
-    if (role !== "barangay") {
-      return res.status(403).json({
-        message: "Only barangay accounts can allocate stock to evacuation places",
-      });
-    }
-
-    const { id } = req.params;
-    const { stockId, quantity } = req.body;
-    const username = req.session?.username || "unknown";
-
-    if (!stockId || !quantity) {
-      return res.status(400).json({
-        message: "Stock ID and quantity are required",
-      });
-    }
-
-    const qty = Number(quantity);
-    if (qty <= 0) {
-      return res.status(400).json({
-        message: "Quantity must be greater than 0",
-      });
-    }
-
-    const place = await Place.findById(id);
-    if (!place) {
-      return res.status(404).json({ message: "Evac place not found" });
-    }
-
-    const stock = await BarangayStock.findById(stockId);
-    if (!stock) {
-      return res.status(404).json({ message: "Stock not found" });
-    }
-
-    // extra security: barangay can only allocate from its own stock
-    const sessionBarangayId = req.session?.userId;
-    if (sessionBarangayId && String(stock.barangayId) !== String(sessionBarangayId)) {
-      return res.status(403).json({
-        message: "You can only allocate stock from your own barangay storage",
-      });
-    }
-
-    if (String(stock.barangayId) !== String(place.barangayId)) {
-      return res.status(403).json({
-        message: "Stock and evac place do not belong to the same barangay",
-      });
-    }
-
-    if (stock.quantityAvailable < qty) {
-      return res.status(400).json({
-        message: `Insufficient stock. Available: ${stock.quantityAvailable}`,
-      });
-    }
-
-    stock.quantityAvailable -= qty;
-    stock.lastUpdatedBy = username;
-    await stock.save();
-
-    await BarangayStockTransaction.create({
-      barangayId: stock.barangayId,
-      barangayName: stock.barangayName,
-      stockId: stock._id,
-      itemName: stock.itemName,
-      category: stock.category,
-      unit: stock.unit,
-      quantity: qty,
-      transactionType: "allocation",
-      evacPlaceId: place._id,
-      evacPlaceName: place.name,
-      remarks: `Allocated to evac place: ${place.name}`,
-      performedBy: username,
-    });
-
-    await EHistory.create({
-      action: "ALLOCATE",
-      placeName: place.name,
-      details: `Allocated ${qty} ${stock.unit || ""} of ${stock.itemName} to ${place.name}`,
-      ...buildHistoryMeta(req, place),
-    });
-
-    res.json({
-      message: "Stock allocated to evacuation place successfully",
-    });
-  } catch (err) {
-    console.error("Allocate Stock Error:", err);
-    res.status(500).json({ message: "Allocation failed" });
+    return res.status(500).json({ message: "Failed to fetch analytics" });
   }
 };
 
@@ -564,5 +701,4 @@ module.exports = {
   updateCapacityStatus,
   deletePlace,
   getAnalyticsSummary,
-  allocateStockToPlace,
 };

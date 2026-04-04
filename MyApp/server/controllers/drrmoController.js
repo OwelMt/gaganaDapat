@@ -1,17 +1,458 @@
-const ReliefRequest = require('../models/ReliefRequest');
-const Audit = require('../models/Audit');
+const ReliefRequest = require("../models/ReliefRequest");
+const ReliefRelease = require("../models/ReliefRelease");
+const Audit = require("../models/Audit");
+const FoodPackTemplate = require("../models/FoodPackTemplate");
+const InventoryItem = require("../models/InventoryItem");
+
+const normalizeString = (value) => {
+  if (value === undefined || value === null) return "";
+  return String(value).trim();
+};
+
+const toNumber = (value) => {
+  if (value === undefined || value === null || value === "") return 0;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const ACTIVE_QUEUE_STATUSES = [
+  "pending",
+  "approved",
+  "partially_released",
+  "released",
+];
+
+const COMPLETED_QUEUE_STATUSES = ["received", "cancelled"];
+const HISTORY_QUEUE_STATUSES = ["rejected", "received", "cancelled"];
+
+const computePrioritySnapshot = (request) => {
+  const totals = request?.totals || {};
+
+  const totalAffected =
+    toNumber(totals.male) +
+    toNumber(totals.female) +
+    toNumber(totals.lgbtq) +
+    toNumber(totals.pwd) +
+    toNumber(totals.pregnant) +
+    toNumber(totals.senior);
+
+  const vulnerableCount =
+    toNumber(totals.pwd) +
+    toNumber(totals.pregnant) +
+    toNumber(totals.senior);
+
+  const requestedFoodPacks = toNumber(totals.requestedFoodPacks);
+
+  const submittedAt = request?.createdAt ? new Date(request.createdAt) : null;
+  const now = new Date();
+  const waitingMs = submittedAt ? now.getTime() - submittedAt.getTime() : 0;
+  const waitingHours = Math.max(0, Math.floor(waitingMs / (1000 * 60 * 60)));
+  const waitingDays = Math.max(0, Math.floor(waitingHours / 24));
+
+  const priorityScore =
+    waitingDays * 5 +
+    requestedFoodPacks * 0.2 +
+    toNumber(totals.pwd) * 3 +
+    toNumber(totals.pregnant) * 3 +
+    toNumber(totals.senior) * 2 +
+    toNumber(totals.families);
+
+  return {
+    totalAffected,
+    vulnerableCount,
+    priorityScore,
+    waitingHours,
+    waitingDays,
+    requestedFoodPacks,
+  };
+};
+
+const deriveStageFromStatus = (status) => {
+  if (status === "pending") return "pending_review";
+  if (status === "approved") return "approved_waiting_release";
+  if (status === "rejected") return "rejected";
+  if (status === "partially_released") return "partially_released";
+  if (status === "released") return "released_waiting_receipt";
+  if (status === "received") return "completed";
+  if (status === "cancelled") return "completed";
+  return "pending_review";
+};
+
+const getPriorityLevel = (prioritySnapshot = {}, totals = {}) => {
+  const score = toNumber(prioritySnapshot.priorityScore);
+  const vulnerableCount = toNumber(prioritySnapshot.vulnerableCount);
+  const requestedFoodPacks = toNumber(
+    prioritySnapshot.requestedFoodPacks || totals.requestedFoodPacks
+  );
+  const totalAffected = toNumber(prioritySnapshot.totalAffected);
+
+  if (
+    score >= 220 ||
+    vulnerableCount >= 30 ||
+    requestedFoodPacks >= 180 ||
+    totalAffected >= 220
+  ) {
+    return "high";
+  }
+
+  if (
+    score >= 110 ||
+    vulnerableCount >= 15 ||
+    requestedFoodPacks >= 90 ||
+    totalAffected >= 120
+  ) {
+    return "medium";
+  }
+
+  return "normal";
+};
+
+const buildPriorityBadges = (request) => {
+  const badges = [];
+  const totals = request?.totals || {};
+  const priority = request?.prioritySnapshot || computePrioritySnapshot(request);
+
+  if (priority.vulnerableCount >= 20) badges.push("High vulnerable population");
+  if (toNumber(totals.requestedFoodPacks) >= 100) badges.push("High volume");
+  if (priority.totalAffected >= 150) badges.push("Large affected population");
+  if (toNumber(priority.waitingDays) >= 2) badges.push("Oldest waiting");
+
+  return badges;
+};
+
+const buildOperationalStatusLabel = (request = {}) => {
+  const status = normalizeString(request.status).toLowerCase();
+  const currentStage = normalizeString(request.currentStage).toLowerCase();
+
+  if (status === "pending" || currentStage === "pending_review") {
+    return "Pending Review";
+  }
+
+  if (status === "approved" || currentStage === "approved_waiting_release") {
+    return "Awaiting Release";
+  }
+
+  if (status === "partially_released" || currentStage === "partially_released") {
+    return "Partially Released";
+  }
+
+  if (
+    status === "released" ||
+    currentStage === "released_waiting_receipt"
+  ) {
+    return "Awaiting Receipt";
+  }
+
+  if (status === "rejected" || currentStage === "rejected") {
+    return "Rejected";
+  }
+
+  if (
+    status === "received" ||
+    status === "cancelled" ||
+    currentStage === "completed"
+  ) {
+    return "Completed";
+  }
+
+  return "Pending Review";
+};
+
+const enrichRequestForQueue = (request) => {
+  const requestObj =
+    typeof request?.toObject === "function" ? request.toObject() : request;
+
+  const prioritySnapshot = requestObj.prioritySnapshot?.priorityScore
+    ? {
+        ...requestObj.prioritySnapshot,
+        waitingHours: toNumber(requestObj.prioritySnapshot.waitingHours),
+        waitingDays: toNumber(requestObj.prioritySnapshot.waitingDays),
+        requestedFoodPacks: toNumber(
+          requestObj.prioritySnapshot.requestedFoodPacks ||
+            requestObj?.totals?.requestedFoodPacks
+        ),
+      }
+    : computePrioritySnapshot(requestObj);
+
+  const normalizedStage =
+    normalizeString(requestObj.currentStage) ||
+    deriveStageFromStatus(requestObj.status);
+
+  return {
+    ...requestObj,
+    currentStage: normalizedStage,
+    prioritySnapshot,
+    priorityLevel: getPriorityLevel(prioritySnapshot, requestObj.totals || {}),
+    priorityBadges: buildPriorityBadges({
+      ...requestObj,
+      prioritySnapshot,
+    }),
+    operationalStatusLabel: buildOperationalStatusLabel({
+      ...requestObj,
+      currentStage: normalizedStage,
+    }),
+    submittedAt: requestObj.createdAt || requestObj.requestDate || null,
+  };
+};
+
+const summarizeInventoryByCategory = async () => {
+  const goodsItems = await InventoryItem.find({
+    isArchive: false,
+    type: "goods",
+  }).lean();
+
+  const byCategory = {};
+  let totalStockUnits = 0;
+
+  for (const item of goodsItems) {
+    const category = normalizeString(item.category).toLowerCase() || "uncategorized";
+    const quantity = toNumber(item.quantity);
+
+    if (!byCategory[category]) {
+      byCategory[category] = 0;
+    }
+
+    byCategory[category] += quantity;
+    totalStockUnits += quantity;
+  }
+
+  return {
+    totalGoodsEntries: goodsItems.length,
+    totalStockUnits,
+    categories: byCategory,
+  };
+};
+
+const summarizeTemplatesForRequest = async (requestedFoodPacks = 0) => {
+  const templates = await FoodPackTemplate.find({
+    isArchived: false,
+    isActive: true,
+  }).lean();
+
+  return templates.map((template) => ({
+    _id: template._id,
+    name: template.name,
+    description: template.description || "",
+    itemCount: Array.isArray(template.items) ? template.items.length : 0,
+    canServeRequestedFoodPacks: requestedFoodPacks > 0,
+  }));
+};
+
+const sortMappedRequests = (requests, sort) => {
+  const safeSort = normalizeString(sort).toLowerCase() || "priority";
+
+  requests.sort((a, b) => {
+    if (safeSort === "oldest") {
+      return new Date(a.createdAt) - new Date(b.createdAt);
+    }
+
+    if (safeSort === "newest") {
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    }
+
+    if (safeSort === "foodpacks") {
+      return (
+        toNumber(b.totals?.requestedFoodPacks) -
+        toNumber(a.totals?.requestedFoodPacks)
+      );
+    }
+
+    if (safeSort === "affected") {
+      return (
+        toNumber(b.prioritySnapshot?.totalAffected) -
+        toNumber(a.prioritySnapshot?.totalAffected)
+      );
+    }
+
+    if (safeSort === "waiting") {
+      return (
+        toNumber(b.prioritySnapshot?.waitingHours) -
+        toNumber(a.prioritySnapshot?.waitingHours)
+      );
+    }
+
+    return (
+      toNumber(b.prioritySnapshot?.priorityScore) -
+        toNumber(a.prioritySnapshot?.priorityScore) ||
+      new Date(a.createdAt) - new Date(b.createdAt)
+    );
+  });
+
+  return requests;
+};
 
 /* GET PENDING RELIEF REQUESTS */
 const getPendingRequests = async (req, res) => {
   try {
     const requests = await ReliefRequest.find({
-      status: 'pending',
-      isArchived: false
+      status: "pending",
+      isArchived: false,
     }).sort({ createdAt: -1 });
 
-    res.json(requests);
+    const enriched = requests.map(enrichRequestForQueue);
+
+    res.json(enriched);
   } catch (err) {
-    console.error('Get Pending Requests Error:', err);
+    console.error("Get Pending Requests Error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+/* GET DRRMO QUEUE */
+const getRequestQueue = async (req, res) => {
+  try {
+    const statusFilter = normalizeString(req.query.status).toLowerCase();
+    const search = normalizeString(req.query.search).toLowerCase();
+    const sort = normalizeString(req.query.sort).toLowerCase() || "priority";
+
+    const query = {
+      isArchived: false,
+    };
+
+    if (!statusFilter || statusFilter === "active") {
+      query.status = { $in: ACTIVE_QUEUE_STATUSES };
+    } else if (statusFilter === "pending") {
+      query.status = "pending";
+    } else if (statusFilter === "approved") {
+      query.status = "approved";
+    } else if (statusFilter === "partially_released") {
+      query.status = "partially_released";
+    } else if (statusFilter === "released") {
+      query.status = "released";
+    } else if (statusFilter === "completed") {
+      query.status = { $in: COMPLETED_QUEUE_STATUSES };
+    } else if (statusFilter === "history") {
+      query.status = { $in: HISTORY_QUEUE_STATUSES };
+    } else if (statusFilter === "all") {
+      // keep all non-archived requests
+    } else {
+      query.status = { $in: ACTIVE_QUEUE_STATUSES };
+    }
+
+    let requests = await ReliefRequest.find(query).sort({ createdAt: -1 });
+
+    if (search) {
+      requests = requests.filter((request) => {
+        const haystack = [
+          request.requestNo,
+          request.barangayName,
+          request.disaster,
+          request.status,
+          request.currentStage,
+        ]
+          .map((value) => normalizeString(value).toLowerCase())
+          .join(" ");
+
+        return haystack.includes(search);
+      });
+    }
+
+    const mapped = requests.map(enrichRequestForQueue);
+    sortMappedRequests(mapped, sort);
+
+    const summary = {
+      totalInView: mapped.length,
+      pendingReview: mapped.filter((item) => item.status === "pending").length,
+      awaitingRelease: mapped.filter((item) => item.status === "approved").length,
+      partiallyReleased: mapped.filter(
+        (item) => item.status === "partially_released"
+      ).length,
+      awaitingReceipt: mapped.filter((item) => item.status === "released").length,
+      rejected: mapped.filter((item) => item.status === "rejected").length,
+      completed: mapped.filter((item) =>
+        ["received", "cancelled"].includes(item.status)
+      ).length,
+      highPriority: mapped.filter((item) => item.priorityLevel === "high").length,
+      mediumPriority: mapped.filter((item) => item.priorityLevel === "medium")
+        .length,
+      normalPriority: mapped.filter((item) => item.priorityLevel === "normal")
+        .length,
+    };
+
+    res.json({
+      statusScope:
+        !statusFilter || statusFilter === "active" ? "active" : statusFilter,
+      summary,
+      requests: mapped,
+    });
+  } catch (err) {
+    console.error("Get Request Queue Error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+/* GET SINGLE REQUEST REVIEW DETAILS */
+const getRequestReviewDetails = async (req, res) => {
+  try {
+    const request = await ReliefRequest.findById(req.params.requestId);
+
+    if (!request || request.isArchived) {
+      return res.status(404).json({ message: "Relief request not found" });
+    }
+
+    const releases = await ReliefRelease.find({
+      reliefRequestId: request._id,
+      isArchived: false,
+    }).sort({ createdAt: -1 });
+
+    const inventorySummary = await summarizeInventoryByCategory();
+    const templates = await summarizeTemplatesForRequest(
+      toNumber(request.totals?.requestedFoodPacks)
+    );
+
+    const enrichedRequest = enrichRequestForQueue(request);
+
+    res.json({
+      request: enrichedRequest,
+      releases,
+      inventorySummary,
+      templates,
+    });
+  } catch (err) {
+    console.error("Get Request Review Details Error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+/* GET REQUEST FEASIBILITY */
+const getRequestFeasibility = async (req, res) => {
+  try {
+    const request = await ReliefRequest.findById(req.params.requestId);
+
+    if (!request || request.isArchived) {
+      return res.status(404).json({ message: "Relief request not found" });
+    }
+
+    const enrichedRequest = enrichRequestForQueue(request);
+    const inventorySummary = await summarizeInventoryByCategory();
+    const templates = await summarizeTemplatesForRequest(
+      toNumber(request.totals?.requestedFoodPacks)
+    );
+
+    const lowStockWarnings = Object.entries(inventorySummary.categories || {})
+      .filter(([, quantity]) => toNumber(quantity) <= 20)
+      .map(([category, quantity]) => ({
+        category,
+        quantity,
+      }));
+
+    res.json({
+      requestNo: enrichedRequest.requestNo,
+      barangayName: enrichedRequest.barangayName,
+      requestedFoodPacks: toNumber(enrichedRequest.totals?.requestedFoodPacks),
+      totalAffected: toNumber(enrichedRequest.prioritySnapshot?.totalAffected),
+      vulnerableCount: toNumber(
+        enrichedRequest.prioritySnapshot?.vulnerableCount
+      ),
+      waitingHours: toNumber(enrichedRequest.prioritySnapshot?.waitingHours),
+      priorityLevel: enrichedRequest.priorityLevel,
+      submittedAt: enrichedRequest.submittedAt,
+      inventorySummary,
+      templates,
+      lowStockWarnings,
+    });
+  } catch (err) {
+    console.error("Get Request Feasibility Error:", err);
     res.status(500).json({ message: err.message });
   }
 };
@@ -19,27 +460,38 @@ const getPendingRequests = async (req, res) => {
 /* APPROVE OR REJECT REQUEST */
 const updateReliefStatus = async (req, res) => {
   try {
-    const username = req.session?.username || req.session?.userId || '';
-    const { action, remarks } = req.body;
+    const username = req.session?.username || req.session?.userId || "";
+    const action = normalizeString(req.body.action).toLowerCase();
+    const remarks = normalizeString(req.body.remarks);
 
     const request = await ReliefRequest.findById(req.params.requestId);
     if (!request || request.isArchived) {
-      return res.status(404).json({ message: 'Relief request not found' });
+      return res.status(404).json({ message: "Relief request not found" });
     }
 
-    if (request.status !== 'pending') {
+    if (request.status !== "pending") {
       return res.status(400).json({
-        message: 'Only pending requests can be updated here.'
+        message: "Only pending requests can be updated here.",
       });
     }
 
-    if (action === 'accept') {
-      request.status = 'approved';
+    if (action === "accept") {
+      request.status = "approved";
+      request.currentStage = "approved_waiting_release";
       request.approvedBy = String(username);
       request.approvedAt = new Date();
+      request.approvalRemarks = remarks;
+      request.rejectedBy = "";
+      request.rejectedAt = null;
+      request.rejectionReason = "";
 
-      if (remarks) {
-        request.remarks = String(remarks).trim();
+      if (!request.prioritySnapshot?.priorityScore) {
+        request.prioritySnapshot = computePrioritySnapshot(request);
+      } else {
+        request.prioritySnapshot = {
+          ...request.prioritySnapshot.toObject?.(),
+          ...computePrioritySnapshot(request),
+        };
       }
 
       await request.save();
@@ -47,51 +499,67 @@ const updateReliefStatus = async (req, res) => {
       await Audit.create({
         barangayId: request.barangayId,
         barangayName: request.barangayName,
-        category: 'relief_request',
+        category: "relief_request",
         peopleRange: `Food packs requested: ${request.totals.requestedFoodPacks}`,
-        status: 'approved',
-        actionBy: 'drrmo'
+        status: "approved",
+        actionBy: "drrmo",
       });
 
       return res.json({
-        message: 'Relief request approved successfully.',
-        request
+        message: "Relief request approved successfully.",
+        request: enrichRequestForQueue(request),
       });
     }
 
-    if (action === 'cancel' || action === 'reject') {
-      request.status = 'rejected';
+    if (action === "reject" || action === "cancel") {
+      request.status = "rejected";
+      request.currentStage = "rejected";
       request.rejectedBy = String(username);
       request.rejectedAt = new Date();
-      request.rejectionReason = remarks ? String(remarks).trim() : '';
+      request.rejectionReason = remarks;
+      request.approvedBy = "";
+      request.approvedAt = null;
+      request.approvalRemarks = "";
+
+      if (!request.prioritySnapshot?.priorityScore) {
+        request.prioritySnapshot = computePrioritySnapshot(request);
+      } else {
+        request.prioritySnapshot = {
+          ...request.prioritySnapshot.toObject?.(),
+          ...computePrioritySnapshot(request),
+        };
+      }
 
       await request.save();
 
       await Audit.create({
         barangayId: request.barangayId,
         barangayName: request.barangayName,
-        category: 'relief_request',
+        category: "relief_request",
         peopleRange: `Food packs requested: ${request.totals.requestedFoodPacks}`,
-        status: 'rejected',
-        actionBy: 'drrmo'
+        status: "rejected",
+        actionBy: "drrmo",
       });
 
       return res.json({
-        message: 'Relief request rejected successfully.',
-        request
+        message: "Relief request rejected successfully.",
+        request: enrichRequestForQueue(request),
       });
     }
 
     return res.status(400).json({
-      message: 'Invalid action. Use accept or reject.'
+      message: "Invalid action. Use accept or reject.",
     });
   } catch (err) {
-    console.error('Update Relief Status Error:', err);
+    console.error("Update Relief Status Error:", err);
     res.status(500).json({ message: err.message });
   }
 };
 
 module.exports = {
   getPendingRequests,
-  updateReliefStatus
+  getRequestQueue,
+  getRequestReviewDetails,
+  getRequestFeasibility,
+  updateReliefStatus,
 };

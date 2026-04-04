@@ -1,40 +1,37 @@
-// server.js 
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const session = require('express-session');
-const dotenv = require('dotenv');
-const fetch = require('node-fetch'); // needed for hazard route
-const path = require('path');
-const fs = require('fs');
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
+const session = require("express-session");
+const dotenv = require("dotenv");
+const fetch = require("node-fetch");
+const path = require("path");
+const fs = require("fs");
 
 dotenv.config();
 
 // --------------------
 // Routes
 // --------------------
-const userRoutes = require('./routes/userRoutes');
-const incidentRoutes = require('./routes/incidentRoutes');
-const historyRoutes = require('./routes/historyRoutes');
-const evacRoutes = require('./routes/EvacRoutes');
-const authRoutes = require('./routes/authRoutes');
-const barangayRoutes = require('./routes/barangayRoutes');
-const drrmoRoutes = require('./routes/drrmoRoutes');
-const reliefTrackingRoutes = require('./routes/reliefTrackingRoutes');
-const auditRoutes = require('./routes/auditRoutes');
+const userRoutes = require("./routes/userRoutes");
+const incidentRoutes = require("./routes/incidentRoutes");
+const historyRoutes = require("./routes/historyRoutes");
+const evacRoutes = require("./routes/EvacRoutes");
+const authRoutes = require("./routes/authRoutes");
+const barangayRoutes = require("./routes/barangayRoutes");
+const drrmoRoutes = require("./routes/drrmoRoutes");
+const reliefTrackingRoutes = require("./routes/reliefTrackingRoutes");
+const auditRoutes = require("./routes/auditRoutes");
 const guidelineRoutes = require("./routes/GuidelineRoutes");
 const connectionRoutes = require("./routes/connectionRoutes");
-const timeInOutRoutes = require('./routes/timeInOutRoutes');
-const editRoutes = require('./routes/editRoutes');
-const barangayStockRoutes = require('./routes/barangayStockRoutes');
-
-// NEW donation & inventory routes
-const inventoryRoutes = require('./routes/inventoryRoutes');
-const reliefRequestRoutes = require('./routes/reliefRequestRoutes');
-const reliefReleaseRoutes = require('./routes/reliefReleaseRoutes');
+const timeInOutRoutes = require("./routes/timeInOutRoutes");
+const editRoutes = require("./routes/editRoutes");
+const inventoryRoutes = require("./routes/inventoryRoutes");
+const reliefRequestRoutes = require("./routes/reliefRequestRoutes");
+const reliefReleaseRoutes = require("./routes/reliefReleaseRoutes");
+const foodPackRoutes = require("./routes/foodPackRoutes");
 
 const app = express();
-app.set('trust proxy', 1);
+app.set("trust proxy", 1);
 
 // --------------------
 // Upload folders
@@ -68,46 +65,47 @@ if (!fs.existsSync(reliefRequestsDir)) {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// IMPORTANT for Render / HTTPS
-app.set('trust proxy', 1);
-
 // --------------------
-// CORS (merged + FIXED)
+// CORS
 // --------------------
 const FRONTEND_URLS = [
-  'http://localhost:3000',
-  'http://localhost:8081',
-  'https://sagipbayan.com'
+  "http://localhost:3000",
+  "http://localhost:8081",
+  "https://sagipbayan.com",
 ];
 
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || FRONTEND_URLS.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin || FRONTEND_URLS.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  })
+);
 
 // --------------------
-// Session (FIXED for cross-origin)
+// Session
 // --------------------
-const isProd = process.env.NODE_ENV === 'production';
+const isProd = process.env.NODE_ENV === "production";
 
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'supersecretkey',
-  resave: false,
-  saveUninitialized: false,
-  proxy: isProd,
-  cookie: {
-    secure: isProd,
-    httpOnly: true,
-    sameSite: isProd ? 'none' : 'lax',
-    maxAge: 1000 * 60 * 60 * 24
-  }
-}));
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "supersecretkey",
+    resave: false,
+    saveUninitialized: false,
+    proxy: isProd,
+    cookie: {
+      secure: isProd,
+      httpOnly: true,
+      sameSite: isProd ? "none" : "lax",
+      maxAge: 1000 * 60 * 60 * 24,
+    },
+  })
+);
 
 // --------------------
 // DEBUG middleware
@@ -124,7 +122,7 @@ app.use((req, res, next) => {
 app.get("/api/debug-express", (req, res) => {
   res.json({
     message: "EXPRESS WORKING",
-    session: req.session
+    session: req.session,
   });
 });
 
@@ -153,14 +151,12 @@ app.use("/api/drrmo", drrmoRoutes);
 app.use("/api/relief-tracking", reliefTrackingRoutes);
 app.use("/api/audit", auditRoutes);
 app.use("/connection", connectionRoutes);
-app.use('/api/timeinout', timeInOutRoutes);
-app.use('/api/edit', editRoutes);
-
-// NEW routes
-app.use('/api/inventory', inventoryRoutes);
-app.use('/api/relief-requests', reliefRequestRoutes);
-app.use('/api/relief-releases', reliefReleaseRoutes);
-app.use('/api/barangay-stock', barangayStockRoutes);
+app.use("/api/timeinout", timeInOutRoutes);
+app.use("/api/edit", editRoutes);
+app.use("/api/inventory", inventoryRoutes);
+app.use("/api/relief-requests", reliefRequestRoutes);
+app.use("/api/relief-releases", reliefReleaseRoutes);
+app.use("/api/food-pack-templates", foodPackRoutes);
 
 // --------------------
 // Hazard proxy
@@ -171,7 +167,9 @@ app.get("/hazards", async (req, res) => {
     const citiesJson = await citiesRes.json();
 
     const pasig = citiesJson.result?.find(
-      city => city.name.toLowerCase().includes("pasig") || city.code.toLowerCase().includes("pasig")
+      (city) =>
+        city.name.toLowerCase().includes("pasig") ||
+        city.code.toLowerCase().includes("pasig")
     );
 
     if (!pasig) {
@@ -185,7 +183,6 @@ app.get("/hazards", async (req, res) => {
 
     const reportsData = await reportsRes.json();
     res.json(reportsData.result);
-
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -203,7 +200,7 @@ app.get("/api/debug-session", (req, res) => {
     session: req.session,
     username: req.session?.username || null,
     userId: req.session?.userId || null,
-    role: req.session?.role || null
+    role: req.session?.role || null,
   });
 });
 
@@ -226,15 +223,16 @@ if (process.env.NODE_ENV === "production") {
 // --------------------
 // MongoDB
 // --------------------
-mongoose.connect(process.env.MONGO_URI)
+mongoose
+  .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Atlas connected"))
-  .catch(err => console.error("MongoDB connection error:", err));
+  .catch((err) => console.error("MongoDB connection error:", err));
 
 mongoose.connection.once("open", async () => {
   console.log("Connected DB:", mongoose.connection.name);
 
   const collections = await mongoose.connection.db.listCollections().toArray();
-  console.log("Collections:", collections.map(c => c.name));
+  console.log("Collections:", collections.map((c) => c.name));
 });
 
 // --------------------

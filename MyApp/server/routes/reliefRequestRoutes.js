@@ -1,12 +1,16 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const controller = require('../controllers/reliefRequestController');
+const controller = require("../controllers/reliefRequestController");
+const { requireLogin } = require("../middleware/adminMiddleware");
 
-router.post('/', controller.submitReliefRequest);
-router.get('/mine', controller.getMyReliefRequests);
-router.get('/mine/:id', controller.getMyReliefRequestById);
-router.put('/:id', controller.updateOwnReliefRequest);
-router.put('/:id/cancel', controller.cancelOwnReliefRequest);
-router.put('/:id/received', controller.markReliefRequestReceived);
+router.get("/bootstrap", requireLogin, controller.getReliefRequestBootstrap);
+router.get("/journey/current", requireLogin, controller.getCurrentReliefJourney);
+
+router.post("/", requireLogin, controller.submitReliefRequest);
+router.get("/mine", requireLogin, controller.getMyReliefRequests);
+router.get("/mine/:id", requireLogin, controller.getMyReliefRequestById);
+router.put("/:id", requireLogin, controller.updateOwnReliefRequest);
+router.put("/:id/cancel", requireLogin, controller.cancelOwnReliefRequest);
+router.put("/:id/received", requireLogin, controller.markReliefRequestReceived);
 
 module.exports = router;

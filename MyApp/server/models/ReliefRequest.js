@@ -67,6 +67,17 @@ const requestRowSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+
+    isActiveRow: {
+      type: Boolean,
+      default: true,
+    },
+    rowRemarks: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
   },
   { _id: false }
 );
@@ -199,12 +210,65 @@ const reliefRequestSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    currentStage: {
+      type: String,
+      enum: [
+    "preparation",
+    "pending_review",
+    "rejected",
+    "approved_waiting_release",
+    "partially_released",
+    "released_waiting_receipt",
+    "completed"
+  ],
+  default: "pending_review"
+},
+
+entryMode: {
+  type: String,
+  enum: ["manual", "excel_import", "system_bootstrap"],
+  default: "system_bootstrap"
+},
+
+rowSource: {
+  type: String,
+  enum: ["evac_place_snapshot", "manual_override"],
+  default: "evac_place_snapshot"
+},
+
+approvalRemarks: {
+  type: String,
+  default: "",
+  trim: true,
+},
+releaseNotes: {
+  type: String,
+  default: "",
+  trim: true,
+},
+
+fulfillment: {
+  totalReleases: { type: Number, default: 0, min: 0 },
+  releasedFoodPacks: { type: Number, default: 0, min: 0 },
+  receivedReleases: { type: Number, default: 0, min: 0 },
+  pendingReleases: { type: Number, default: 0, min: 0 },
+  lastReleaseAt: { type: Date, default: null },
+},
+
+prioritySnapshot: {
+  totalAffected: { type: Number, default: 0, min: 0 },
+  vulnerableCount: { type: Number, default: 0, min: 0 },
+  priorityScore: { type: Number, default: 0, min: 0 },
+},
+
   },
   { timestamps: true }
 );
 
 reliefRequestSchema.pre("save", function () {
   const rows = this.rows || [];
+
+  
 
   this.totals = {
     households: rows.reduce((sum, row) => sum + (Number(row.households) || 0), 0),

@@ -12,8 +12,6 @@ router.get("/analytics/summary", EvacController.getAnalyticsSummary);
 router.put("/:id", EvacController.updatePlace);
 router.put("/:id/status", EvacController.updateCapacityStatus);
 
-router.post("/:id/allocate", EvacController.allocateStockToPlace);
-
 router.delete("/:id", EvacController.deletePlace);
 
 module.exports = router;

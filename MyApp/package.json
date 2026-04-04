@@ -25,6 +25,7 @@
     "expo-status-bar": "~3.0.9",
     "leaflet": "^1.9.4",
     "leaflet.heat": "^0.2.0",
+    "pdfkit": "^0.18.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-hook-form": "^7.71.1",
