@@ -1,10 +1,10 @@
-// server.js
+// server.js 
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const session = require('express-session');
 const dotenv = require('dotenv');
-const fetch = require('node-fetch'); // needed for hazard route
+const fetch = require('node-fetch');
 const path = require('path');
 const fs = require('fs');
 
@@ -26,6 +26,11 @@ const guidelineRoutes = require("./routes/GuidelineRoutes");
 const connectionRoutes = require("./routes/connectionRoutes");
 const timeInOutRoutes = require('./routes/timeInOutRoutes');
 const editRoutes = require('./routes/editRoutes');
+const barangayStockRoutes = require('./routes/barangayStockRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
+const reliefRequestRoutes = require('./routes/reliefRequestRoutes');
+const reliefReleaseRoutes = require('./routes/reliefReleaseRoutes');
+const foodPackRoutes = require('./routes/foodPackRoutes');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -39,17 +44,33 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const guidelinesDir = path.join(uploadDir, "guidelines");
 if (!fs.existsSync(guidelinesDir)) fs.mkdirSync(guidelinesDir, { recursive: true });
 
+const inventoryDir = path.join(uploadDir, "inventory");
+if (!fs.existsSync(inventoryDir)) fs.mkdirSync(inventoryDir, { recursive: true });
+
+const goodsDir = path.join(uploadDir, "goods");
+if (!fs.existsSync(goodsDir)) fs.mkdirSync(goodsDir, { recursive: true });
+
+const monetaryDir = path.join(uploadDir, "monetary");
+if (!fs.existsSync(monetaryDir)) fs.mkdirSync(monetaryDir, { recursive: true });
+
+const proofsDir = path.join(uploadDir, "proofs");
+if (!fs.existsSync(proofsDir)) fs.mkdirSync(proofsDir, { recursive: true });
+
+const reliefRequestsDir = path.join(uploadDir, "relief-requests");
+if (!fs.existsSync(reliefRequestsDir)) {
+  fs.mkdirSync(reliefRequestsDir, { recursive: true });
+}
+
 // --------------------
 // Body parsers
 // --------------------
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// IMPORTANT for Render / HTTPS
 app.set('trust proxy', 1);
 
 // --------------------
-// CORS (merged + FIXED)
+// CORS
 // --------------------
 const FRONTEND_URLS = [
   'http://localhost:3000',
@@ -69,7 +90,7 @@ app.use(cors({
 }));
 
 // --------------------
-// Session (FIXED for cross-origin)
+// Session
 // --------------------
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -79,9 +100,9 @@ app.use(session({
   saveUninitialized: false,
   proxy: isProd,
   cookie: {
-    secure: isProd,                 // true in Render
+    secure: isProd,
     httpOnly: true,
-    sameSite: isProd ? 'none' : 'lax', // CRITICAL FIX
+    sameSite: isProd ? 'none' : 'lax',
     maxAge: 1000 * 60 * 60 * 24
   }
 }));
@@ -110,6 +131,11 @@ app.get("/api/debug-express", (req, res) => {
 // --------------------
 app.use("/uploads", express.static(uploadDir));
 app.use("/uploads/guidelines", express.static(guidelinesDir));
+app.use("/uploads/inventory", express.static(inventoryDir));
+app.use("/uploads/goods", express.static(goodsDir));
+app.use("/uploads/monetary", express.static(monetaryDir));
+app.use("/uploads/proofs", express.static(proofsDir));
+app.use("/uploads/relief-requests", express.static(reliefRequestsDir));
 
 // --------------------
 // API Routes
@@ -127,9 +153,14 @@ app.use("/api/audit", auditRoutes);
 app.use("/connection", connectionRoutes);
 app.use('/api/timeinout', timeInOutRoutes);
 app.use('/api/edit', editRoutes);
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/relief-requests', reliefRequestRoutes);
+app.use('/api/relief-releases', reliefReleaseRoutes);
+app.use('/api/barangay-stock', barangayStockRoutes);
+app.use('/api/food-pack-templates', foodPackRoutes);
 
 // --------------------
-// Hazard proxy (from 2nd file)
+// Hazard proxy
 // --------------------
 app.get("/hazards", async (req, res) => {
   try {
@@ -162,6 +193,15 @@ app.get("/hazards", async (req, res) => {
 // --------------------
 app.get("/api/tryserver", (req, res) => {
   res.json({ message: "Server is working!" });
+});
+
+app.get("/api/debug-session", (req, res) => {
+  res.json({
+    session: req.session,
+    username: req.session?.username || null,
+    userId: req.session?.userId || null,
+    role: req.session?.role || null
+  });
 });
 
 app.get("/", (req, res) => {
