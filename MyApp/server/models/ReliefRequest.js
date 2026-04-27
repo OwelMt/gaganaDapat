@@ -247,6 +247,29 @@ releaseNotes: {
   trim: true,
 },
 
+isEditedAfterSubmit: {
+  type: Boolean,
+  default: false,
+},
+
+lastEditedAt: {
+  type: Date,
+  default: null,
+},
+
+editCount: {
+  type: Number,
+  default: 0,
+  min: 0,
+},
+
+lastEditedBy: {
+  type: String,
+  default: "",
+  trim: true,
+},
+
+
 fulfillment: {
   totalReleases: { type: Number, default: 0, min: 0 },
   releasedFoodPacks: { type: Number, default: 0, min: 0 },

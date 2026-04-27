@@ -1,10 +1,12 @@
 const mongoose = require("mongoose");
+const PDFDocument = require("pdfkit");
 const ReliefRequest = require("../models/ReliefRequest");
 const ReliefRelease = require("../models/ReliefRelease");
 const InventoryItem = require("../models/InventoryItem");
 const InventoryLog = require("../models/InventoryLog");
 const Audit = require("../models/Audit");
 const FoodPackTemplate = require("../models/FoodPackTemplate");
+const createNotification = require("../utils/createNotification");
 
 const normalizeString = (value) => {
   if (value === undefined || value === null) return "";
@@ -20,6 +22,97 @@ const toNumber = (value) => {
   if (value === undefined || value === null || value === "") return 0;
   const parsed = Number(value);
   return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const formatDateValue = (value) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return date.toLocaleString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const formatStatusLabel = (status) => {
+  const normalized = normalizeString(status).toLowerCase();
+  if (!normalized) return "-";
+
+  return normalized
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const drawPdfLabelValue = (doc, label, value) => {
+  doc.font("Helvetica-Bold").text(`${label}: `, { continued: true });
+  doc.font("Helvetica").text(value ?? "-");
+};
+
+const ensurePdfPageSpace = (doc, neededSpace = 80) => {
+  if (doc.y + neededSpace > doc.page.height - doc.page.margins.bottom) {
+    doc.addPage();
+  }
+};
+
+const drawPdfSectionTitle = (doc, title) => {
+  ensurePdfPageSpace(doc, 40);
+  doc.moveDown(0.4);
+  doc.font("Helvetica-Bold").fontSize(13).text(title);
+  doc.moveDown(0.3);
+  doc.font("Helvetica").fontSize(10);
+};
+
+const drawSimpleTableHeader = (doc, columns) => {
+  ensurePdfPageSpace(doc, 30);
+  const startX = doc.page.margins.left;
+  const startY = doc.y;
+
+  doc.font("Helvetica-Bold").fontSize(8);
+  let x = startX;
+
+  columns.forEach((col) => {
+    doc.text(col.label, x, startY, {
+      width: col.width,
+      align: col.align || "left",
+    });
+    x += col.width;
+  });
+
+  doc.moveTo(startX, startY + 14)
+    .lineTo(doc.page.width - doc.page.margins.right, startY + 14)
+    .stroke();
+
+  doc.y = startY + 18;
+  doc.font("Helvetica").fontSize(8);
+};
+
+const drawSimpleTableRow = (doc, columns, row, rowHeight = 24) => {
+  ensurePdfPageSpace(doc, rowHeight + 12);
+
+  const startX = doc.page.margins.left;
+  const startY = doc.y;
+  let x = startX;
+
+  columns.forEach((col) => {
+    const value = row[col.key] ?? "-";
+    doc.text(String(value), x, startY, {
+      width: col.width,
+      align: col.align || "left",
+    });
+    x += col.width;
+  });
+
+  doc.moveTo(startX, startY + rowHeight - 4)
+    .lineTo(doc.page.width - doc.page.margins.right, startY + rowHeight - 4)
+    .strokeColor("#dddddd")
+    .stroke()
+    .strokeColor("#000000");
+
+  doc.y = startY + rowHeight;
 };
 
 const computePrioritySnapshotFromRequest = (request) => {
@@ -114,6 +207,98 @@ const validateReleaseItems = (items) => {
   return null;
 };
 
+const buildInventorySignature = (item = {}) => ({
+  name: normalizeLower(item.itemName || item.name),
+  category: normalizeLower(item.category),
+  unit: normalizeLower(item.unit),
+});
+
+const sortInventoryDocsForAllocation = (docs = []) => {
+  return docs.slice().sort((a, b) => {
+    const aExpiry = a.expirationDate ? new Date(a.expirationDate).getTime() : Infinity;
+    const bExpiry = b.expirationDate ? new Date(b.expirationDate).getTime() : Infinity;
+
+    if (aExpiry !== bExpiry) return aExpiry - bExpiry;
+
+    const aCreated = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bCreated = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return aCreated - bCreated;
+  });
+};
+
+const allocateInventoryForReleaseItem = async (item, session) => {
+  const normalizedSignature = buildInventorySignature(item);
+  const uniqueCandidates = new Map();
+
+  const addCandidate = (doc) => {
+    if (!doc || !doc._id) return;
+    uniqueCandidates.set(String(doc._id), doc);
+  };
+
+  if (item.inventoryItemId && mongoose.Types.ObjectId.isValid(item.inventoryItemId)) {
+    const byIdDoc = await InventoryItem.findOne({
+      _id: item.inventoryItemId,
+      isArchive: false,
+      type: "goods",
+    }).session(session);
+
+    addCandidate(byIdDoc);
+  }
+
+  if (
+    normalizedSignature.name &&
+    normalizedSignature.category &&
+    normalizedSignature.unit
+  ) {
+    const signatureMatches = await InventoryItem.find({
+      isArchive: false,
+      type: "goods",
+      name: new RegExp(`^${normalizedSignature.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"),
+      category: normalizedSignature.category,
+      unit: new RegExp(`^${normalizedSignature.unit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"),
+    }).session(session);
+
+    signatureMatches.forEach(addCandidate);
+  }
+
+  const candidates = sortInventoryDocsForAllocation(
+    Array.from(uniqueCandidates.values()).filter(
+      (doc) => Number(doc.quantity || 0) > 0
+    )
+  );
+
+  const requestedQty = Number(item.quantityReleased || 0);
+  const totalAvailable = candidates.reduce(
+    (sum, doc) => sum + Number(doc.quantity || 0),
+    0
+  );
+
+  let remainingQty = requestedQty;
+  const allocations = [];
+
+  for (const candidate of candidates) {
+    if (remainingQty <= 0) break;
+
+    const availableQty = Number(candidate.quantity || 0);
+    if (availableQty <= 0) continue;
+
+    const quantityToUse = Math.min(remainingQty, availableQty);
+    remainingQty -= quantityToUse;
+
+    allocations.push({
+      inventoryDoc: candidate,
+      quantity: quantityToUse,
+    });
+  }
+
+  return {
+    requestedQty,
+    totalAvailable,
+    allocations,
+    primaryInventoryDoc: allocations[0]?.inventoryDoc || candidates[0] || null,
+  };
+};
+
 const buildTemplateReleaseItems = async (
   foodPackTemplateId,
   foodPacksToRelease,
@@ -146,11 +331,21 @@ const buildTemplateReleaseItems = async (
   const generatedItems = [];
 
   for (const item of template.items || []) {
-    const inventoryDoc = await InventoryItem.findOne({
+    let inventoryDoc = await InventoryItem.findOne({
       _id: item.inventoryItemId,
       isArchive: false,
       type: "goods",
     }).session(session);
+
+    if (!inventoryDoc) {
+      inventoryDoc = await InventoryItem.findOne({
+        isArchive: false,
+        type: "goods",
+        name: item.itemName,
+        category: item.category,
+        unit: item.unit,
+      }).session(session);
+    }
 
     if (!inventoryDoc) {
       return {
@@ -469,72 +664,53 @@ const createReliefRelease = async (req, res) => {
     const preparedItems = [];
 
     for (const item of releaseItems) {
-      let inventoryDoc = null;
+      const allocation = await allocateInventoryForReleaseItem(item, session);
 
-      if (item.inventoryItemId) {
-        inventoryDoc = await InventoryItem.findById(item.inventoryItemId).session(
-          session
-        );
-      }
-
-      if (!inventoryDoc) {
-        inventoryDoc = await InventoryItem.findOne({
-          isArchive: false,
-          type: "goods",
-          name: item.itemName,
-          category: item.category,
-          unit: item.unit,
-        }).session(session);
-      }
-
-      if (!inventoryDoc) {
+      if (!allocation.primaryInventoryDoc) {
         await session.abortTransaction();
         return res.status(404).json({
           message: `Inventory item not found for "${item.itemName}".`,
         });
       }
 
-      const availableQty = Number(inventoryDoc.quantity || 0);
-
-      if (availableQty < item.quantityReleased) {
+      if (allocation.totalAvailable < allocation.requestedQty) {
         await session.abortTransaction();
         return res.status(400).json({
-          message: `Insufficient stock for "${item.itemName}". Available: ${availableQty}, requested release: ${item.quantityReleased}.`,
+          message: `Insufficient stock for "${item.itemName}". Available: ${allocation.totalAvailable}, requested release: ${allocation.requestedQty}.`,
         });
       }
 
+      for (const split of allocation.allocations) {
+        split.inventoryDoc.quantity =
+          Number(split.inventoryDoc.quantity || 0) - split.quantity;
+
+        await split.inventoryDoc.save({ session });
+
+        await InventoryLog.create(
+          [
+            {
+              inventoryItem: split.inventoryDoc._id,
+              itemName: split.inventoryDoc.name,
+              itemType: split.inventoryDoc.type,
+              action: "release",
+              quantity: split.quantity,
+              amount: undefined,
+              performedBy: username,
+              remarks: `Released for relief request ${reliefRequest.requestNo}`,
+            },
+          ],
+          { session }
+        );
+      }
+
       preparedItems.push({
-        inventoryDoc,
-        inventoryItemId: inventoryDoc._id,
-        itemName: inventoryDoc.name,
-        category: normalizeLower(item.category || inventoryDoc.category),
-        quantityReleased: Number(item.quantityReleased),
-        unit: inventoryDoc.unit,
+        inventoryItemId: item.inventoryItemId || allocation.primaryInventoryDoc._id,
+        itemName: normalizeString(item.itemName || allocation.primaryInventoryDoc.name),
+        category: normalizeLower(item.category || allocation.primaryInventoryDoc.category),
+        quantityReleased: allocation.requestedQty,
+        unit: normalizeString(item.unit || allocation.primaryInventoryDoc.unit),
         remarks: item.remarks,
       });
-    }
-
-    for (const item of preparedItems) {
-      item.inventoryDoc.quantity =
-        Number(item.inventoryDoc.quantity || 0) - item.quantityReleased;
-
-      await item.inventoryDoc.save({ session });
-
-      await InventoryLog.create(
-        [
-          {
-            inventoryItem: item.inventoryDoc._id,
-            itemName: item.inventoryDoc.name,
-            itemType: item.inventoryDoc.type,
-            action: "release",
-            quantity: item.quantityReleased,
-            amount: undefined,
-            performedBy: username,
-            remarks: `Released for relief request ${reliefRequest.requestNo}`,
-          },
-        ],
-        { session }
-      );
     }
 
     const releaseNo = await generateReleaseNo(session);
@@ -613,8 +789,48 @@ const createReliefRelease = async (req, res) => {
 
     await session.commitTransaction();
 
-    const updatedRequest = await ReliefRequest.findById(reliefRequest._id);
-    const updatedRelease = await ReliefRelease.findById(reliefRelease._id);
+const updatedRequest = await ReliefRequest.findById(reliefRequest._id);
+const updatedRelease = await ReliefRelease.findById(reliefRelease._id);
+
+await createNotification({
+  recipientRole: "barangay",
+  recipientUser: reliefRequest.barangayId,
+  recipientUserModel: "Barangay",
+  recipientBarangay: reliefRequest.barangayId,
+  recipientBarangayName: reliefRequest.barangayName,
+
+  senderUser: req.session?.userId || null,
+  senderRole: "drrmo",
+  senderName: username,
+
+  module: "relief",
+  type: "relief_goods_released",
+  priority: "high",
+
+  title: "Relief goods released",
+  message: `DRRMO released goods for your request ${reliefRequest.requestNo}. ${
+    releasedFoodPackCount > 0
+      ? `${releasedFoodPackCount} food pack(s) were released.`
+      : "Please review the release details."
+  }`,
+  link: "/barangay/relief-request",
+
+  referenceId: reliefRelease._id,
+  referenceModel: "ReliefRelease",
+  metadata: {
+    releaseNo,
+    requestNo: reliefRequest.requestNo,
+    barangayName: reliefRequest.barangayName,
+    disaster: reliefRequest.disaster,
+    releaseMode: finalReleaseMode,
+    foodPacksReleased: releasedFoodPackCount,
+    totalItemsReleased: preparedItems.reduce(
+      (sum, item) => sum + Number(item.quantityReleased || 0),
+      0
+    ),
+    isFinalRelease: releaseIsFinal,
+  },
+});
 
     res.status(201).json({
       message: "Relief goods released successfully.",
@@ -627,6 +843,170 @@ const createReliefRelease = async (req, res) => {
     res.status(500).json({ message: err.message });
   } finally {
     session.endSession();
+  }
+};
+
+/* EXPORT SINGLE RELEASE RECEIPT PDF */
+const exportReliefReleasePdf = async (req, res) => {
+  try {
+    const role = String(req.session?.role || "").toLowerCase();
+    const userId = String(req.session?.userId || "");
+
+    const reliefRelease = await ReliefRelease.findOne({
+      _id: req.params.id,
+      isArchived: false,
+    }).lean();
+
+    if (!reliefRelease) {
+      return res.status(404).json({ message: "Relief release not found." });
+    }
+
+    if (role === "barangay" && String(reliefRelease.barangayId) !== userId) {
+      return res.status(403).json({
+        message: "You can only export releases assigned to your barangay.",
+      });
+    }
+
+    const relatedRequest = await ReliefRequest.findById(
+      reliefRelease.reliefRequestId
+    ).lean();
+
+    const safeReleaseNo = normalizeString(reliefRelease.releaseNo || "relief-release")
+      .replace(/[^\w\-]+/g, "_");
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${safeReleaseNo}.pdf"`
+    );
+
+    const doc = new PDFDocument({
+      size: "A4",
+      margin: 40,
+      bufferPages: true,
+    });
+
+    doc.pipe(res);
+
+    doc.font("Helvetica-Bold").fontSize(18).text("Relief Release Receipt", {
+      align: "center",
+    });
+    doc.moveDown(0.3);
+    doc.font("Helvetica").fontSize(10).text(
+      "Generated from Disaster Relief Management System",
+      { align: "center" }
+    );
+
+    doc.moveDown(1);
+
+    drawPdfSectionTitle(doc, "Release Information");
+    drawPdfLabelValue(doc, "Release No", reliefRelease.releaseNo || "-");
+    drawPdfLabelValue(doc, "Request No", relatedRequest?.requestNo || "-");
+    drawPdfLabelValue(doc, "Barangay", reliefRelease.barangayName || "-");
+    drawPdfLabelValue(doc, "Release Status", formatStatusLabel(reliefRelease.releaseStatus));
+    drawPdfLabelValue(doc, "Release Mode", formatStatusLabel(reliefRelease.releaseMode));
+    drawPdfLabelValue(
+      doc,
+      "Template Name",
+      normalizeString(reliefRelease.foodPackTemplateName) || "None"
+    );
+    drawPdfLabelValue(
+      doc,
+      "Food Packs Released",
+      String(toNumber(reliefRelease.foodPacksReleased))
+    );
+    drawPdfLabelValue(
+      doc,
+      "Total Line Items",
+      String(toNumber(reliefRelease.releaseSummary?.totalLineItems))
+    );
+    drawPdfLabelValue(
+      doc,
+      "Total Quantity Released",
+      String(
+        toNumber(
+          reliefRelease.releaseSummary?.totalQuantityReleased ||
+            reliefRelease.totalItemsReleased
+        )
+      )
+    );
+    drawPdfLabelValue(
+      doc,
+      "Is Final Release",
+      reliefRelease.isFinalRelease ? "Yes" : "No"
+    );
+
+    drawPdfSectionTitle(doc, "Personnel and Dates");
+    drawPdfLabelValue(doc, "Released By", reliefRelease.releasedBy || "-");
+    drawPdfLabelValue(doc, "Released At", formatDateValue(reliefRelease.releasedAt));
+    drawPdfLabelValue(
+      doc,
+      "Received By",
+      normalizeString(reliefRelease.receivedBy) || "Not yet received"
+    );
+    drawPdfLabelValue(doc, "Received At", formatDateValue(reliefRelease.receivedAt));
+
+    drawPdfSectionTitle(doc, "Remarks");
+    doc.font("Helvetica").text(normalizeString(reliefRelease.remarks) || "None");
+
+    drawPdfSectionTitle(doc, "Released Item Breakdown");
+
+    const columns = [
+      { label: "Item", key: "itemName", width: 140 },
+      { label: "Category", key: "category", width: 90 },
+      { label: "Qty", key: "quantityReleased", width: 45, align: "right" },
+      { label: "Unit", key: "unit", width: 45 },
+      { label: "Remarks", key: "remarks", width: 170 },
+    ];
+
+    const items = Array.isArray(reliefRelease.items) ? reliefRelease.items : [];
+
+    if (!items.length) {
+      doc.font("Helvetica").fontSize(10).text("No released items available.");
+    } else {
+      drawSimpleTableHeader(doc, columns);
+
+      items.forEach((item) => {
+        drawSimpleTableRow(
+          doc,
+          columns,
+          {
+            itemName: normalizeString(item.itemName) || "-",
+            category: normalizeString(item.category) || "-",
+            quantityReleased: toNumber(item.quantityReleased),
+            unit: normalizeString(item.unit) || "-",
+            remarks: normalizeString(item.remarks) || "-",
+          },
+          28
+        );
+      });
+    }
+
+    if (relatedRequest) {
+      drawPdfSectionTitle(doc, "Related Request Snapshot");
+      drawPdfLabelValue(doc, "Disaster", relatedRequest.disaster || "-");
+      drawPdfLabelValue(doc, "Request Date", formatDateValue(relatedRequest.requestDate));
+      drawPdfLabelValue(doc, "Request Status", formatStatusLabel(relatedRequest.status));
+      drawPdfLabelValue(
+        doc,
+        "Requested Food Packs",
+        String(toNumber(relatedRequest?.totals?.requestedFoodPacks))
+      );
+    }
+
+    ensurePdfPageSpace(doc, 80);
+    doc.moveDown(1);
+    doc.font("Helvetica").fontSize(9).text(
+      `Document generated on ${formatDateValue(new Date())}`,
+      { align: "right" }
+    );
+
+    doc.end();
+  } catch (err) {
+    console.error("Export Relief Release PDF Error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ message: err.message });
+    }
   }
 };
 
@@ -710,10 +1090,39 @@ const receiveReliefRelease = async (req, res) => {
 
     await session.commitTransaction();
 
-    const updatedRelease = await ReliefRelease.findById(reliefRelease._id);
-    const updatedRequest = await ReliefRequest.findById(
-      reliefRelease.reliefRequestId
-    );
+const updatedRelease = await ReliefRelease.findById(reliefRelease._id);
+const updatedRequest = await ReliefRequest.findById(
+  reliefRelease.reliefRequestId
+);
+
+await createNotification({
+  recipientRole: "drrmo",
+
+  senderUser: req.session?.userId || null,
+  senderRole: role || "barangay",
+  senderName: updatedRelease?.barangayName || username,
+
+  module: "relief",
+  type: "relief_goods_received",
+  priority: "normal",
+
+  title: "Relief goods received",
+  message: `${updatedRelease?.barangayName || "Barangay"} confirmed receipt of release ${
+    updatedRelease?.releaseNo || ""
+  } for request ${updatedRequest?.requestNo || ""}.`,
+  link: "/drrmo/relief-lists",
+
+  referenceId: updatedRelease?._id || reliefRelease._id,
+  referenceModel: "ReliefRelease",
+  metadata: {
+    releaseNo: updatedRelease?.releaseNo || reliefRelease.releaseNo,
+    requestNo: updatedRequest?.requestNo || "",
+    barangayName: updatedRelease?.barangayName || "",
+    foodPacksReleased: updatedRelease?.foodPacksReleased || 0,
+    receivedBy: username,
+    requestStatus: updatedRequest?.status || "",
+  },
+});
 
     res.json({
       message: "Relief goods received successfully.",
@@ -761,6 +1170,7 @@ const getAllReliefReleases = async (req, res) => {
 module.exports = {
   getApprovedRequestsForRelease,
   createReliefRelease,
+  exportReliefReleasePdf,
   receiveReliefRelease,
   getReleasesByRequest,
   getAllReliefReleases,

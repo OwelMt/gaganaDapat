@@ -27,6 +27,12 @@ router.get(
   controller.getAllReliefReleases
 );
 
+router.get(
+  "/:id/export-pdf",
+  requireLogin,
+  controller.exportReliefReleasePdf
+);
+
 router.put(
   "/:id/receive",
   requireLogin,

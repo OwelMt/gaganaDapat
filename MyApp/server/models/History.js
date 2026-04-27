@@ -4,7 +4,7 @@ const historySchema = new mongoose.Schema(
   {
     action: {
       type: String,
-      enum: ["ADD", "STATUS_UPDATE", "DELETE"],
+      enum: ["ADD", "STATUS_UPDATE", "VERIFICATION_UPDATE", "DELETE"],
       required: true,
     },
     placeName: {

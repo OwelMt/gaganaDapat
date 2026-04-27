@@ -1,17 +1,77 @@
 const express = require("express");
 const router = express.Router();
 
-const EvacController = require("../controllers/EvacController.js");
+const controller = require("../controllers/EvacController");
+const {
+  requireLogin,
+  requireAdminOrDrrmo,
+} = require("../middleware/adminMiddleware");
 
-router.post("/make", EvacController.createPlace);
-router.get("/", EvacController.getPlaces);
+/* =========================
+   PUBLIC ROUTES
+========================= */
 
-router.get("/history/logs", EvacController.getHistory);
-router.get("/analytics/summary", EvacController.getAnalyticsSummary);
+router.get("/public", controller.getPublicPlaces);
 
-router.put("/:id", EvacController.updatePlace);
-router.put("/:id/status", EvacController.updateCapacityStatus);
+/* =========================
+   ACTIVE EVACUATION ROUTES
+========================= */
 
-router.delete("/:id", EvacController.deletePlace);
+router.post(
+  "/make",
+  requireLogin,
+  controller.createPlace
+);
+
+router.get(
+  "/",
+  requireLogin,
+  controller.getPlaces
+);
+
+router.get(
+  "/history/logs",
+  requireLogin,
+  controller.getHistory
+);
+
+router.get(
+  "/analytics/summary",
+  requireLogin,
+  controller.getAnalyticsSummary
+);
+
+router.get(
+  "/export-pdf",
+  requireLogin,
+  controller.exportPlacesPdf
+);
+
+router.put(
+  "/:id",
+  requireLogin,
+  controller.updatePlace
+);
+
+router.put(
+  "/:id/status",
+  requireLogin,
+  controller.updateCapacityStatus
+);
+
+router.put(
+  "/:id/landing-visibility",
+  requireLogin,
+  requireAdminOrDrrmo,
+  controller.updateLandingVisibility
+);
+
+router.delete(
+  "/:id",
+  requireLogin,
+  controller.deletePlace
+);
+
+router.put("/:id/occupancy", requireLogin, controller.updateOccupancy);
 
 module.exports = router;

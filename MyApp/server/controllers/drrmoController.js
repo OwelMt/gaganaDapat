@@ -3,6 +3,7 @@ const ReliefRelease = require("../models/ReliefRelease");
 const Audit = require("../models/Audit");
 const FoodPackTemplate = require("../models/FoodPackTemplate");
 const InventoryItem = require("../models/InventoryItem");
+const createNotification = require("../utils/createNotification");
 
 const normalizeString = (value) => {
   if (value === undefined || value === null) return "";
@@ -505,6 +506,37 @@ const updateReliefStatus = async (req, res) => {
         actionBy: "drrmo",
       });
 
+      await createNotification({
+        recipientRole: "barangay",
+        recipientUser: request.barangayId,
+        recipientUserModel: "Barangay",
+        recipientBarangay: request.barangayId,
+        recipientBarangayName: request.barangayName,
+
+        senderUser: req.session?.userId || null,
+        senderRole: "drrmo",
+        senderName: username,
+
+        module: "relief",
+        type: "relief_request_approved",
+        priority: "high",
+
+        title: "Relief request approved",
+        message: `Your relief request ${request.requestNo} for ${request.disaster} was approved by DRRMO.`,
+        link: "/barangay/relief-request",
+
+        referenceId: request._id,
+        referenceModel: "ReliefRequest",
+        metadata: {
+          requestNo: request.requestNo,
+          barangayName: request.barangayName,
+          disaster: request.disaster,
+          requestedFoodPacks: request.totals?.requestedFoodPacks || 0,
+          approvalRemarks: request.approvalRemarks || "",
+          approvedBy: username,
+        },
+      });
+
       return res.json({
         message: "Relief request approved successfully.",
         request: enrichRequestForQueue(request),
@@ -539,6 +571,39 @@ const updateReliefStatus = async (req, res) => {
         peopleRange: `Food packs requested: ${request.totals.requestedFoodPacks}`,
         status: "rejected",
         actionBy: "drrmo",
+      });
+
+      await createNotification({
+        recipientRole: "barangay",
+        recipientUser: request.barangayId,
+        recipientUserModel: "Barangay",
+        recipientBarangay: request.barangayId,
+        recipientBarangayName: request.barangayName,
+
+        senderUser: req.session?.userId || null,
+        senderRole: "drrmo",
+        senderName: username,
+
+        module: "relief",
+        type: "relief_request_rejected",
+        priority: "high",
+
+        title: "Relief request rejected",
+        message: `Your relief request ${request.requestNo} for ${request.disaster} was rejected. ${
+          remarks ? `Reason: ${remarks}` : "Please review the request details."
+        }`,
+        link: "/barangay/relief-request",
+
+        referenceId: request._id,
+        referenceModel: "ReliefRequest",
+        metadata: {
+          requestNo: request.requestNo,
+          barangayName: request.barangayName,
+          disaster: request.disaster,
+          requestedFoodPacks: request.totals?.requestedFoodPacks || 0,
+          rejectionReason: remarks,
+          rejectedBy: username,
+        },
       });
 
       return res.json({

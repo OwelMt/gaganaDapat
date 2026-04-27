@@ -1,28 +1,31 @@
 const mongoose = require('mongoose');
 
 const BARANGAY_OPTIONS = [
-  "Bagong Sikat",
-  "Bagong Silang",
   "Calabasa",
   "Don Mariano Marcos",
   "Dampulan",
   "Hilera",
-  "Imelda Poblacion",
-  "Ibunia",
+  "Imbunia",
   "Lambakin",
   "Langla",
   "Magsalisi",
   "Malabon Kaingin",
   "Marawa",
   "Niyugan",
+  "Pamacpacan",
+  "Pakol",
+  "Pinanggaan",
   "Putlod",
   "San Jose",
+  "San Josef (Nabao)",
   "San Pablo",
   "San Roque",
-  "Santo Tomas Norte",
-  "Santo Tomas Sur",
-  "Sapang Putik",
-  "Ulanin-Pitak"
+  "San Vicente",
+  "Santa Rita",
+  "Sapang",
+  "Santo Tomas North",
+  "Santo Tomas South",
+  "Ulanin Pitak"
 ];
 
 const barangaySchema = new mongoose.Schema(

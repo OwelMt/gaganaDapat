@@ -1,16 +1,20 @@
 const express = require("express");
 const router = express.Router();
 const controller = require("../controllers/GuidelineController");
-const { uploadGuideline } = require("../middleware/upload"); // uses the fixed guidelines folder
+const { uploadGuideline } = require("../middleware/upload");
 
-// Only uploads go into uploads/guidelines/
+// specific routes first
+router.get("/published", controller.getPublishedGuidelines);
+router.get("/published/export-pdf", controller.exportPublishedGuidelinesPdf);
+router.patch("/view/:id", controller.incrementViews);
+router.patch("/soft-delete/:id", controller.archiveGuideline);
+router.patch("/restore/:id", controller.restoreGuideline);
+
+// main CRUD
 router.post("/", uploadGuideline.array("attachments"), controller.createGuideline);
-
 router.get("/", controller.getGuidelines);
 router.get("/:id", controller.getGuidelineById);
-
-router.patch("/view/:id", controller.incrementViews);
-router.put("/:id", controller.updateGuideline);
+router.put("/:id", uploadGuideline.array("attachments"), controller.updateGuideline);
 router.delete("/:id", controller.deleteGuideline);
 
 module.exports = router;

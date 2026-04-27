@@ -1,5 +1,6 @@
 const Barangay = require("../models/Barangay");
 const User = require("../models/User");
+const mongoose = require("mongoose");
 
 const clean = (value) => String(value || "").replace(/<[^>]*>?/gm, "").trim();
 
@@ -27,7 +28,7 @@ const getMe = async (req, res) => {
     return res.status(404).json({ message: "Account not found" });
   } catch (err) {
     console.error("Get Me Error:", err);
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 };
 
@@ -40,9 +41,8 @@ const getBarangays = async (req, res) => {
       req.session?.barangayName || req.session?.username
     );
 
-    let query = { archived: false };
+    const query = { archived: false };
 
-    // Barangay users should only receive their own barangay
     if (role === "barangay") {
       query.$or = [];
 
@@ -73,14 +73,36 @@ const getBarangays = async (req, res) => {
       email: clean(item.email),
     }));
 
-    res.json(normalized);
+    return res.json(normalized);
   } catch (err) {
     console.error("Get Barangays Error:", err);
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+const getBarangayBounds = async (req, res) => {
+  try {
+    const db = mongoose.connection.db;
+
+    if (!db) {
+      return res.status(500).json({ message: "Database not connected yet" });
+    }
+
+    const data = await db
+      .collection("barangaycollections")
+      .find({})
+      .limit(50)
+      .toArray();
+
+    return res.json(data);
+  } catch (err) {
+    console.error("Get Barangay Bounds Error:", err);
+    return res.status(500).json({ message: err.message });
   }
 };
 
 module.exports = {
   getMe,
   getBarangays,
+  getBarangayBounds,
 };

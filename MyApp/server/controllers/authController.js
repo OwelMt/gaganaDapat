@@ -7,28 +7,31 @@ const AdminLog = require('../models/AdminLog');
 const UserStaff = require('../models/UserStaff.js');
 
 const BARANGAY_OPTIONS = [
-  "Bagong Sikat",
-  "Bagong Silang",
   "Calabasa",
   "Don Mariano Marcos",
   "Dampulan",
   "Hilera",
-  "Imelda Poblacion",
-  "Ibunia",
+  "Imbunia",
   "Lambakin",
   "Langla",
   "Magsalisi",
   "Malabon Kaingin",
   "Marawa",
   "Niyugan",
+  "Pamacpacan",
+  "Pakol",
+  "Pinanggaan",
   "Putlod",
   "San Jose",
+  "San Josef (Nabao)",
   "San Pablo",
   "San Roque",
-  "Santo Tomas Norte",
-  "Santo Tomas Sur",
-  "Sapang Putik",
-  "Ulanin-Pitak"
+  "San Vicente",
+  "Santa Rita",
+  "Sapang",
+  "Santo Tomas North",
+  "Santo Tomas South",
+  "Ulanin Pitak"
 ];
 
 /* INIT ADMIN */
@@ -240,7 +243,9 @@ console.log("LOGIN ACCOUNT:", {
 
 req.session.userId = account._id;
 req.session.role = role;
+req.session.isAuthenticated = true;
 req.session.username = account.username;
+req.session.barangayName = barangayName || account.barangayName || "";
 
 console.log("SESSION BEFORE SAVE:", req.session);
 
@@ -560,28 +565,31 @@ const getAdminLogs = async (req, res) => {
 const getAvailableBarangays = async (req, res) => {
   try {
     const BARANGAY_OPTIONS = [
-      "Bagong Sikat",
-      "Bagong Silang",
       "Calabasa",
-      "Don Mariano Marcos",
-      "Dampulan",
-      "Hilera",
-      "Imelda Poblacion",
-      "Ibunia",
-      "Lambakin",
-      "Langla",
-      "Magsalisi",
-      "Malabon Kaingin",
-      "Marawa",
-      "Niyugan",
-      "Putlod",
-      "San Jose",
-      "San Pablo",
-      "San Roque",
-      "Santo Tomas Norte",
-      "Santo Tomas Sur",
-      "Sapang Putik",
-      "Ulanin-Pitak"
+  "Don Mariano Marcos",
+  "Dampulan",
+  "Hilera",
+  "Imbunia",
+  "Lambakin",
+  "Langla",
+  "Magsalisi",
+  "Malabon Kaingin",
+  "Marawa",
+  "Niyugan",
+  "Pamacpacan",
+  "Pakol",
+  "Pinanggaan",
+  "Putlod",
+  "San Jose",
+  "San Josef (Nabao)",
+  "San Pablo",
+  "San Roque",
+  "San Vicente",
+  "Santa Rita",
+  "Sapang",
+  "Santo Tomas North",
+  "Santo Tomas South",
+  "Ulanin Pitak"
     ];
 
     const existingBarangays = await Barangay.find(

@@ -16,7 +16,6 @@ const inventoryItemSchema = new mongoose.Schema(
       trim: true
     },
 
-    // ✅ UPDATED — REMOVE ENUM
     category: {
       type: String,
       required: function () {
@@ -47,6 +46,11 @@ const inventoryItemSchema = new mongoose.Schema(
         return this.type === 'monetary';
       },
       min: 0
+    },
+
+    expirationDate: {
+      type: Date,
+      default: undefined
     },
 
     description: {
@@ -101,6 +105,7 @@ inventoryItemSchema.pre('validate', function () {
     this.category = undefined;
     this.quantity = undefined;
     this.unit = undefined;
+    this.expirationDate = undefined;
   }
 });
 

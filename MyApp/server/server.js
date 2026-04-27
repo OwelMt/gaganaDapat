@@ -29,6 +29,12 @@ const inventoryRoutes = require("./routes/inventoryRoutes");
 const reliefRequestRoutes = require("./routes/reliefRequestRoutes");
 const reliefReleaseRoutes = require("./routes/reliefReleaseRoutes");
 const foodPackRoutes = require("./routes/foodPackRoutes");
+const publicSiteRoutes = require("./routes/publicSiteRoutes");
+const reliefAnalyticsRoutes = require("./routes/reliefAnalyticsRoutes");
+const incidentAnalyticsRoutes = require("./routes/incidentAnalyticsRoutes");
+const evacAnalyticsRoutes = require("./routes/EvacAnalyticsRoutes");
+const overviewAnalyticsRoutes = require("./routes/overviewAnalysticsRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -157,6 +163,12 @@ app.use("/api/inventory", inventoryRoutes);
 app.use("/api/relief-requests", reliefRequestRoutes);
 app.use("/api/relief-releases", reliefReleaseRoutes);
 app.use("/api/food-pack-templates", foodPackRoutes);
+app.use("/api/public-site", publicSiteRoutes);
+app.use("/api/relief-analytics", reliefAnalyticsRoutes);
+app.use("/api/incident-analytics", incidentAnalyticsRoutes);
+app.use("/api/evac-analytics", evacAnalyticsRoutes);
+app.use("/api/overview-analytics", overviewAnalyticsRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // --------------------
 // Hazard proxy

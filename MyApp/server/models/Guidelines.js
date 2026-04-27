@@ -13,21 +13,18 @@ const PostingGuidelineSchema = new mongoose.Schema(
     slug: {
       type: String,
       unique: true,
+      sparse: true,
     },
 
     description: {
       type: String,
       required: [true, "Description is required"],
+      trim: true,
     },
 
     category: {
       type: String,
-      enum: [
-        "earthquake",
-        "flood",
-        "typhoon",
-        "general",
-      ],
+      enum: ["earthquake", "flood", "typhoon", "general"],
       required: true,
     },
 
@@ -45,16 +42,11 @@ const PostingGuidelineSchema = new mongoose.Schema(
 
     attachments: [
       {
-        fileName: String,
-        fileUrl: String,
-        public_id: String, // ✅ REQUIRED
+        fileName: { type: String, default: "" },
+        fileUrl: { type: String, default: "" },
+        public_id: { type: String, default: "" },
       },
     ],
-
-    isArchived: {
-      type: Boolean,
-      default: false,
-    },
 
     views: {
       type: Number,
@@ -64,13 +56,23 @@ const PostingGuidelineSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Auto-generate slug before saving
 PostingGuidelineSchema.pre("save", async function () {
   if (!this.isModified("title") || !this.title) return;
-  this.slug = slugify(this.title, { lower: true, strict: true });
+
+  const baseSlug = slugify(this.title, { lower: true, strict: true });
+  let slug = baseSlug;
+
+  const existing = await mongoose.models.Guidelines.findOne({
+    slug,
+    _id: { $ne: this._id },
+  });
+
+  if (existing) {
+    slug = `${baseSlug}-${Date.now()}`;
+  }
+
+  this.slug = slug;
 });
-
-
 
 const GuidelinesModel = mongoose.model("Guidelines", PostingGuidelineSchema);
 

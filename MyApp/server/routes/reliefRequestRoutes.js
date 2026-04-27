@@ -8,6 +8,7 @@ router.get("/journey/current", requireLogin, controller.getCurrentReliefJourney)
 
 router.post("/", requireLogin, controller.submitReliefRequest);
 router.get("/mine", requireLogin, controller.getMyReliefRequests);
+router.get("/mine/:id/export-pdf", requireLogin, controller.exportMyReliefRequestPdf);
 router.get("/mine/:id", requireLogin, controller.getMyReliefRequestById);
 router.put("/:id", requireLogin, controller.updateOwnReliefRequest);
 router.put("/:id/cancel", requireLogin, controller.cancelOwnReliefRequest);

@@ -10,22 +10,58 @@ const incidentSchema = new mongoose.Schema(
     longitude: Number,
     status: { type: String, default: "reported" },
 
-    // ⏰ auto-expire after 24 hours
+    image: {
+      fileName: String,
+      fileUrl: String,
+      public_id: String,
+    },
+
+    // auto-expire after 7 days
     expiresAt: {
       type: Date,
-      default: () => new Date(Date.now() + 24 * 60 * 60 * 1000),
+      default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       index: { expires: 0 },
     },
 
-    usernames: { 
-        type: String, 
-        ref: "User" 
+    // 🔥 FULL AI VERIFICATION DATA
+    verification: {
+      status: {
+        type: String,
+        enum: ["approved", "pending", "rejected"],
+        default: "pending"
       },
 
-     phone: { 
-        type: String, 
-        ref: "User" 
+      confidence: Number,
+
+      labels: [String],          // all detected labels
+      matchedLabels: [String],   // labels relevant to incident type
+
+      isMatch: Boolean,          // whether labels matched rules
+
+      score: Number,             // 🔥 weighted score (labels + metadata)
+
+      reasoning: String,         // 🔥 human-friendly explanation
+
+      metadata: {
+        hasGPS: Boolean,
+        isRecent: Boolean,
+        isWithinArea: Boolean,
+        device: String,
+        width: Number,
+        height: Number,
+        timestamp: Number,
       }
+    },
+
+    usernames: { 
+      type: String, 
+      ref: "User" 
+    },
+
+    phone: { 
+      type: String, 
+      ref: "User" 
+    }
   },
   { timestamps: true }
 );
