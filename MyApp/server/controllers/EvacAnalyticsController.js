@@ -897,22 +897,22 @@ const getEvacAiInsights = async (req, res) => {
    ========================= */
 
 const PDF_THEME = {
-  dark: "#052e16",
-  green: "#14532d",
-  green2: "#166534",
-  green3: "#16a34a",
-  softGreen: "#ecfdf3",
-  paleGreen: "#f0fdf4",
-  gold: "#ca8a04",
-  softGold: "#fffbeb",
-  red: "#b42318",
-  softRed: "#fef2f2",
-  blue: "#1d4ed8",
-  softBlue: "#eff6ff",
-  gray: "#64748b",
-  darkText: "#17221c",
-  line: "#dbe7dd",
-  light: "#f8fafc",
+  dark: "#111111",
+  green: "#111111",
+  green2: "#222222",
+  green3: "#333333",
+  softGreen: "#f4f4f4",
+  paleGreen: "#fafafa",
+  gold: "#444444",
+  softGold: "#f4f4f4",
+  red: "#333333",
+  softRed: "#f4f4f4",
+  blue: "#3a3a3a",
+  softBlue: "#f4f4f4",
+  gray: "#6b7280",
+  darkText: "#222222",
+  line: "#d1d5db",
+  light: "#f9fafb",
   white: "#ffffff",
 };
 
@@ -948,7 +948,7 @@ const drawPdfHeader = (doc, snapshot) => {
     });
 
   doc
-    .fillColor("#bbf7d0")
+    .fillColor(PDF_THEME.light)
     .font("Helvetica-Bold")
     .fontSize(8.5)
     .text(`Generated: ${formatDateValue(snapshot.generatedAt)}`, x + 20, y + 50, {
