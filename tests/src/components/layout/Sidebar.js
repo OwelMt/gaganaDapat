@@ -1,92 +1,379 @@
-// src/components/layout/Sidebar.js
-import { NavLink } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { NavLink, useLocation } from "react-router-dom";
 import { useTheme } from "../../context/ThemeContext";
+import {
+  FaBed,
+  FaBell,
+  FaBuilding,
+  FaClipboardList,
+  FaHistory,
+  FaListUl,
+  FaSignOutAlt,
+  FaSun,
+  FaMoon,
+} from "react-icons/fa";
 
-// LOGO
 import logo from "../../assets/images/sagipbayanlogo.png";
 
-// ICONS (white for dark mode, green for light mode)
-import analyticswhite from "../../assets/images/analyticswhite.png";
-import analyticsgreen from "../../assets/images/analyticsgreen.png";
-import reliefwhite from "../../assets/images/reliefwhite.png";
-import reliefgreen from "../../assets/images/reliefgreen.png";
-import registerwhite from "../../assets/images/registerwhite.png";
-import registergreen from "../../assets/images/registergreen.png";
-import auditwhite from "../../assets/images/auditwhite.png";
-import auditgreen from "../../assets/images/auditgreen.png";
-import timewhite from "../../assets/images/timewhite.png";
-import timegreen from "../../assets/images/timegreen.png";
-import messagewhite from "../../assets/images/messagewhite.png";
-import messagegreen from "../../assets/images/messagegreen.png";
-import evacuationwhite from "../../assets/images/evacuationwhite.png";
-import evacuationgreen from "../../assets/images/evacuationgreen.png";
-import logoutwhite from "../../assets/images/logoutwhite.png";
-import logoutgreen from "../../assets/images/logoutgreen.png";
-import sunwhite from "../../assets/images/sunwhite.png";
-import nightgreen from "../../assets/images/nightgreen.png";
+const BASE_URL =
+  process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
 
-export default function Sidebar({ collapsed, onToggle, onLogout }) {
+const getNotificationCount = async (moduleName) => {
+  const res = await fetch(
+    `${BASE_URL}/api/notifications?limit=100&module=${moduleName}&status=unread`,
+    {
+      method: "GET",
+      credentials: "include",
+    }
+  );
+
+  if (!res.ok) return 0;
+
+  const data = await res.json();
+  const items = Array.isArray(data.notifications) ? data.notifications : [];
+
+  return items.length;
+};
+
+export default function Sidebar({
+  collapsed,
+  onToggle,
+  onLogout,
+  onNavigateMobile,
+  username,
+  roleLabel,
+}) {
+  const location = useLocation();
   const { theme, toggleTheme } = useTheme();
-  const useDark = theme === "dark";
+  const dark = theme === "dark";
+  const navScrollRef = useRef(null);
+  const SIDEBAR_SCROLL_KEY = "sidebar:admin:scrollTop";
+  const PAGE_SCROLL_KEY = "sidebar:admin:pageScrollY";
+
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [inventoryUnreadCount, setInventoryUnreadCount] = useState(0);
+  const [evacUnreadCount, setEvacUnreadCount] = useState(0);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchUnreadCounts = async () => {
+      try {
+        const [allRes, inventoryCount, evacuationCount] = await Promise.all([
+          fetch(`${BASE_URL}/api/notifications/unread-count`, {
+            method: "GET",
+            credentials: "include",
+          }),
+          getNotificationCount("inventory"),
+          getNotificationCount("evacuation"),
+        ]);
+
+        if (allRes.ok) {
+          const allData = await allRes.json();
+
+          if (isMounted) {
+            setUnreadCount(Number(allData.unreadCount || 0));
+          }
+        }
+
+        if (isMounted) {
+          setInventoryUnreadCount(Number(inventoryCount || 0));
+          setEvacUnreadCount(Number(evacuationCount || 0));
+        }
+      } catch (err) {
+        if (isMounted) {
+          setUnreadCount(0);
+          setInventoryUnreadCount(0);
+          setEvacUnreadCount(0);
+        }
+      }
+    };
+
+    fetchUnreadCounts();
+
+    const interval = setInterval(fetchUnreadCounts, 10000);
+
+    const handleFocus = () => {
+      fetchUnreadCounts();
+    };
+
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
+  useEffect(() => {
+    const saved = Number(sessionStorage.getItem(SIDEBAR_SCROLL_KEY) || 0);
+    if (navScrollRef.current && Number.isFinite(saved)) {
+      navScrollRef.current.scrollTop = saved;
+    }
+  }, []);
+
+  useEffect(() => {
+    const savedPageY = Number(sessionStorage.getItem(PAGE_SCROLL_KEY));
+    if (!Number.isFinite(savedPageY)) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: savedPageY, left: 0, behavior: "auto" });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [location.pathname]);
+
+  const handleSidebarNavigate = useCallback(() => {
+    if (navScrollRef.current) {
+      sessionStorage.setItem(
+        SIDEBAR_SCROLL_KEY,
+        String(navScrollRef.current.scrollTop || 0)
+      );
+    }
+    sessionStorage.setItem(PAGE_SCROLL_KEY, String(window.scrollY || 0));
+    onNavigateMobile?.();
+  }, [onNavigateMobile]);
 
   const links = [
-    { to: "/admin/dashboard", label: "Analytics", icon: useDark ? analyticswhite : analyticsgreen },
-
-    { to: "/admin/register", label: "Register Account", icon: useDark ? registerwhite : registergreen },
-    { to: "/admin/edit-accounts", label: "Edit Accounts", icon: useDark ? registerwhite : registergreen },
-    { to: "/admin/archived-accounts", label: "Archived Accounts", icon: useDark ? auditwhite : auditgreen },
-
-    { to: "/admin/audit-trail", label: "Audit Trail", icon: useDark ? auditwhite : auditgreen },
-    { to: "/evacuation", label: "Evacuation Center Management", icon: useDark ? evacuationwhite : evacuationgreen },
-    { to: "/admin", label: "Incident Reports", icon: useDark ? auditwhite : auditgreen },
-    { to: "/admin/time-in-time-out", label: "Time in & Time out", icon: useDark ? timewhite : timegreen },
-    { to: "/admin/logs", label: "Admin Logs", icon: useDark ? auditwhite : auditgreen },
-
-    { to: "/admin/relief", label: "Relief Request", icon: useDark ? reliefwhite : reliefgreen },
-
+    {
+      section: "Overview",
+      items: [
+        {
+          to: "/admin/analytics",
+          label: "Analytics",
+          Icon: FaListUl,
+          exact: true,
+          badge: 0,
+        },
+      ],
+    },
+    {
+      section: "Management",
+      items: [
+        {
+          to: "/admin/accounts",
+          label: "Account Management",
+          Icon: FaBuilding,
+          exact: true,
+          badge: 0,
+        },
+        {
+          to: "/evacuation",
+          label: "Evacuation Centers",
+          Icon: FaBed,
+          exact: true,
+          badge: evacUnreadCount,
+        },
+      ],
+    },
+    {
+      section: "Inventory",
+      items: [
+        {
+          to: "/admin/inventory",
+          label: "Inventory",
+          Icon: FaClipboardList,
+          exact: true,
+          badge: inventoryUnreadCount,
+        },
+      ],
+    },
+    {
+      section: "Operations",
+      items: [
+        {
+          to: "/admin/time-in-time-out",
+          label: "Time In & Time Out",
+          Icon: FaHistory,
+          exact: true,
+          badge: 0,
+        },
+      ],
+    },
   ];
 
-  const themeIcon  = useDark ? sunwhite : nightgreen;
-  const themeLabel = useDark ? "Light mode" : "Dark mode";
-  const logoutIcon = useDark ? logoutwhite : logoutgreen;
+  const utilityLinks = [
+    {
+      to: "/admin/notifications",
+      label: "Notifications",
+      Icon: FaBell,
+      exact: true,
+      badge: unreadCount,
+    },
+  ];
+
+  const ThemeIcon = dark ? FaSun : FaMoon;
+  const themeLabel = dark ? "Light mode" : "Dark mode";
+
+  const renderBadge = (badge, collapsedMode = false) => {
+    const count = Number(badge || 0);
+
+    if (count <= 0) return null;
+
+    return (
+      <span
+        className={
+          collapsedMode
+            ? "sidebar-badge sidebar-badge-collapsed"
+            : "sidebar-badge"
+        }
+      >
+        {count > 99 ? "99+" : count}
+      </span>
+    );
+  };
 
   return (
-    <aside className={`sidebar ${collapsed ? "collapsed" : ""}`} aria-label="Main navigation">
-      {/* Header */}
+    <aside
+      className={`sidebar sidebar--admin ${collapsed ? "collapsed" : ""}`}
+      aria-label="Main navigation"
+    >
       <div className="sidebar-header">
-        <img src={logo} className="sidebar-logo" alt="App logo" />
-        {!collapsed && <h1 className="sidebar-title">SAGIP BAYAN</h1>}
-        <button onClick={onToggle} className="toggle-btn" aria-label="Collapse/Expand sidebar">
+        <img src={logo} className="sidebar-logo" alt="Sagip Bayan logo" />
+
+        {!collapsed && (
+          <div className="sidebar-brand">
+            <h1 className="sidebar-title">SAGIP BAYAN</h1>
+            <p className="sidebar-subtitle">Admin Panel</p>
+          </div>
+        )}
+
+        <button
+          onClick={onToggle}
+          className="toggle-btn"
+          aria-label="Collapse or expand sidebar"
+          type="button"
+        >
           {collapsed ? "▶" : "◀"}
         </button>
       </div>
 
-      {/* Body + Footer (bottom pinned) */}
-      <nav className="sidebar-nav">
-        <div className="sidebar-group">
-          {links.map(item => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) => "sidebar-link" + (isActive ? " active" : "")}
-            >
-              <img src={item.icon} className="sidebar-icon" alt="" />
-              {!collapsed && <span>{item.label}</span>}
-            </NavLink>
+      {!collapsed && (
+        <div className="sidebar-role-card">
+          <div className="sidebar-role-avatar">
+            {(username || roleLabel || "U").charAt(0).toUpperCase()}
+          </div>
+
+          <div className="sidebar-role-meta">
+            <span className="sidebar-role-kicker">Signed in as</span>
+            <strong className="sidebar-role-name">
+              {username || "Unknown User"}
+            </strong>
+            <span className="sidebar-role-subtext">{roleLabel}</span>
+          </div>
+        </div>
+      )}
+
+      <nav className="sidebar-nav" role="navigation">
+        <div
+          className="sidebar-nav-scroll"
+          ref={navScrollRef}
+          onScroll={() =>
+            sessionStorage.setItem(
+              SIDEBAR_SCROLL_KEY,
+              String(navScrollRef.current?.scrollTop || 0)
+            )
+          }
+        >
+          {links.map((group) => (
+            <div className="sidebar-group" key={group.section}>
+              {!collapsed && (
+                <div className="sidebar-group-label">{group.section}</div>
+              )}
+
+              {group.items.map((item) => {
+                const Icon = item.Icon;
+                const badge = Number(item.badge || 0);
+
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.exact}
+                    onClick={handleSidebarNavigate}
+                    title={collapsed ? item.label : undefined}
+                    className={({ isActive }) =>
+                      "sidebar-link" + (isActive ? " active" : "")
+                    }
+                  >
+                    <Icon className="sidebar-fa-icon" aria-hidden="true" />
+
+                    {!collapsed && (
+                      <>
+                        <span className="sidebar-link-label">{item.label}</span>
+                        {renderBadge(badge)}
+                      </>
+                    )}
+
+                    {collapsed && renderBadge(badge, true)}
+                  </NavLink>
+                );
+              })}
+            </div>
           ))}
+
+          <div className="sidebar-group sidebar-utility-group">
+            {!collapsed && <div className="sidebar-group-label">Updates</div>}
+
+            {utilityLinks.map((item) => {
+              const Icon = item.Icon;
+              const badge = Number(item.badge || 0);
+
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.exact}
+                  onClick={handleSidebarNavigate}
+                  title={collapsed ? item.label : undefined}
+                  className={({ isActive }) =>
+                    "sidebar-link sidebar-link-notification" +
+                    (isActive ? " active" : "")
+                  }
+                >
+                  <Icon className="sidebar-fa-icon" aria-hidden="true" />
+
+                  {!collapsed && (
+                    <>
+                      <span className="sidebar-link-label">{item.label}</span>
+                      {renderBadge(badge)}
+                    </>
+                  )}
+
+                  {collapsed && renderBadge(badge, true)}
+                </NavLink>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="sidebar-spacer" />
-
         <div className="sidebar-footer">
-          <button type="button" className="sidebar-link is-button" onClick={toggleTheme} aria-label="Toggle theme">
-            <img src={themeIcon} alt="" className="sidebar-icon" />
-            {!collapsed && <span>{themeLabel}</span>}
+          {!collapsed && <div className="sidebar-group-label">Preferences</div>}
+
+          <button
+            type="button"
+            className="sidebar-link is-button"
+            onClick={toggleTheme}
+            aria-label="Toggle theme"
+            title={themeLabel}
+          >
+            <ThemeIcon className="sidebar-fa-icon" aria-hidden="true" />
+
+            {!collapsed && (
+              <span className="sidebar-link-label">{themeLabel}</span>
+            )}
           </button>
 
-          <button type="button" className="sidebar-link is-button" onClick={onLogout}>
-            <img src={logoutIcon} className="sidebar-icon" alt="" />
-            {!collapsed && <span>Log out</span>}
+          <button
+            type="button"
+            className="sidebar-link is-button sidebar-link-danger"
+            onClick={onLogout}
+            title="Log out"
+          >
+            <FaSignOutAlt className="sidebar-fa-icon" aria-hidden="true" />
+
+            {!collapsed && <span className="sidebar-link-label">Log out</span>}
           </button>
         </div>
       </nav>

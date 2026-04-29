@@ -1,12 +1,40 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../css/Register.css';
-import DashboardShell from '../layout/DashboardShell';
+
+const OFFICIAL_BARANGAYS = [
+  "Calabasa",
+  "Don Mariano Marcos",
+  "Dampulan",
+  "Hilera",
+  "Imbunia",
+  "Lambakin",
+  "Langla",
+  "Magsalisi",
+  "Malabon Kaingin",
+  "Marawa",
+  "Niyugan",
+  "Pamacpacan",
+  "Pakol",
+  "Pinanggaan",
+  "Putlod",
+  "San Jose",
+  "San Josef (Nabao)",
+  "San Pablo",
+  "San Roque",
+  "San Vicente",
+  "Santa Rita",
+  "Sapang",
+  "Santo Tomas North",
+  "Santo Tomas South",
+  "Ulanin Pitak"
+];
 
 export default function Register() {
   const navigate = useNavigate();
+  const BASE_URL =
+    process.env.REACT_APP_API_URL || 'https://gaganadapat.onrender.com';
 
-  // ---------- AUTH GUARD ----------
   useEffect(() => {
     const storedRole = localStorage.getItem('role');
     if (!storedRole) {
@@ -14,7 +42,6 @@ export default function Register() {
     }
   }, [navigate]);
 
-  // ---------- FORM STATE ----------
   const [role, setRole] = useState('drrmo');
 
   const [username, setUsername] = useState('');
@@ -24,13 +51,59 @@ export default function Register() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [hotline, setHotline] = useState('');
   const [address, setAddress] = useState('');
+  const [barangay, setBarangay] = useState('');
+
   const [errors, setErrors] = useState({});
-
   const [touched, setTouched] = useState({});
+  const [submitError, setSubmitError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const barangays = Array.from({ length: 25 }, (_, i) => `Brgy ${i + 1}`);
+  const [availableBarangays, setAvailableBarangays] = useState(OFFICIAL_BARANGAYS);
+  const [barangayLoading, setBarangayLoading] = useState(false);
 
-  // ---------- VALIDATORS ----------
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  useEffect(() => {
+    const fetchBarangayOptions = async () => {
+      try {
+        setBarangayLoading(true);
+
+        const res = await fetch(`${BASE_URL}/api/auth/barangay-options`, {
+          credentials: 'include'
+        });
+
+        if (!res.ok) {
+          throw new Error('Failed to load barangay options');
+        }
+
+        const data = await res.json();
+
+        if (Array.isArray(data?.available)) {
+          setAvailableBarangays(data.available);
+        } else {
+          setAvailableBarangays(OFFICIAL_BARANGAYS);
+        }
+      } catch (err) {
+        console.error(err);
+        setAvailableBarangays(OFFICIAL_BARANGAYS);
+      } finally {
+        setBarangayLoading(false);
+      }
+    };
+
+    fetchBarangayOptions();
+  }, [BASE_URL]);
+
+  useEffect(() => {
+    if (role !== 'barangay') {
+      setBarangay('');
+    }
+    setSubmitError('');
+    setSuccessMessage('');
+  }, [role]);
+
   function validatePassword(pw) {
     if (!pw) return 'Password is required';
     if (!/^[A-Z]/.test(pw)) return 'Password must start with a capital letter';
@@ -49,351 +122,464 @@ export default function Register() {
 
   function validatePhone(value) {
     if (!value) return 'Phone number is required';
-    if (!/^\d{10,11}$/.test(value)) return 'Enter valid phone number (10-11 digits)';
+    if (!/^\d{10,11}$/.test(value)) {
+      return 'Enter valid phone number (10-11 digits)';
+    }
     return '';
   }
 
-  // ---------- REAL-TIME VALIDATION ----------
+  function validateUsername(value) {
+    if (!value.trim()) return 'Username is required';
+    return '';
+  }
+
+  function validateAddress(value) {
+    if (!value.trim()) return 'Address is required';
+    return '';
+  }
+
+  function validateConfirmPassword(passwordValue, confirmValue) {
+    if (!confirmValue) return 'Please confirm the password';
+    if (passwordValue !== confirmValue) return 'Passwords do not match';
+    return '';
+  }
+
   useEffect(() => {
     const nextErrors = {};
 
-    if (touched.username && !username)
-      nextErrors.username = 'Username is required';
+    if (touched.username) {
+      const error = validateUsername(username);
+      if (error) nextErrors.username = error;
+    }
 
     if (touched.email) {
-      const emailError = validateEmail(email);
-      if (emailError) nextErrors.email = emailError;
+      const error = validateEmail(email);
+      if (error) nextErrors.email = error;
     }
 
     if (touched.phoneNumber) {
-      if (!phoneNumber)
-        nextErrors.phoneNumber = 'Phone number is required';
-      else {
-        const phoneErr = validatePhone(phoneNumber);
-        if (phoneErr) nextErrors.phoneNumber = phoneErr;
-      }
+      const error = validatePhone(phoneNumber);
+      if (error) nextErrors.phoneNumber = error;
     }
 
-    if (touched.address && !address)
-      nextErrors.address = 'Address is required';
+    if (touched.address) {
+      const error = validateAddress(address);
+      if (error) nextErrors.address = error;
+    }
 
     if (touched.password) {
-      const pwError = validatePassword(password);
-      if (pwError) nextErrors.password = pwError;
+      const error = validatePassword(password);
+      if (error) nextErrors.password = error;
     }
 
-    if (touched.confirmPassword && password !== confirmPassword)
-      nextErrors.confirmPassword = 'Passwords do not match';
+    if (touched.confirmPassword) {
+      const error = validateConfirmPassword(password, confirmPassword);
+      if (error) nextErrors.confirmPassword = error;
+    }
+
+    if (role === 'barangay' && touched.barangay && !barangay) {
+      nextErrors.barangay = 'Barangay is required';
+    }
 
     setErrors(nextErrors);
-  }, [username, email, password, confirmPassword, phoneNumber, address, role, touched]);
+  }, [
+    username,
+    email,
+    phoneNumber,
+    address,
+    password,
+    confirmPassword,
+    barangay,
+    role,
+    touched
+  ]);
 
-  // ---------- SUBMIT VALIDATION ----------
   function computeErrors() {
     const nextErrors = {};
 
-    if (touched.username && !username)
-      nextErrors.username = 'Username is required';
+    const usernameError = validateUsername(username);
+    if (usernameError) nextErrors.username = usernameError;
 
-    if (touched.email) {
-      const emailError = validateEmail(email);
-      if (emailError) nextErrors.email = emailError;
+    const emailError = validateEmail(email);
+    if (emailError) nextErrors.email = emailError;
+
+    const phoneError = validatePhone(phoneNumber);
+    if (phoneError) nextErrors.phoneNumber = phoneError;
+
+    const addressError = validateAddress(address);
+    if (addressError) nextErrors.address = addressError;
+
+    const passwordError = validatePassword(password);
+    if (passwordError) nextErrors.password = passwordError;
+
+    const confirmError = validateConfirmPassword(password, confirmPassword);
+    if (confirmError) nextErrors.confirmPassword = confirmError;
+
+    if (role === 'barangay' && !barangay) {
+      nextErrors.barangay = 'Barangay is required';
     }
 
-    if (touched.phoneNumber) {
-      if (!phoneNumber)
-        nextErrors.phoneNumber = 'Phone number is required';
-      else {
-        const phoneErr = validatePhone(phoneNumber);
-        if (phoneErr) nextErrors.phoneNumber = phoneErr;
-      }
-    }
-
-    if (touched.address && !address)
-      nextErrors.address = 'Address is required';
-
-    if (touched.password) {
-      const pwError = validatePassword(password);
-      if (pwError) nextErrors.password = pwError;
-    }
-
-    if (touched.confirmPassword && password !== confirmPassword)
-      nextErrors.confirmPassword = 'Passwords do not match';
-
-    setErrors(nextErrors);
-  }
-
-  // ---------- SUBMIT VALIDATION ----------
-  function computeErrors() {
-    const nextErrors = {};
-
-    if (touched.username && !username)
-      nextErrors.username = 'Username is required';
-
-    if (touched.email) {
-      const emailError = validateEmail(email);
-      if (emailError) nextErrors.email = emailError;
-    }
-
-    if (touched.phoneNumber) {
-      if (!phoneNumber)
-        nextErrors.phoneNumber = 'Phone number is required';
-      else {
-        const phoneErr = validatePhone(phoneNumber);
-        if (phoneErr) nextErrors.phoneNumber = phoneErr;
-      }
-    }
-
-    if (touched.address && !address)
-      nextErrors.address = 'Address is required';
-
-    if (touched.password) {
-      const pwError = validatePassword(password);
-      if (pwError) nextErrors.password = pwError;
-    }
-
-    if (touched.confirmPassword && password !== confirmPassword)
-      nextErrors.confirmPassword = 'Passwords do not match';
-
-    
     return nextErrors;
   }
 
-  // ---------- SUBMIT ----------
-  function handleRegister() {
+  async function handleRegister() {
     const freshErrors = computeErrors();
     setErrors(freshErrors);
+    setSubmitError('');
+    setSuccessMessage('');
+
+    setTouched({
+      username: true,
+      email: true,
+      phoneNumber: true,
+      address: true,
+      password: true,
+      confirmPassword: true,
+      barangay: role === 'barangay'
+    });
 
     if (Object.keys(freshErrors).length > 0) {
-      alert('Please fix the errors first');
+      setSubmitError('Please fix the highlighted fields first.');
       return;
     }
 
     const payload = {
-      username,
+      username: username.trim(),
       password,
       role,
-      email,
-      phoneNumber,
-      hotline: hotline || undefined,
-      address
+      email: email.trim(),
+      phoneNumber: phoneNumber.trim(),
+      hotline: hotline.trim() || undefined,
+      address: address.trim(),
+      ...(role === 'barangay' ? { barangay } : {})
     };
 
-    fetch('http://localhost:8000/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-      .then(res => {
-        if (!res.ok) throw new Error('Registration failed');
-        return res.json();
-      })
-      .then(() => {
-        alert(`${role.toUpperCase()} account created`);
-        navigate('/admin/dashboard');
-      })
-      .catch(err => {
-        console.error(err);
-        alert(err.message);
+    try {
+      setIsSubmitting(true);
+
+      const res = await fetch(`${BASE_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload)
       });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || 'Registration failed');
+      }
+
+      if (role === 'barangay') {
+        setAvailableBarangays((prev) => prev.filter((name) => name !== barangay));
+      }
+
+      const createdRoleLabel = role === 'barangay' ? 'Barangay' : 'DRRMO';
+      setSuccessMessage(`${createdRoleLabel} account created successfully.`);
+
+      setRole('drrmo');
+      setUsername('');
+      setEmail('');
+      setPassword('');
+      setConfirmPassword('');
+      setPhoneNumber('');
+      setHotline('');
+      setAddress('');
+      setBarangay('');
+      setErrors({});
+      setTouched({});
+      setShowPassword(false);
+      setShowConfirmPassword(false);
+
+      setTimeout(() => {
+        navigate('/admin/dashboard');
+      }, 1000);
+    } catch (err) {
+      console.error(err);
+      setSubmitError(err.message || 'Registration failed');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
-  // ---------- UI ----------
+  const usedCount = OFFICIAL_BARANGAYS.length - availableBarangays.length;
+
+  const statItems = useMemo(() => {
+    return [
+      {
+        label: 'Account Type',
+        value: role === 'barangay' ? 'Barangay' : 'DRRMO',
+        tone: role === 'barangay' ? 'green' : 'blue'
+      },
+      {
+        label: 'Available Barangays',
+        value: barangayLoading ? '—' : availableBarangays.length,
+        tone: 'green'
+      },
+      {
+        label: 'Occupied Barangays',
+        value: barangayLoading ? '—' : usedCount,
+        tone: 'amber'
+      }
+    ];
+  }, [role, availableBarangays.length, usedCount, barangayLoading]);
+
+  const renderFieldError = (key) => (
+    <div className="field-message" aria-live="polite">
+      {errors[key] || ' '}
+    </div>
+  );
+
   return (
-    <DashboardShell>
-      <div className="register-page">
-        {/* Content area only; no left panel; no white card */}
-        <div className="shell" style={{ padding: 16, justifyContent: 'center' }}>
-          <main className="content" style={{ maxWidth: 1200, width: '100%' }}>
-            {/* Simple header */}
-            <header className="panel-header" style={{ border: 'none', padding: 0, marginBottom: 16 }}>
-              <h2 style={{ margin: '0 0 6px' }}>Create Admin account</h2>
-              <p className="panel-desc" style={{ margin: 0 }}>
-                Use this form to create an administrator account. Each admin is assigned a role and
-                specific permissions that define what parts of the system they can access.
-              </p>
-            </header>
-
-            {/* Form */}
-            <div className="form-body">
-              <form
-                className="form-grid"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleRegister();
-                }}
-              >
-                {/* Username */}
-                <div className="section">
-                  <div className="section-head">
-                    <div className="section-title">Username</div>
-                  </div>
-                  <div className="section-control">
-                    <div className="field">
-                      <input
-                        className={`input ${errors.username ? 'invalid' : ''}`}
-                        placeholder="Username"
-                        value={username}
-                        onChange={e => {
-                          setUsername(e.target.value);
-                          setTouched(prev => ({ ...prev, username: true }));
-                        }}
-                        // onChange={e => {
-                        //   setUsername(e.target.value);
-                        //   setTouched(prev => ({ ...prev, username: true }));
-                        // }}
-                      />
-                      {errors.username && <span className="error">{errors.username}</span>}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Email */}
-                <div className="section">
-                  <div className="section-head">
-                    <div className="section-title">Email Address</div>
-                  </div>
-                  <div className="section-control">
-                    <div className="field">
-                      <input
-                        className={`input ${errors.email ? 'invalid' : ''}`}
-                        placeholder="Email"
-                        value={email}
-                        onChange={e => {
-                          setEmail(e.target.value);
-                          setTouched(prev => ({ ...prev, email: true }));
-                        }}
-                      />
-                      {errors.email && <span className="error">{errors.email}</span>}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Phone */}
-                <div className="section">
-                  <div className="section-head">
-                    <div className="section-title">Phone Number</div>
-                  </div>
-                  <div className="section-control">
-                    <div className="field">
-                      <input
-                        className={`input ${errors.phoneNumber ? 'invalid' : ''}`}
-                        placeholder="Phone Number"
-                        value={phoneNumber}
-                        onChange={e => {
-                          setPhoneNumber(e.target.value);
-                          setTouched(prev => ({ ...prev, phoneNumber: true }));
-                        }}
-                      />
-                      {errors.phoneNumber && <span className="error">{errors.phoneNumber}</span>}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Hotline */}
-                <div className="section">
-                  <div className="section-head">
-                    <div className="section-title">Hotline (optional)</div>
-                  </div>
-                  <div className="section-control">
-                    <div className="field">
-                      <input
-                        className="input"
-                        placeholder="Hotline (optional)"
-                        value={hotline}
-                        onChange={e => {
-                          setHotline(e.target.value);
-                          setTouched(prev => ({ ...prev, hotline: true }));
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Address */}
-                <div className="section">
-                  <div className="section-head">
-                    <div className="section-title">Address</div>
-                  </div>
-                  <div className="section-control">
-                    <div className="field">
-                      <input
-                        className={`input ${errors.address ? 'invalid' : ''}`}
-                        placeholder="Address"
-                        value={address}
-                        onChange={e => setAddress(e.target.value)}
-                        onBlur={() => setTouched(prev => ({ ...prev, address: true }))}
-                      />
-                      {errors.address && <span className="error">{errors.address}</span>}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Password */}
-                <div className="section">
-                  <div className="section-head">
-                    <div className="section-title">Password</div>
-                  </div>
-                  <div className="section-control">
-                    <div className="field">
-                      <input
-                        type="password"
-                        className={`input ${errors.password ? 'invalid' : ''}`}
-                        placeholder="Password"
-                        value={password}
-                        onChange={e => {
-                          setPassword(e.target.value);
-                          setTouched(prev => ({ ...prev, password: true }));
-                        }}
-                      />
-                      {errors.password && <span className="error">{errors.password}</span>}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Confirm Password */}
-                <div className="section">
-                  <div className="section-head">
-                    <div className="section-title">Confirm Password</div>
-                  </div>
-                  <div className="section-control">
-                    <div className="field">
-                      <input
-                        type="password"
-                        className={`input ${errors.confirmPassword ? 'invalid' : ''}`}
-                        placeholder="Confirm Password"
-                        value={confirmPassword}
-                        onChange={e => {
-                          setConfirmPassword(e.target.value);
-                          setTouched(prev => ({ ...prev, confirmPassword: true }));
-                        }}
-                      />
-                      {errors.confirmPassword && (
-                        <span className="error">{errors.confirmPassword}</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Submit */}
-                <div className="section">
-                  <div className="section-control actions-right">
-                    <button type="submit" className="btn btn-commit">Create Account</button>
-                  </div>
-                </div>
-
-                {/* Back */}
-                <div className="section">
-                  <div className="section-control actions-right">
-                  
-                  </div>
-                </div>
-
-              </form>
+    <div className="register-page">
+      <div className="register-shell">
+        <div className="register-hero">
+          <div className="register-hero-copy">
+            <div className="register-kicker-row">
+              <span className="register-kicker">Administration Module</span>
+              {barangayLoading && <span className="register-mini-badge">Updating barangays</span>}
             </div>
-          </main>
+
+            <h1 className="register-title">Create Account</h1>
+
+            <div className="register-stats register-stats--hero">
+              {statItems.map((item) => (
+                <div
+                  className={`register-stat-card register-stat-card--${item.tone}`}
+                  key={item.label}
+                >
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="register-workspace">
+          <div className="register-panel register-panel-form">
+            <div className="register-panel-top">
+              <div className="register-role-switch" aria-label="Account role">
+                <button
+                  type="button"
+                  className={`role-tab ${role === 'drrmo' ? 'active' : ''}`}
+                  onClick={() => setRole('drrmo')}
+                >
+                  DRRMO
+                </button>
+                <button
+                  type="button"
+                  className={`role-tab ${role === 'barangay' ? 'active' : ''}`}
+                  onClick={() => setRole('barangay')}
+                >
+                  Barangay
+                </button>
+              </div>
+            </div>
+
+            <form
+              className="register-form-grid"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleRegister();
+              }}
+            >
+              {role === 'barangay' && (
+                <div className="form-block form-block-full form-block-highlight">
+                  <label className="input-label">Barangay</label>
+                  <div className={`input-shell ${errors.barangay ? 'has-error' : ''}`}>
+                    <select
+                      className="premium-input"
+                      value={barangay}
+                      onChange={(e) => {
+                        setBarangay(e.target.value);
+                        setTouched((prev) => ({ ...prev, barangay: true }));
+                        setSubmitError('');
+                      }}
+                      disabled={barangayLoading}
+                    >
+                      <option value="">
+                        {barangayLoading
+                          ? 'Loading barangay options...'
+                          : availableBarangays.length === 0
+                          ? 'No available barangays'
+                          : 'Select barangay'}
+                      </option>
+
+                      {availableBarangays.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {renderFieldError('barangay')}
+                </div>
+              )}
+
+              <div className="form-block">
+                <label className="input-label">Username</label>
+                <div className={`input-shell ${errors.username ? 'has-error' : ''}`}>
+                  <input
+                    className="premium-input"
+                    placeholder="Enter username"
+                    value={username}
+                    onChange={(e) => {
+                      setUsername(e.target.value);
+                      setTouched((prev) => ({ ...prev, username: true }));
+                      setSubmitError('');
+                    }}
+                  />
+                </div>
+                {renderFieldError('username')}
+              </div>
+
+              <div className="form-block">
+                <label className="input-label">Email Address</label>
+                <div className={`input-shell ${errors.email ? 'has-error' : ''}`}>
+                  <input
+                    className="premium-input"
+                    placeholder="name@example.com"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      setTouched((prev) => ({ ...prev, email: true }));
+                      setSubmitError('');
+                    }}
+                  />
+                </div>
+                {renderFieldError('email')}
+              </div>
+
+              <div className="form-block">
+                <label className="input-label">Phone Number</label>
+                <div className={`input-shell ${errors.phoneNumber ? 'has-error' : ''}`}>
+                  <input
+                    className="premium-input"
+                    placeholder="09XXXXXXXXX"
+                    value={phoneNumber}
+                    onChange={(e) => {
+                      setPhoneNumber(e.target.value);
+                      setTouched((prev) => ({ ...prev, phoneNumber: true }));
+                      setSubmitError('');
+                    }}
+                  />
+                </div>
+                {renderFieldError('phoneNumber')}
+              </div>
+
+              <div className="form-block">
+                <label className="input-label">Hotline</label>
+                <div className="input-shell">
+                  <input
+                    className="premium-input"
+                    placeholder="Optional"
+                    value={hotline}
+                    onChange={(e) => {
+                      setHotline(e.target.value);
+                      setSubmitError('');
+                    }}
+                  />
+                </div>
+                <div className="field-message">{' '}</div>
+              </div>
+
+              <div className="form-block form-block-full">
+                <label className="input-label">Address</label>
+                <div className={`input-shell ${errors.address ? 'has-error' : ''}`}>
+                  <input
+                    className="premium-input"
+                    placeholder="Enter full address"
+                    value={address}
+                    onChange={(e) => {
+                      setAddress(e.target.value);
+                      setTouched((prev) => ({ ...prev, address: true }));
+                      setSubmitError('');
+                    }}
+                  />
+                </div>
+                {renderFieldError('address')}
+              </div>
+
+              <div className="form-block">
+                <label className="input-label">Password</label>
+                <div className={`input-shell ${errors.password ? 'has-error' : ''}`}>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    className="premium-input premium-input-with-action"
+                    placeholder="Create password"
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setTouched((prev) => ({ ...prev, password: true }));
+                      setSubmitError('');
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="input-action"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                  >
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                {renderFieldError('password')}
+              </div>
+
+              <div className="form-block">
+                <label className="input-label">Confirm Password</label>
+                <div className={`input-shell ${errors.confirmPassword ? 'has-error' : ''}`}>
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    className="premium-input premium-input-with-action"
+                    placeholder="Re-enter password"
+                    value={confirmPassword}
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      setTouched((prev) => ({ ...prev, confirmPassword: true }));
+                      setSubmitError('');
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="input-action"
+                    onClick={() => setShowConfirmPassword((prev) => !prev)}
+                  >
+                    {showConfirmPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                {renderFieldError('confirmPassword')}
+              </div>
+
+              <div className="form-status-row form-block-full">
+                <div className="form-status-space" aria-live="polite">
+                  {submitError && (
+                    <div className="status-banner status-banner-error">
+                      {submitError}
+                    </div>
+                  )}
+
+                  {successMessage && (
+                    <div className="status-banner status-banner-success">
+                      {successMessage}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="form-actions form-block-full">
+                <button
+                  type="submit"
+                  className="submit-btn"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? 'Creating Account...' : 'Create Account'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
-    </DashboardShell>
+    </div>
   );
 }

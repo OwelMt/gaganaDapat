@@ -1,310 +1,350 @@
-/* src/components/css/AdminAnalytics.css */
-
-/* Root: fill the shell's content area and use vertical scrolling only */
 .analytics-page {
-  --text: #0b1b12;          /* dark greenish text for headings/ticks */
-  --subtle: #14532d;        /* subtitle / labels */
-  --muted: #166534;         /* faint labels */
-  --ring: #14532d;          /* borders */
-  --card: #f0fdf4;          /* very light green */
-  --page: #ecfdf5;          /* page background */
-  --shadow: 0 8px 16px rgba(16, 185, 129, 0.18);
+  --text: #0b1b12;
+  --subtle: #166534;
+  --muted: #2f6f46;
+  --ring: rgba(20, 83, 45, 0.12);
+  --card: rgba(255, 255, 255, 0.96);
+  --page-top: #edf8f1;
+  --page-bottom: #dff1e5;
+  --shadow-soft: 0 12px 30px rgba(20, 83, 45, 0.08);
+  --shadow-strong: 0 18px 42px rgba(20, 83, 45, 0.1);
+  --shadow-lift: 0 20px 36px rgba(20, 83, 45, 0.12);
 
   display: flex;
   flex-direction: column;
   width: 100%;
   height: 100%;
-  min-height: 0;         /* allow child to manage overflow */
-  background: var(--page);
-  overflow: hidden;       /* prevent sideways scroll bleed */
+  min-height: 0;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.92), transparent 34%),
+    linear-gradient(180deg, var(--page-top) 0%, var(--page-bottom) 100%);
+  overflow: hidden;
 }
 
-/* This one actually scrolls vertically */
+.analytics-page,
+.analytics-page * {
+  box-sizing: border-box !important;
+  max-width: 100%;
+}
+
 .analytics-page .analytics-scroll {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;       /* ✅ vertical only */
-  overflow-x: hidden;     /* ✅ no horizontal scroll */
-}
-
-/* Container caps width to avoid right overlap and removes white margins */
-.analytics-page .analytics-container {
-  width: min(1200px, 98vw); /* tighter to shell edges */
-  margin-inline: auto;
-  padding: 10px 8px 18px 8px;  /* compact */
-  color: var(--text);
-}
-
-/* Header */
-.analytics-page .analytics-header {
-  margin: 0 0 8px 0;       /* compact, no top whitespace */
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-}
-.analytics-page .analytics-title {
-  font-size: 22px;
-  font-weight: 800;
-  margin: 0 0 2px 2px;
-  color: var(--text);      /* darker title as requested */
-}
-.analytics-page .analytics-subtitle {
-  color: var(--subtle);    /* darker subtitle as requested */
-  margin-left: 2px;
-  font-size: 13px;
-  line-height: 1.2;
-}
-
-/* KPIs grid */
-.analytics-page .analytics-metric-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
-}
-@media (max-width: 1100px) { .analytics-page .analytics-metric-grid { grid-template-columns: repeat(4, 1fr); } }
-@media (max-width: 900px)  { .analytics-page .analytics-metric-grid { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 640px)  { .analytics-page .analytics-metric-grid { grid-template-columns: repeat(2, 1fr); } }
-
-.analytics-page .a-metric-card {
-  background: var(--card);
-  border: 1px solid var(--ring);
-  border-radius: 10px;
-  padding: 8px;           /* compact */
-  box-shadow: var(--shadow);
-}
-.analytics-page .a-metric-label {
-  font-size: 12px;
-  color: var(--muted);
-  letter-spacing: .2px;
-}
-.analytics-page .a-metric-value {
-  margin-top: 2px;
-  font-weight: 800;
-  font-size: 19px;
-  color: var(--text);
-}
-
-/* Charts grid */
-.analytics-page .analytics-chart-grid {
-  margin-top: 10px;       /* compact spacing */
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0,1fr));
-  gap: 10px;
-}
-@media (max-width: 900px) {
-  .analytics-page .analytics-chart-grid { grid-template-columns: 1fr; }
-}
-
-.analytics-page .a-card {
-  background: var(--card);
-  border: 1px solid var(--ring);
-  border-radius: 10px;
-  padding: 8px;           /* compact */
-  box-shadow: var(--shadow);
-}
-.analytics-page .a-card-title {
-  font-size: 13px;
-  font-weight: 700;
-  margin-bottom: 6px;
-  color: var(--subtle);
-}
-
-/* ✅ Ensure charts always render and never cause horizontal overflow */
-.analytics-page .a-chart-body {
-  position: relative;
-  height: 260px;          /* more compact height; adjust if needed */
-  width: 100%;
-}
-.analytics-page .a-chart-card--full .a-chart-body {
-  height: 300px;
-}
-
-/* Legends under charts (kept, compact, no extra white space) */
-.analytics-page .a-legend-inline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  margin-top: 6px;
-  color: var(--subtle);
-  font-size: 12px;
-}
-.analytics-page .a-legend-inline--tight { margin-bottom: 2px; } /* keep cards tight to next section */
-.analytics-page .a-legend-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  display: inline-block;
-  margin: 0 6px 0 2px;
-}
-/* ===========================
-   ANALYTICS: LAST-RESORT FIX
-   Paste at the very end of your CSS bundle
-   =========================== */
-
-/* Ensure the shell and page can stretch full height */
-html, body {
-  height: 100% !important;
-}
-
-/* Root analytics container fills available space in DashboardShell */
-.analytics-page {
-  display: flex !important;
-  flex-direction: column !important;
-  width: 100% !important;
-  height: 100% !important;
-  min-height: 0 !important;        /* allow child to control the scrolling */
-  overflow: hidden !important;      /* block horizontal leaks from children */
-  /* Optional: keep your green background */
-  background: #ecfdf5 !important;   /* mint green */
-  box-sizing: border-box !important;
-}
-
-/* The scroller: vertical scroll only, occupies rest of the panel */
-.analytics-page .analytics-scroll {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
-  overflow-y: auto !important;      /* ✅ scroll down */
-  overflow-x: hidden !important;    /* ✅ no horizontal scroll */
+  overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
 }
 
-/* Safe content width: never overflow to the right, remove extra white margins */
 .analytics-page .analytics-container {
-  width: min(1200px, 98vw) !important;   /* reduce to fit shell with a tiny gutter */
-  margin-inline: auto !important;
-  padding: 8px 6px 14px 6px !important;  /* compact padding to avoid cutoffs */
-  box-sizing: border-box !important;
+  width: min(1420px, 98vw);
+  margin-inline: auto;
+  padding: 14px 14px 26px;
+  color: var(--text);
 }
 
-/* Compact header and darker text, no stray gaps above/below */
+/* HEADER */
 .analytics-page .analytics-header {
-  margin: 0 0 6px 0 !important;
-  padding: 0 !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
 }
+
+.analytics-page .analytics-header--dashboard {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 14px;
+  padding: 22px 24px 18px;
+  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(244, 253, 246, 0.98), rgba(227, 245, 232, 0.94)),
+    #f2fbf4;
+  border: 1px solid rgba(20, 83, 45, 0.1);
+  box-shadow: var(--shadow-strong);
+}
+
+.analytics-page .analytics-header--dashboard::after {
+  content: "";
+  position: absolute;
+  right: 34px;
+  bottom: -38px;
+  width: 116px;
+  height: 116px;
+  border-radius: 999px;
+  background: rgba(20, 83, 45, 0.055);
+  pointer-events: none;
+}
+
+.analytics-page .analytics-header-main,
+.analytics-page .analytics-export-btn {
+  position: relative;
+  z-index: 1;
+}
+
+.analytics-page .analytics-header-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.analytics-page .analytics-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.analytics-page .analytics-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(20, 83, 45, 0.08);
+  color: #14532d;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.analytics-page .analytics-badge--soft {
+  background: rgba(16, 185, 129, 0.12);
+  color: #0f766e;
+}
+
 .analytics-page .analytics-title {
-  color: #0b1b12 !important;     /* darker heading */
-  margin: 0 0 2px 2px !important;
-  line-height: 1.15 !important;
-}
-.analytics-page .analytics-subtitle {
-  color: #14532d !important;     /* darker subtitle */
-  margin: 0 0 0 2px !important;
-  line-height: 1.2 !important;
+  margin: 0;
+  font-size: clamp(30px, 3vw, 44px);
+  line-height: 1.02;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: #052e16;
 }
 
-/* Metrics grid: compact and responsive */
-.analytics-page .analytics-metric-grid {
-  display: grid !important;
-  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
-  gap: 8px !important;
-  margin: 0 !important;
-}
-@media (max-width: 1100px) {
-  .analytics-page .analytics-metric-grid { grid-template-columns: repeat(4, 1fr) !important; }
-}
-@media (max-width: 900px) {
-  .analytics-page .analytics-metric-grid { grid-template-columns: repeat(3, 1fr) !important; }
-}
-@media (max-width: 640px) {
-  .analytics-page .analytics-metric-grid { grid-template-columns: repeat(2, 1fr) !important; }
+.analytics-page .analytics-header-subtitle {
+  margin: 10px 0 0;
+  max-width: 760px;
+  color: #2f6f46;
+  font-size: 14px;
+  line-height: 1.6;
+  font-weight: 700;
 }
 
-/* Metric cards: prevent clipping of large numbers (e.g., Total Capacity) */
-.analytics-page .a-metric-card {
-  padding: 8px !important;
-  border-radius: 10px !important;
-  border: 1px solid #14532d !important;
-  background: #f0fdf4 !important;
-  box-shadow: 0 8px 16px rgba(16, 185, 129, 0.18) !important;
-  min-width: 0 !important;          /* prevent overflow inside grid cells */
-}
-.analytics-page .a-metric-label {
-  color: #166534 !important;
-  font-size: 12px !important;
-}
-.analytics-page .a-metric-value {
-  color: #0b1b12 !important;
-  font-weight: 800 !important;
-  font-size: 19px !important;
-  line-height: 1.1 !important;
-  word-break: break-word !important; /* long numbers won’t overflow */
-}
-
-/* Charts grid: compact, responsive, no horizontal overflow */
-.analytics-page .analytics-chart-grid {
-  display: grid !important;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  gap: 10px !important;
-  margin-top: 10px !important;
-}
-@media (max-width: 900px) {
-  .analytics-page .analytics-chart-grid { grid-template-columns: 1fr !important; }
+/* HEADER EXPORT BUTTON */
+.analytics-page .analytics-export-btn {
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 12px 18px;
+  border-radius: 15px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #ffffff;
+  background: linear-gradient(135deg, #166534, #15803d);
+  box-shadow: 0 14px 28px rgba(22, 101, 52, 0.24);
+  transition: 0.2s;
+  white-space: nowrap;
 }
 
-/* Chart cards + titles */
+.analytics-page .analytics-export-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 34px rgba(22, 101, 52, 0.3);
+}
+
+.analytics-page .analytics-export-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+  transform: none;
+}
+
+.analytics-page .analytics-export-btn svg {
+  font-size: 14px;
+}
+
+/* TABS */
+.analytics-page .analytics-tabs-shell {
+  margin-bottom: 14px;
+  padding: 14px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(7, 52, 26, 0.98), rgba(5, 40, 20, 0.98));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.14);
+}
+
+.analytics-page .analytics-tabs {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  overflow: visible;
+}
+
+.analytics-page .analytics-tab {
+  appearance: none;
+  border: 0;
+  width: 100%;
+  min-width: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #ffffff;
+  text-align: left;
+  transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.analytics-page .analytics-tab:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.085);
+}
+
+.analytics-page .analytics-tab.is-active {
+  background: linear-gradient(135deg, #22c55e, #166534);
+  box-shadow: 0 12px 24px rgba(34, 197, 94, 0.25);
+}
+
+.analytics-page .analytics-tab-title {
+  display: block;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.analytics-page .analytics-tab-content {
+  min-width: 0;
+}
+
+/* SHARED CARDS USED BY TAB COMPONENTS */
 .analytics-page .a-card {
-  padding: 8px !important;
-  border-radius: 10px !important;
-  border: 1px solid #14532d !important;
-  background: #f0fdf4 !important;
-  box-shadow: 0 8px 16px rgba(16, 185, 129, 0.18) !important;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  border-radius: 24px;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(248, 255, 250, 0.92));
+  border: 1px solid rgba(20, 83, 45, 0.1);
+  box-shadow: var(--shadow-soft);
 }
+
+.analytics-page .a-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
 .analytics-page .a-card-title {
-  color: #14532d !important;
-  font-size: 13px !important;
-  font-weight: 700 !important;
-  margin: 0 0 6px 0 !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 900;
+  color: #14532d;
+  letter-spacing: 0.1px;
 }
 
-/* ✅ The key to visible charts: give the canvas a container height */
+.analytics-page .a-chart-card {
+  min-width: 0;
+}
+
 .analytics-page .a-chart-body {
-  position: relative !important;
-  height: 260px !important;   /* adjust if you want taller charts */
-  width: 100% !important;
-  min-width: 0 !important;
-}
-.analytics-page .a-chart-card--full .a-chart-body {
-  height: 300px !important;
+  position: relative;
+  height: 320px;
+  width: 100%;
+  min-width: 0;
 }
 
-/* Legends under charts: keep visible and tight; includes Available/Limited/Full */
-.analytics-page .a-legend-inline {
-  display: flex !important;
-  flex-wrap: wrap !important;
-  gap: 10px !important;
-  align-items: center !important;
-  margin-top: 6px !important;
-  margin-bottom: 2px !important;
-  color: #14532d !important;
-  font-size: 12px !important;
-}
-.analytics-page .a-legend-dot {
-  width: 10px !important;
-  height: 10px !important;
-  border-radius: 999px !important;
-  display: inline-block !important;
-  margin: 0 6px 0 2px !important;
+/* EMPTY STATE */
+.analytics-page .analytics-empty-state {
+  height: 100%;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(247, 255, 249, 0.9), rgba(240, 251, 244, 0.9));
+  border: 1px dashed rgba(20, 83, 45, 0.16);
+  text-align: center;
+  padding: 20px;
 }
 
-/* Safety nets: prevent any child from forcing horizontal scroll */
-.analytics-page, 
-.analytics-page * {
-  box-sizing: border-box !important;
-  max-width: 100% !important;
+.analytics-page .analytics-empty-state-title {
+  font-size: 15px;
+  font-weight: 900;
+  color: #14532d;
+  margin-bottom: 6px;
 }
 
-/* If some global rule is adding margins/paddings to sections/cards, neutralize them here */
-.analytics-page section,
-.analytics-page .card,
-.analytics-page .a-card {
-  margin-left: 0 !important;
-  margin-right: 0 !important;
+.analytics-page .analytics-empty-state-copy {
+  max-width: 320px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #2f6f46;
+  line-height: 1.5;
 }
 
-/* Optional: if your shell injects inner padding around content, pull the analytics out to edges */
-.analytics-page .analytics-container {
-  /* Uncomment if you still see left/right gutters you don’t want */
-  /* padding-left: 0 !important;
-     padding-right: 0 !important; */
+/* RESPONSIVE */
+@media (max-width: 1080px) {
+  .analytics-page .analytics-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .analytics-page .analytics-container {
+    width: min(100%, 100vw);
+    padding: 12px 10px 18px;
+  }
+
+  .analytics-page .analytics-header--dashboard {
+    padding: 16px;
+    border-radius: 22px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .analytics-page .analytics-export-btn {
+    width: 100%;
+  }
+
+  .analytics-page .analytics-tabs-shell {
+    padding: 14px;
+    border-radius: 20px;
+  }
+
+  .analytics-page .analytics-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-page .a-card {
+    border-radius: 18px;
+  }
+
+  .analytics-page .a-card-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .analytics-page .a-chart-body {
+    height: 280px;
+  }
+}
+
+@media (max-width: 520px) {
+  .analytics-page .analytics-title {
+    font-size: 26px;
+  }
 }

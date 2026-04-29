@@ -7,13 +7,13 @@ const Header = () => {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const rightRef = useRef(null);
-
+  const BASE_URL = process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
   // Just use the stored role
   const role = localStorage.getItem('role') || 'User';
 
   const handleLogout = async () => {
     try {
-      await fetch('http://localhost:8000/api/auth/logout', {
+      await fetch(`${BASE_URL}/api/auth/logout`, {
         method: 'POST',
         credentials: 'include',
       });

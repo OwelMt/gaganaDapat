@@ -16,8 +16,10 @@ export default function AccountSettings() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
 
+  const BASE_URL = process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
+
   useEffect(() => {
-    fetch('http://localhost:8000/api/barangays/me', {
+    fetch(`${BASE_URL}/api/barangays/me`, {
       credentials: 'include'
     })
       .then(res => res.json())
@@ -92,7 +94,7 @@ export default function AccountSettings() {
     if (!payload.password) delete payload.password;
 
     const res = await fetch(
-      `http://localhost:8000/api/auth/update/${form._id}`,
+      `${BASE_URL}/api/auth/update/${form._id}`,
       {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },

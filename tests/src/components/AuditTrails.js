@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
 const AuditTrails = () => {
+  const BASE_URL = process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
   const navigate = useNavigate();
     useEffect(() => {
       const storedRole = localStorage.getItem('role');
@@ -17,7 +18,7 @@ const AuditTrails = () => {
 
   useEffect(() => {
   const fetchData = () => {
-    axios.get("http://localhost:8000/history/getHistory")
+    axios.get(`${BASE_URL}/history/getHistory`)
       .then(res => setIncidentHistory(res.data))
       .catch(err => console.error(err));
   };

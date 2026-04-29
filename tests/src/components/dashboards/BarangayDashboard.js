@@ -5,6 +5,7 @@ import DashboardShell from '../layout/DashboardShell';
 function BarangayDashboard() {
   const navigate = useNavigate();
 
+  
   useEffect(() => {
     const storedRole = localStorage.getItem('role');
     if (!storedRole) {

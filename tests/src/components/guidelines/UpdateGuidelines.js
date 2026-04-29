@@ -8,7 +8,7 @@ const [category, setCategory] = useState(guideline.category);
 const [status, setStatus] = useState(guideline.status);
 const [priorityLevel, setPriorityLevel] = useState(guideline.priorityLevel);
 
-const BASE_URL = "http://localhost:8000/api/guidelines/";
+const BASE_URL = process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
 
 const updateGuideline = async () => {
 try {

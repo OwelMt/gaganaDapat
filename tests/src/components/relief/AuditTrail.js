@@ -13,6 +13,7 @@ const POLL_MS = 5000;
 
 /** Requested Goods: supports string, array<string>, array<object>, or object map */
 function formatRequestedGoods(row) {
+  const BASE_URL = process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
   const src =
     row?.requestedGoods ??
     row?.requested ??
@@ -95,6 +96,7 @@ const mapUrgency  = (r) => r.urgency ?? r.severity ?? r.priority ?? '—';
 export default function AuditTrail() {
   const navigate = useNavigate();
   const appRef = useRef(null);
+  const BASE_URL = process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -129,7 +131,7 @@ export default function AuditTrail() {
   // Fetch + poll
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/audit', { credentials: 'include' });
+      const res = await fetch(`${BASE_URL}/api/audit`, { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch audit');
       const data = await res.json();
       const arr = Array.isArray(data) ? data : [];

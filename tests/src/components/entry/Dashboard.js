@@ -1,454 +1,2315 @@
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  FaBullhorn,
-  FaPeopleCarry,
-  FaWarehouse,
-  FaUserCog,
-  FaPhoneAlt,
-  FaSms,
-  FaPhoneSquareAlt,
+  FaBell,
+  FaCloudSun,
+  FaEdit,
   FaEnvelope,
+  FaEye,
+  FaEyeSlash,
   FaFacebookF,
+  FaMapMarkedAlt,
+  FaPhoneAlt,
+  FaSave,
+  FaShieldAlt,
+  FaSms,
+  FaTimes,
+  FaTrash,
+  FaMap,
+  FaHome,
+  FaCheckCircle,
 } from "react-icons/fa";
 import "../css/Dashboard.css";
 
-/**
- * NOTE on assets:
- * If any of these imports fail (wrong path / missing file), the variable will be undefined.
- * This component guards against that and shows a placeholder instead—so the app won’t crash.
- */
 import jaenlogo from "../../assets/images/jaenlogo.png";
-
 import hero1 from "../../assets/images/hero1.jpg";
 import hero2 from "../../assets/images/hero2.jpg";
 import hero3 from "../../assets/images/hero3.jpg";
+import EvacMap from "../map/Map";
 
-import SplashScreen from "../splashscreen/SplashScreen";
-import pasiglogo from "../../assets/images/pasiglogo.png";
-import pasiglogodrrmo from "../../assets/images/pasiglogodrrmo.png";
-import highlights from "../../assets/images/highlights.jpg";
-import news1 from "../../assets/images/news1.png";
-import forecast from "../../assets/images/forecast.png";
-import nelogo from "../../assets/images/nelogo.png";
-/** Simple placeholder block you can drop in for any missing image */
-function PlaceholderImg({
-  width = "100%",
-  height = 280,
-  radius = 12,
-  label = "Image coming soon",
-}) {
-  return (
-    <div
-      style={{
-        width,
-        height,
-        borderRadius: radius,
-        background: "#E8EFEA",
-        color: "#0F4D25",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontWeight: 900,
-        letterSpacing: ".3px",
-        border: "1px solid #D9E0DF",
-      }}
-    >
-      {label}
-    </div>
+const BASE_URL =
+  (process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com").replace(
+    /\/+$/,
+    ""
   );
-}
+
+const JAEN_COORDS = {
+  latitude: 15.3274,
+  longitude: 120.9192,
+};
 
 const heroImages = [hero2, hero1, hero3];
 
-function Dashboard() {
-  const navigate = useNavigate();
-  const [currentHero, setCurrentHero] = useState(0);
+const DEFAULT_SITE_CONTENT = {
+  hero: {
+    title: "Jaen MDRRMO Public Information Portal",
+    subtitle:
+      "Official weather, evacuation areas, advisories, emergency contacts, and barangay-focused public safety information for Jaen, Nueva Ecija.",
+    primaryCtaLabel: "View Weather",
+    secondaryCtaLabel: "Emergency Contacts",
+  },
+  alert: {
+    enabled: true,
+    level: "Advisory",
+    text: "Monitor official weather updates and keep emergency contact lines accessible.",
+  },
+  announcements: [
+    {
+      id: `ann-${Date.now()}-1`,
+      title: "Preparedness Reminder",
+      body: "Keep go-bags ready, secure important documents, and monitor MDRRMO advisories during unstable weather.",
+      tag: "Public Advisory",
+    },
+    {
+      id: `ann-${Date.now()}-2`,
+      title: "Evacuation Readiness",
+      body: "Barangays should review local evacuation areas and identify households needing priority assistance.",
+      tag: "Operations",
+    },
+  ],
+  tips: [
+    { id: "tip-1", text: "Prepare a go-bag for each household member." },
+    { id: "tip-2", text: "Keep flashlights, batteries, and water ready." },
+    { id: "tip-3", text: "Save emergency numbers on every family phone." },
+    { id: "tip-4", text: "Follow official advisories and avoid rumor-based posts." },
+  ],
+  hotlines: [
+    {
+      id: "hot-1",
+      label: "Emergency Hotline",
+      number: "0999-000-0000",
+      type: "call",
+    },
+    {
+      id: "hot-2",
+      label: "SMS Hotline",
+      number: "0999-000-0001",
+      type: "sms",
+    },
+    {
+      id: "hot-3",
+      label: "Email",
+      number: "jaenmdrrmo@example.com",
+      type: "email",
+    },
+    {
+      id: "hot-4",
+      label: "Facebook Page",
+      number: "https://facebook.com/",
+      type: "link",
+    },
+  ],
+  office: {
+    name: "Jaen MDRRMO",
+    address: "Jaen, Nueva Ecija",
+    hours: "Office hours may vary during emergencies.",
+    email: "jaenmdrrmo@example.com",
+    facebook: "https://facebook.com/",
+  },
+  incidentFeedMode: "all",
+};
 
-  const [showSplash, setShowSplash] = useState(false);
-  const [fadeOut, setFadeOut] = useState(false);
-  const [dotCount, setDotCount] = useState(0);
+const LIMITS = {
+  announcements: 5,
+  tips: 6,
+  hotlines: 4,
+};
 
-  // Rotate the hero image every 3.5s
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentHero((prev) => (prev + 1) % heroImages.length);
-    }, 3500);
-    return () => clearInterval(interval);
-  }, []);
+const NAV_ITEMS = [
+  { id: "home", label: "Home" },
+  { id: "weather", label: "Weather" },
+  { id: "public-evac-map", label: "Evacuation" },
+  { id: "hazard-focus", label: "Hazard" },
+  { id: "incident-focus", label: "Incidents" },
+  { id: "updates", label: "Updates" },
+  { id: "footer-info", label: "Contacts" },
+];
 
-  // Splash → Login (for Account link)
-  const startSplash = (e) => {
-    if (e) e.preventDefault();
-    setShowSplash(true);
-    let localDot = 0;
+function safeJsonParse(value, fallback) {
+  try {
+    return JSON.parse(value);
+  } catch (err) {
+    return fallback;
+  }
+}
 
-    const dotInterval = setInterval(() => {
-      localDot = localDot < 4 ? localDot + 1 : 0;
-      setDotCount(localDot);
-    }, 200);
+function safeLower(value) {
+  return String(value || "").toLowerCase().trim();
+}
 
-    navigate("/login");
+function formatNumber(value) {
+  return new Intl.NumberFormat().format(Number(value || 0));
+}
 
-    setTimeout(() => {
-      clearInterval(dotInterval);
-      setFadeOut(true);
-      setTimeout(() => setShowSplash(false), 800);
-    }, 4000);
+function formatDateTime(value) {
+  if (!value) return "Unknown date";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown date";
+
+  return new Intl.DateTimeFormat("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function weatherCodeLabel(code) {
+  const map = {
+    0: "Clear",
+    1: "Mainly clear",
+    2: "Partly cloudy",
+    3: "Overcast",
+    45: "Fog",
+    48: "Fog",
+    51: "Light drizzle",
+    53: "Drizzle",
+    55: "Dense drizzle",
+    61: "Slight rain",
+    63: "Rain",
+    65: "Heavy rain",
+    80: "Rain showers",
+    81: "Rain showers",
+    82: "Heavy showers",
+    95: "Thunderstorm",
+    96: "Thunderstorm",
+    99: "Severe thunderstorm",
   };
 
-  // Hotline helpers
-  const call = (num) => window.open(`tel:${num}`);
-  const sms = (num) => window.open(`sms:${num}`);
-  const email = (addr) => window.open(`mailto:${addr}`);
+  return map[code] || "Weather update";
+}
 
-  const heroBg = heroImages[currentHero] || null;
+function weatherIconTone(code) {
+  if ([95, 96, 99].includes(code)) return "storm";
+  if ([61, 63, 65, 80, 81, 82].includes(code)) return "rain";
+  if ([45, 48].includes(code)) return "fog";
+  if ([0, 1, 2].includes(code)) return "clear";
+  return "cloud";
+}
 
-  // ✅ Smooth scroll to the Localized Weather section
-  const scrollToWeather = () => {
-    const el = document.getElementById("weather");
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+function getRainAdvisory(rainChance) {
+  const value = Number(rainChance || 0);
+  if (value >= 70) return "High likelihood of rain today";
+  if (value >= 40) return "Possible rain later today";
+  if (value >= 20) return "Low to moderate chance of rain";
+  return "Minimal chance of rain today";
+}
+
+function normalizeSitePayload(payload) {
+  return {
+    hero: {
+      ...DEFAULT_SITE_CONTENT.hero,
+      ...(payload?.hero || {}),
+    },
+    alert: {
+      ...DEFAULT_SITE_CONTENT.alert,
+      ...(payload?.alert || {}),
+    },
+    announcements: Array.isArray(payload?.announcements)
+      ? payload.announcements.slice(0, LIMITS.announcements)
+      : DEFAULT_SITE_CONTENT.announcements,
+    tips: Array.isArray(payload?.tips)
+      ? payload.tips.slice(0, LIMITS.tips)
+      : DEFAULT_SITE_CONTENT.tips,
+    hotlines: Array.isArray(payload?.hotlines)
+      ? payload.hotlines.slice(0, LIMITS.hotlines)
+      : DEFAULT_SITE_CONTENT.hotlines,
+    office: {
+      ...DEFAULT_SITE_CONTENT.office,
+      ...(payload?.office || {}),
+    },
+    incidentFeedMode:
+      payload?.incidentFeedMode === "resolved-only" ? "resolved-only" : "all",
   };
+}
 
+function sanitizeSearchInput(value) {
+  return String(value || "")
+    .replace(/[<>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 100);
+}
+
+function getIncidentStatusLabel(status) {
+  if (!status || status === "reported") return "Reported";
+  if (status === "onProcess") return "On Process";
+  if (status === "resolved") return "Resolved";
+  return status;
+}
+
+function getSeverityTone(level) {
+  const normalized = safeLower(level);
+  if (normalized.includes("high")) return "danger";
+  if (normalized.includes("medium")) return "warning";
+  if (normalized.includes("low")) return "success";
+  return "neutral";
+}
+
+function PublicMapLegend() {
   return (
-    <div className="dashboard-page">
-      <div className="dashboard" id="home">
-        {/* HEADER */}
-        <header className="dashboard-header">
-          <div className="brand-left">
-            {/* Small logo; if missing -> logo placeholder */}
-            {jaenlogo ? (
-              <img src={jaenlogo} alt="Jaen Logo" className="logo-img" />
-            ) : (
-              <div className="logo-fallback" aria-label="Logo placeholder">
-                LOGO
-              </div>
-            )}
+    <div className="public-map-legend" aria-label="Map legend">
+      <div className="public-map-legend-title">Map Legend</div>
 
-            <div className="brand-text">
-              <div className="brand-name">JAEN, NUEVA ECIJA</div>
-              <div className="brand-sub">MDRRMO</div>
-            </div>
-          </div>
+      <div className="public-map-legend-items">
+        <div className="public-map-legend-item">
+          <span className="public-map-dot available" />
+          <span>Available</span>
+        </div>
 
-          <div className="header-right">
-            <input
-              type="text"
-              className="header-search"
-              placeholder="Search (Weather, News, Hazard Map...)"
-            />
-            <nav className="nav-links" aria-label="Main">
-              <a href="#home">Home</a>
-              <a href="#account" onClick={startSplash}>
-                Account
-              </a> 
-            </nav>
-          </div>
-        </header>
+        <div className="public-map-legend-item">
+          <span className="public-map-dot limited" />
+          <span>Limited</span>
+        </div>
 
-        {/* HERO (full-screen) */}
-        <section
-          className={`hero ${heroBg ? "hero-has-bg" : ""}`}
-          style={heroBg ? { backgroundImage: `url(${heroBg})` } : undefined}
-        >
-          {!heroBg && (
-            <div style={{ width: "100%", maxWidth: 1140, padding: "0 24px" }}>
-              <PlaceholderImg height={460} label="Hero banner" />
-            </div>
-          )}
-
-          <div className="hero-overlay">
-            <h1>Welcome to Jaen DRRMO</h1>
-            <p>
-              Manage evacuation centers, relief operations, and official
-              announcements efficiently.
-            </p>
-            {/* ✅ Scroll to Localized Weather */}
-            <button type="button" className="hero-btn" onClick={scrollToWeather}>
-              Learn More
-            </button>
-          </div>
-        </section>
-
-        {/* LOCALIZED WEATHER FORECAST */}
-        <section className="weather-section" id="weather">
-          <div className="weather-header">
-            <h2>LOCALIZED WEATHER FORECAST</h2>
-          </div>
-
-          <div className="weather-content">
-            <div className="weather-image">
-              {forecast ? (
-                <img src={forecast} alt="Weather Forecast Report" />
-              ) : (
-                <PlaceholderImg height={320} />
-              )}
-            </div>
-
-            <div className="weather-text">
-              <h4>24‑Hour Public Weather Forecast</h4>
-              <span className="weather-tag">#BasyangPH</span>
-
-              <p className="weather-issued">Issued at 5:00 AM, February 7, 2026</p>
-
-              <p>
-                Northeast Monsoon is affecting the area. Expect cloudy to partly
-                cloudy skies with light to moderate rains.
-              </p>
-
-              <p className="weather-temp">
-                Temperature Range: <strong>22°C – 31°C</strong>
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* SERVICES */}
-        <section className="cards-container" id="services">
-          {[
-            {
-              icon: <FaPeopleCarry />,
-              title: "Evacuation Center Management",
-              text: "Monitor evacuation centers and occupancy levels.",
-            },
-            {
-              icon: <FaBullhorn />,
-              title: "Messages & Announcements",
-              text: "View messages and advisories from the DRRMO.",
-            },
-            {
-              icon: <FaWarehouse />,
-              title: "Relief Goods Management",
-              text: "Track requested and ongoing relief operations.",
-            },
-            {
-              icon: <FaUserCog />,
-              title: "Account Settings",
-              text: "Manage your account details.",
-            },
-          ].map((card, i) => (
-            <div key={i} className="card" onClick={startSplash}>
-              {React.cloneElement(card.icon, {
-                className: "card-icon",
-                "aria-hidden": true,
-              })}
-              <h3>{card.title}</h3>
-              <p>{card.text}</p>
-            </div>
-          ))}
-        </section>
-
-        {/* HAZARD MAP */}
-        <section className="map-section" id="hazard-map">
-          <div className="weather-header">
-            <h2>HAZARD MAP</h2>
-          </div>
-          <div className="map-container">
-            <div className="map-placeholder">Hazard map API will be displayed here</div>
-          </div>
-        </section>
-
-        {/* LATEST NEWS */}
-        <section className="news-section" id="latest-news">
-          <h2 className="news-title">Latest News</h2>
-
-          <div className="news-banners">
-            {/* LEFT: LATEST UPDATE */}
-            <article className="news-banner-card">
-              <div className="news-banner-head">
-                <span className="news-banner-head-text">LATEST UPDATE</span>
-              </div>
-
-              {news1 ? (
-                <img
-                  src={news1}
-                  alt="Latest weather and advisories"
-                  className="news-banner-image"
-                />
-              ) : (
-                <PlaceholderImg height={420} label="Latest update banner" />
-              )}
-
-              <div className="news-banner-body">
-                <h3 className="news-banner-title">
-                  Weather advisory: scattered rains affecting low-lying areas
-                </h3>
-                <div className="news-banner-date">February 7, 2026</div>
-                <p className="news-banner-excerpt">
-                  DRRMO continues to monitor weather conditions. Residents in
-                  flood‑prone areas are advised to remain vigilant and follow
-                  official channels for announcements and safety guidance.
-                </p>
-              </div>
-            </article>
-
-            {/* RIGHT: HIGHLIGHTS */}
-            <article className="news-banner-card">
-              <div className="news-banner-head">
-                <span className="news-banner-head-text">HIGHLIGHTS</span>
-              </div>
-
-              {highlights ? (
-                <img
-                  src={highlights}
-                  alt="DRRMO highlights key practices for disaster resilience"
-                  className="news-banner-image"
-                />
-              ) : (
-                <PlaceholderImg height={420} label="Highlights banner" />
-              )}
-
-              <div className="news-banner-body">
-                <h3 className="news-banner-title">
-                  Key practices for disaster resilience
-                </h3>
-                <div className="news-banner-date">August 6, 2025</div>
-                <p className="news-banner-excerpt">
-                  Success stories and best practices in disaster resiliency were
-                  presented to strengthen preparedness and response.
-                </p>
-              </div>
-            </article>
-          </div>
-        </section>
-
-        {/* ================= EMERGENCY HOTLINES (FULL‑BLEED) ================= */}
-        <section className="hotline-section fullbleed" id="hotlines">
-          <div className="hotline-inner">
-            <div className="hotline-bar">
-              <h2>EMERGENCY HOTLINES</h2>
-            </div>
-
-            {/* TABLE‑STYLE LIST */}
-            <div className="hotline-list" role="table" aria-label="Emergency hotlines">
-              <div className="hotline-row" role="row">
-                <div className="hotline-col left" role="cell">
-                  <FaPhoneAlt aria-hidden="true" /> <span>Landline</span>
-                </div>
-                <div className="hotline-col right" role="cell">
-                  <a href="tel:86430000" onClick={() => call("86430000")}>
-                    8643‑0000
-                  </a>
-                </div>
-              </div>
-
-              <div className="hotline-row alt" role="row">
-                <div className="hotline-col left" role="cell">
-                  <FaSms aria-hidden="true" /> <span>SMS</span>
-                </div>
-                <div className="hotline-col right" role="cell">
-                  <a href="sms:09088993333" onClick={() => sms("09088993333")}>
-                    0908‑899‑3333
-                  </a>
-                </div>
-              </div>
-
-              <div className="hotline-row" role="row">
-                <div className="hotline-col left" role="cell">
-                  <FaPhoneSquareAlt aria-hidden="true" /> <span>OPCEN</span>
-                </div>
-                <div className="hotline-col right" role="cell">
-                  <a href="tel:09615825013" onClick={() => call("09615825013")}>
-                    0961‑582‑5013
-                  </a>
-                </div>
-              </div>
-
-              <div className="hotline-row alt" role="row">
-                <div className="hotline-col left" role="cell">
-                  <FaEnvelope aria-hidden="true" /> <span>Email</span>
-                </div>
-                <div className="hotline-col right" role="cell">
-                  <a
-                    href="mailto:drrmo@pasigcity.gov.ph"
-                    className="hotline-email-link"
-                    onClick={() => email("drrmo@pasigcity.gov.ph")}
-                  >
-                   lgujaen.mayorsoffice@gmail.com
-                  </a>
-                </div>
-              </div>
-            </div>
-
-            {/* CONTACT ADDRESSES ROW (WITH SEALS/LOGOS) */}
-            <div className="hotline-addresses alt-card">
-              <div className="address-block address-with-logo">
-                {pasiglogo ? (
-                  <img
-                    src={nelogo}
-                    alt="City Hall Seal"
-                    className="address-logo"
-                  />
-                ) : (
-                  <PlaceholderImg width={80} height={80} radius={40} label="Logo" />
-                )}
-                <div className="address-content">
-                  <h4>City Hall</h4>
-                  <p>
-                   1F Old Capitol Building, Cabanatuan City, Nueva Ecija
-                  </p>
-                  <p>
-                    <a href="mailto:lydo@pasigcity.gov.ph">nepg_gov@yahoo.com.ph</a>
-                  </p>
-                </div>
-              </div>
-
-              <div className="address-block address-with-logo">
-                {pasiglogodrrmo ? (
-                  <img
-                    src={jaenlogo}
-                    alt="Jaen DRRMO"
-                    className="address-logo"
-                  />
-                ) : (
-                  <PlaceholderImg width={80} height={80} radius={40} label="Logo" />
-                )}
-                <div className="address-content">
-                  <h4>Jaen DRRMO</h4>
-                  <p>Municipal Government of Jaen, Brgy. Sapang, Jaen, Nueva Ecija, 3109 Philippines</p>
-                  <p>
-                    <a href="mailto:drrmo@pasigcity.gov.ph">
- lgujaen.mayorsoffice@gmail.com
-                    </a>
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* FOOTER */}
-        <footer className="dashboard-footer">
-          <div className="footer-icons">
-            <a
-              aria-label="Facebook"
-              href="https://www.facebook.com/PasigCityDRRMO"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <FaFacebookF />
-            </a>
-            <a
-              aria-label="Email"
-              href="mailto:drrmo@pasigcity.gov.ph"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <FaEnvelope />
-            </a>
-            <a aria-label="Call" href="tel:86430000">
-              <FaPhoneAlt />
-            </a>
-          </div>
-          <p>Copyright © 2026, All rights reserved.</p>
-        </footer>
-
-        {showSplash && <SplashScreen dotCount={dotCount} fadeOut={fadeOut} />}
+        <div className="public-map-legend-item">
+          <span className="public-map-dot full" />
+          <span>Full</span>
+        </div>
       </div>
     </div>
   );
 }
 
-export default Dashboard;
+export default function Dashboard() {
+  const [currentHero, setCurrentHero] = useState(0);
+
+  const [siteContent, setSiteContent] = useState(DEFAULT_SITE_CONTENT);
+  const [draftContent, setDraftContent] = useState(DEFAULT_SITE_CONTENT);
+
+  const [weather, setWeather] = useState(null);
+  const [weatherLoading, setWeatherLoading] = useState(true);
+  const [weatherError, setWeatherError] = useState("");
+
+  const [searchText, setSearchText] = useState("");
+  const [activeSection, setActiveSection] = useState("home");
+
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [userRole, setUserRole] = useState("");
+  const [isVisitorMode, setIsVisitorMode] = useState(false);
+
+  const [publicPlaces, setPublicPlaces] = useState([]);
+  const [mapLoading, setMapLoading] = useState(true);
+  const [mapError, setMapError] = useState("");
+  const [selectedPublicPlaceId, setSelectedPublicPlaceId] = useState(null);
+  const [publicBarangayFilter, setPublicBarangayFilter] = useState("all");
+
+  const [publicIncidents, setPublicIncidents] = useState([]);
+  const [incidentsLoading, setIncidentsLoading] = useState(true);
+  const [incidentsError, setIncidentsError] = useState("");
+
+  const observerRef = useRef(null);
+  const navigate = useNavigate();
+
+  const isPrivilegedUser = useMemo(() => {
+    return ["drrmo", "admin"].includes(safeLower(userRole));
+  }, [userRole]);
+
+  const canEdit = isPrivilegedUser && !isVisitorMode;
+  const isInlineEditing = canEdit && isEditorOpen;
+  const pageContent = isInlineEditing ? draftContent : siteContent;
+
+  const heroBg = heroImages[currentHero] || null;
+  const topWeather = weather?.current || null;
+
+  const todaySummary = useMemo(() => {
+    if (!weather?.daily) {
+      return {
+        high: "--",
+        low: "--",
+        rain: "--",
+      };
+    }
+
+    return {
+      high: Math.round(weather.daily.temperature_2m_max?.[0] || 0),
+      low: Math.round(weather.daily.temperature_2m_min?.[0] || 0),
+      rain: weather.daily.precipitation_probability_max?.[0] ?? 0,
+    };
+  }, [weather]);
+
+  const forecastCards = useMemo(() => {
+    const days = weather?.daily?.time || [];
+
+    return days.slice(0, 3).map((day, idx) => ({
+      key: day,
+      label:
+        idx === 0
+          ? "Today"
+          : idx === 1
+          ? "Tomorrow"
+          : new Date(day).toLocaleDateString("en-PH", { weekday: "short" }),
+      condition: weatherCodeLabel(weather?.daily?.weather_code?.[idx]),
+      high: Math.round(weather?.daily?.temperature_2m_max?.[idx] || 0),
+      low: Math.round(weather?.daily?.temperature_2m_min?.[idx] || 0),
+      rain: weather?.daily?.precipitation_probability_max?.[idx] ?? 0,
+      code: weather?.daily?.weather_code?.[idx],
+    }));
+  }, [weather]);
+
+  const publicBarangayOptions = useMemo(() => {
+    const names = Array.from(
+      new Set(
+        publicPlaces
+          .map((item) => String(item?.barangayName || "").trim())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+
+    return names;
+  }, [publicPlaces]);
+
+  const filteredPublicPlaces = useMemo(() => {
+    if (publicBarangayFilter === "all") return publicPlaces;
+
+    return publicPlaces.filter(
+      (item) => safeLower(item?.barangayName) === safeLower(publicBarangayFilter)
+    );
+  }, [publicPlaces, publicBarangayFilter]);
+
+  const publicMapSummary = useMemo(() => {
+    const source = filteredPublicPlaces;
+
+    const availableCount = source.filter(
+      (item) => safeLower(item?.capacityStatus) === "available"
+    ).length;
+
+    const limitedCount = source.filter(
+      (item) => safeLower(item?.capacityStatus) === "limited"
+    ).length;
+
+    const fullCount = source.filter(
+      (item) => safeLower(item?.capacityStatus) === "full"
+    ).length;
+
+    return {
+      total: source.length,
+      availableCount,
+      limitedCount,
+      fullCount,
+    };
+  }, [filteredPublicPlaces]);
+
+  const selectedPublicPlace = useMemo(() => {
+    return (
+      filteredPublicPlaces.find(
+        (item) => String(item?._id) === String(selectedPublicPlaceId)
+      ) || null
+    );
+  }, [filteredPublicPlaces, selectedPublicPlaceId]);
+
+  const focusedBarangayLabel =
+    publicBarangayFilter === "all" ? "All Barangays" : publicBarangayFilter;
+
+  const incidentSummary = useMemo(() => {
+    const total = publicIncidents.length;
+
+    const reported = publicIncidents.filter(
+      (item) => !item.status || item.status === "reported" || item.status === ""
+    ).length;
+
+    const onProcess = publicIncidents.filter(
+      (item) => item.status === "onProcess"
+    ).length;
+
+    const resolved = publicIncidents.filter(
+      (item) => item.status === "resolved"
+    ).length;
+
+    return {
+      total,
+      reported,
+      onProcess,
+      resolved,
+    };
+  }, [publicIncidents]);
+
+  const incidentFeedMode =
+    safeLower(siteContent?.incidentFeedMode) === "resolved-only"
+      ? "resolved-only"
+      : "all";
+
+  const incidentFeedList = useMemo(() => {
+    const source =
+      incidentFeedMode === "resolved-only"
+        ? publicIncidents.filter((item) => item.status === "resolved")
+        : publicIncidents;
+
+    return source
+      .slice()
+      .sort((a, b) => {
+        const aDate = new Date(a.updatedAt || a.createdAt || a.date || 0).getTime();
+        const bDate = new Date(b.updatedAt || b.createdAt || b.date || 0).getTime();
+        return bDate - aDate;
+      })
+      .slice(0, 4);
+  }, [incidentFeedMode, publicIncidents]);
+
+  const filteredIncidentFeedList = useMemo(() => {
+    if (publicBarangayFilter === "all") return incidentFeedList;
+
+    const barangay = safeLower(publicBarangayFilter);
+
+    return incidentFeedList.filter((item) => {
+      return (
+        safeLower(item.barangayName).includes(barangay) ||
+        safeLower(item.location).includes(barangay) ||
+        safeLower(item.address).includes(barangay)
+      );
+    });
+  }, [incidentFeedList, publicBarangayFilter]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentHero((prev) => (prev + 1) % heroImages.length);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!canEdit && isEditorOpen) {
+      setIsEditorOpen(false);
+    }
+  }, [canEdit, isEditorOpen]);
+
+  useEffect(() => {
+    if (!filteredPublicPlaces.length) {
+      setSelectedPublicPlaceId(null);
+      return;
+    }
+
+    const stillExists = filteredPublicPlaces.some(
+      (item) => String(item?._id) === String(selectedPublicPlaceId)
+    );
+
+    if (!stillExists) {
+      setSelectedPublicPlaceId(filteredPublicPlaces[0]?._id || null);
+    }
+  }, [filteredPublicPlaces, selectedPublicPlaceId]);
+
+  useEffect(() => {
+    const sectionIds = NAV_ITEMS.map((item) => item.id);
+    const elements = sectionIds
+      .map((id) => document.getElementById(id))
+      .filter(Boolean);
+
+    if (!elements.length) return undefined;
+
+    observerRef.current?.disconnect();
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+
+        if (visible[0]?.target?.id) {
+          setActiveSection(visible[0].target.id);
+        }
+      },
+      {
+        rootMargin: "-20% 0px -55% 0px",
+        threshold: [0.2, 0.35, 0.5, 0.8],
+      }
+    );
+
+    elements.forEach((element) => observerRef.current.observe(element));
+
+    return () => observerRef.current?.disconnect();
+  }, [
+    filteredPublicPlaces.length,
+    filteredIncidentFeedList,
+    weatherLoading,
+    mapLoading,
+    incidentsLoading,
+  ]);
+
+  const scrollToId = (id) => {
+    document.getElementById(id)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
+
+  const scrollToWeather = () => scrollToId("weather");
+  const scrollToMap = () => scrollToId("public-evac-map");
+  const scrollToUpdates = () => scrollToId("updates");
+  const scrollToPreparedness = () => scrollToId("preparedness");
+  const scrollToFooter = () => scrollToId("footer-info");
+
+  function handleNavClick(id) {
+    setActiveSection(id);
+    scrollToId(id);
+  }
+
+  function handleSearchSubmit(e) {
+    e.preventDefault();
+
+    const value = sanitizeSearchInput(searchText).toLowerCase();
+
+    if (!value) return;
+
+    setSearchText(value);
+
+    if (
+      value.includes("weather") ||
+      value.includes("rain") ||
+      value.includes("forecast") ||
+      value.includes("wind")
+    ) {
+      scrollToWeather();
+      return;
+    }
+
+    if (
+      value.includes("evac") ||
+      value.includes("map") ||
+      value.includes("barangay") ||
+      value.includes("shelter")
+    ) {
+      scrollToMap();
+      return;
+    }
+
+    if (
+      value.includes("hazard") ||
+      value.includes("flood") ||
+      value.includes("risk")
+    ) {
+      scrollToId("hazard-focus");
+      return;
+    }
+
+    if (
+      value.includes("incident") ||
+      value.includes("report") ||
+      value.includes("resolved") ||
+      value.includes("emergency case")
+    ) {
+      scrollToId("incident-focus");
+      return;
+    }
+
+    if (
+      value.includes("announcement") ||
+      value.includes("update") ||
+      value.includes("advisory")
+    ) {
+      scrollToUpdates();
+      return;
+    }
+
+    if (
+      value.includes("prepared") ||
+      value.includes("guide") ||
+      value.includes("tip") ||
+      value.includes("safety")
+    ) {
+      scrollToPreparedness();
+      return;
+    }
+
+    if (
+      value.includes("contact") ||
+      value.includes("office") ||
+      value.includes("hotline") ||
+      value.includes("email")
+    ) {
+      scrollToFooter();
+      return;
+    }
+
+    scrollToId("home");
+  }
+
+  async function detectRole() {
+    try {
+      const res = await fetch(`${BASE_URL}/api/debug-session`, {
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        setUserRole("");
+        return;
+      }
+
+      const data = await res.json();
+      const sessionRole = safeLower(data?.role || data?.session?.role || "");
+
+      if (sessionRole === "admin" || sessionRole === "drrmo") {
+        setUserRole(sessionRole);
+        return;
+      }
+
+      setUserRole("");
+    } catch (err) {
+      setUserRole("");
+    }
+  }
+
+  function goBackToModules() {
+    const role = safeLower(userRole);
+
+    if (role === "admin") {
+      navigate("/admin/dashboard");
+      return;
+    }
+
+    if (role === "drrmo") {
+      navigate("/drrmo/dashboard");
+      return;
+    }
+
+    navigate(-1);
+  }
+
+  async function loadPublicContent() {
+    try {
+      const res = await fetch(`${BASE_URL}/api/public-site`, {
+        credentials: "include",
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const source = data?.data || data;
+        const normalized = normalizeSitePayload(source);
+
+        setSiteContent(normalized);
+        setDraftContent(normalized);
+        localStorage.setItem("publicSiteContent", JSON.stringify(normalized));
+        return;
+      }
+    } catch (err) {
+      // fallback below
+    }
+
+    const localData = safeJsonParse(
+      localStorage.getItem("publicSiteContent"),
+      DEFAULT_SITE_CONTENT
+    );
+
+    const normalized = normalizeSitePayload(localData);
+
+    setSiteContent(normalized);
+    setDraftContent(normalized);
+  }
+
+  async function fetchWeather() {
+    setWeatherLoading(true);
+    setWeatherError("");
+
+    try {
+      const url =
+        `https://api.open-meteo.com/v1/forecast?latitude=${JAEN_COORDS.latitude}` +
+        `&longitude=${JAEN_COORDS.longitude}` +
+        `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m` +
+        `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code` +
+        `&timezone=auto&forecast_days=3`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (!res.ok || data?.error) {
+        throw new Error(data?.reason || "Unable to load weather.");
+      }
+
+      setWeather({
+        current: data.current,
+        daily: data.daily,
+      });
+    } catch (err) {
+      setWeatherError("Weather unavailable right now.");
+    } finally {
+      setWeatherLoading(false);
+    }
+  }
+
+  const fetchPublicPlaces = useCallback(async () => {
+    setMapLoading(true);
+    setMapError("");
+
+    try {
+      const res = await fetch(`${BASE_URL}/evacs/public`, {
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to load public evacuation areas.");
+      }
+
+      const data = await res.json();
+      const payload = Array.isArray(data) ? data : [];
+
+      setPublicPlaces(payload);
+      setSelectedPublicPlaceId((prev) => prev || payload[0]?._id || null);
+    } catch (err) {
+      console.error("fetchPublicPlaces error:", err);
+      setMapError("Public evacuation map is unavailable right now.");
+      setPublicPlaces([]);
+    } finally {
+      setMapLoading(false);
+    }
+  }, []);
+
+  async function fetchPublicIncidents() {
+    setIncidentsLoading(true);
+    setIncidentsError("");
+
+    try {
+      const res = await fetch(`${BASE_URL}/incident/getIncidents`, {
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to load incidents.");
+      }
+
+      const data = await res.json();
+      const payload = Array.isArray(data) ? data : [];
+
+      setPublicIncidents(payload);
+    } catch (err) {
+      console.error("fetchPublicIncidents error:", err);
+      setIncidentsError("Resolved incident information is unavailable right now.");
+      setPublicIncidents([]);
+    } finally {
+      setIncidentsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadPublicContent();
+    detectRole();
+    fetchWeather();
+    fetchPublicPlaces();
+    fetchPublicIncidents();
+  }, [fetchPublicPlaces]);
+
+  function updateDraft(path, value) {
+    setDraftContent((prev) => {
+      const next =
+        typeof structuredClone === "function"
+          ? structuredClone(prev)
+          : JSON.parse(JSON.stringify(prev));
+
+      const keys = path.split(".");
+      let ref = next;
+
+      for (let i = 0; i < keys.length - 1; i += 1) {
+        if (!ref[keys[i]]) ref[keys[i]] = {};
+        ref = ref[keys[i]];
+      }
+
+      ref[keys[keys.length - 1]] = value;
+      return next;
+    });
+  }
+
+  function updateArrayItem(section, index, field, value) {
+    setDraftContent((prev) => {
+      const nextItems = [...(prev[section] || [])];
+
+      nextItems[index] = {
+        ...nextItems[index],
+        [field]: value,
+      };
+
+      return {
+        ...prev,
+        [section]: nextItems,
+      };
+    });
+  }
+
+  function addItem(section, template) {
+    setDraftContent((prev) => {
+      if ((prev[section] || []).length >= LIMITS[section]) return prev;
+
+      return {
+        ...prev,
+        [section]: [
+          ...(prev[section] || []),
+          {
+            id: `${section}-${Date.now()}`,
+            ...template,
+          },
+        ],
+      };
+    });
+  }
+
+  function removeItem(section, id) {
+    setDraftContent((prev) => {
+      const currentItems = prev[section] || [];
+
+      if (currentItems.length <= 1) return prev;
+
+      return {
+        ...prev,
+        [section]: currentItems.filter((item) => item.id !== id),
+      };
+    });
+  }
+
+  function startInlineEditing() {
+    setDraftContent(siteContent);
+    setSaveMessage("");
+    setIsEditorOpen(true);
+  }
+
+  function closeInlineEditing() {
+    setDraftContent(siteContent);
+    setSaveMessage("");
+    setIsEditorOpen(false);
+  }
+
+  function resetDraftContent() {
+    setDraftContent(siteContent);
+    setSaveMessage("Draft reset to current saved content.");
+  }
+
+  async function saveSiteContent() {
+    if (!canEdit) return;
+
+    setIsSaving(true);
+    setSaveMessage("");
+
+    const trimmedPayload = normalizeSitePayload({
+      ...draftContent,
+      announcements: (draftContent.announcements || []).map((item) => ({
+        ...item,
+        title: item.title?.slice(0, 80) || "",
+        body: item.body?.slice(0, 180) || "",
+        tag: item.tag?.slice(0, 32) || "",
+      })),
+      tips: (draftContent.tips || []).map((item) => ({
+        ...item,
+        text: item.text?.slice(0, 120) || "",
+      })),
+      hotlines: (draftContent.hotlines || []).map((item) => ({
+        ...item,
+        label: item.label?.slice(0, 40) || "",
+        number: item.number?.slice(0, 120) || "",
+        type: item.type || "call",
+      })),
+      hero: {
+        ...draftContent.hero,
+        title: draftContent.hero?.title?.slice(0, 90) || "",
+        subtitle: draftContent.hero?.subtitle?.slice(0, 180) || "",
+        primaryCtaLabel:
+          draftContent.hero?.primaryCtaLabel?.slice(0, 24) || "",
+        secondaryCtaLabel:
+          draftContent.hero?.secondaryCtaLabel?.slice(0, 24) || "",
+      },
+      alert: {
+        ...draftContent.alert,
+        level: draftContent.alert?.level?.slice(0, 20) || "",
+        text: draftContent.alert?.text?.slice(0, 180) || "",
+        enabled: Boolean(draftContent.alert?.enabled),
+      },
+      office: {
+        ...draftContent.office,
+        name: draftContent.office?.name?.slice(0, 50) || "",
+        address: draftContent.office?.address?.slice(0, 120) || "",
+        hours: draftContent.office?.hours?.slice(0, 120) || "",
+        email: draftContent.office?.email?.slice(0, 80) || "",
+        facebook: draftContent.office?.facebook?.slice(0, 120) || "",
+      },
+    });
+
+    try {
+      const res = await fetch(`${BASE_URL}/api/public-site`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(trimmedPayload),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to save.");
+      }
+
+      const result = await res.json();
+      const normalized = normalizeSitePayload(result?.data || trimmedPayload);
+
+      setSiteContent(normalized);
+      setDraftContent(normalized);
+      localStorage.setItem("publicSiteContent", JSON.stringify(normalized));
+      setSaveMessage("Landing page updated.");
+      setIsEditorOpen(false);
+    } catch (err) {
+      localStorage.setItem("publicSiteContent", JSON.stringify(trimmedPayload));
+      setSiteContent(trimmedPayload);
+      setDraftContent(trimmedPayload);
+      setSaveMessage("Saved locally. Check API if database save is unavailable.");
+      setIsEditorOpen(false);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function getHotlineIcon(type) {
+    const currentType = safeLower(type);
+
+    if (currentType === "sms") return <FaSms />;
+    if (currentType === "email") return <FaEnvelope />;
+    if (currentType === "link") return <FaFacebookF />;
+
+    return <FaPhoneAlt />;
+  }
+
+  return (
+    <div
+      className={`dashboard-page ${
+        isInlineEditing ? "landing-inline-editing" : ""
+      }`}
+    >
+      <div className="dashboard">
+        <header className="dashboard-header">
+          <div className="dashboard-header-shell">
+            <div className="brand-left">
+              {jaenlogo ? (
+                <img src={jaenlogo} alt="Jaen Logo" className="logo-img" />
+              ) : (
+                <div className="logo-fallback">LOGO</div>
+              )}
+
+              <div className="brand-text">
+                <div className="brand-topline">MUNICIPALITY OF JAEN</div>
+                <div className="brand-name">JAEN, NUEVA ECIJA</div>
+                <div className="brand-sub">
+                  MDRRMO Public Safety and Information Portal
+                </div>
+              </div>
+            </div>
+
+            <div className="header-right">
+              <form className="header-search-wrap" onSubmit={handleSearchSubmit}>
+                <input
+                  type="text"
+                  className="header-search"
+                  placeholder="Search weather, hazard, incident, barangay, contacts..."
+                  value={searchText}
+                  onChange={(e) =>
+                    setSearchText(sanitizeSearchInput(e.target.value))
+                  }
+                />
+              </form>
+
+              {isPrivilegedUser && (
+                <div className="mode-toggle-wrap">
+                  <button
+                    type="button"
+                    className={`mode-toggle-btn ${
+                      !isVisitorMode ? "active" : ""
+                    }`}
+                    onClick={() => setIsVisitorMode(false)}
+                  >
+                    <FaEdit />
+                    <span>Editor Mode</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`mode-toggle-btn ${
+                      isVisitorMode ? "active" : ""
+                    }`}
+                    onClick={() => {
+                      setIsVisitorMode(true);
+                      setIsEditorOpen(false);
+                    }}
+                  >
+                    <FaEye />
+                    <span>Visitor Mode</span>
+                  </button>
+                </div>
+              )}
+
+              {isPrivilegedUser && (
+                <button
+                  className="editor-toggle-btn"
+                  onClick={goBackToModules}
+                  type="button"
+                >
+                  <span>Back</span>
+                </button>
+              )}
+
+              {canEdit && !isInlineEditing && (
+                <button
+                  className="editor-toggle-btn"
+                  onClick={startInlineEditing}
+                  type="button"
+                >
+                  <FaEdit />
+                  <span>Edit Landing</span>
+                </button>
+              )}
+
+              {canEdit && isInlineEditing && (
+                <button
+                  className="editor-toggle-btn"
+                  onClick={closeInlineEditing}
+                  type="button"
+                  disabled={isSaving}
+                >
+                  <FaTimes />
+                  <span>Close Editor</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="dashboard-nav-shell">
+            <nav className="nav-links" aria-label="Primary navigation">
+              {NAV_ITEMS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`nav-link-btn ${
+                    activeSection === item.id ? "active" : ""
+                  }`}
+                  onClick={() => handleNavClick(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          </div>
+        </header>
+
+                {isPrivilegedUser && (
+          <section className="mode-preview-bar">
+            <div className="mode-preview-left">
+              {isVisitorMode ? <FaEye /> : <FaEyeSlash />}
+              <strong>{isVisitorMode ? "Visitor Mode" : "Editor Mode"}</strong>
+            </div>
+
+            <p>
+              {isVisitorMode
+                ? "You are previewing the public landing page exactly like a normal visitor."
+                : isInlineEditing
+                ? "Inline editing is active. Public text fields are now editable directly on the landing page."
+                : "You can edit the landing page. Click Edit Landing to turn the public text into editable fields."}
+            </p>
+          </section>
+        )}
+
+        {isInlineEditing && (
+          <section className="inline-editor-toolbar">
+            <div className="inline-editor-toolbar-left">
+              <FaEdit />
+              <div>
+                <strong>Inline Landing Editor</strong>
+                <span>Edit text directly on the page. Save when finished.</span>
+              </div>
+            </div>
+
+            <div className="inline-editor-toolbar-actions">
+              {saveMessage && (
+                <span className="inline-save-message">{saveMessage}</span>
+              )}
+
+              <button
+                type="button"
+                className="inline-editor-action secondary"
+                onClick={resetDraftContent}
+                disabled={isSaving}
+              >
+                Reset
+              </button>
+
+              <button
+                type="button"
+                className="inline-editor-action primary"
+                onClick={saveSiteContent}
+                disabled={isSaving}
+              >
+                <FaSave />
+                {isSaving ? "Saving..." : "Save Changes"}
+              </button>
+
+              <button
+                type="button"
+                className="inline-editor-action ghost"
+                onClick={closeInlineEditing}
+                disabled={isSaving}
+              >
+                <FaTimes />
+                Close
+              </button>
+            </div>
+          </section>
+        )}
+
+        {(pageContent.alert.enabled || isInlineEditing) && (
+          <section
+            className={`alert-strip ${
+              !pageContent.alert.enabled ? "alert-strip-disabled" : ""
+            }`}
+            aria-label="Public advisory"
+          >
+            <div className="alert-left">
+              <FaBell />
+
+              {isInlineEditing ? (
+                <input
+                  className="landing-inline-input alert-level-input"
+                  type="text"
+                  value={draftContent.alert.level}
+                  maxLength={20}
+                  onChange={(e) => updateDraft("alert.level", e.target.value)}
+                  placeholder="Alert level"
+                />
+              ) : (
+                <span
+                  className={`alert-badge alert-${safeLower(
+                    pageContent.alert.level
+                  )}`}
+                >
+                  {pageContent.alert.level}
+                </span>
+              )}
+            </div>
+
+            {isInlineEditing ? (
+              <textarea
+                className="landing-inline-textarea alert-text-input"
+                value={draftContent.alert.text}
+                maxLength={180}
+                rows={2}
+                onChange={(e) => updateDraft("alert.text", e.target.value)}
+                placeholder="Public advisory text"
+              />
+            ) : (
+              <p>{pageContent.alert.text}</p>
+            )}
+
+            {isInlineEditing && (
+              <label className="inline-check-control">
+                <input
+                  type="checkbox"
+                  checked={Boolean(draftContent.alert.enabled)}
+                  onChange={(e) => updateDraft("alert.enabled", e.target.checked)}
+                />
+                <span>Show alert</span>
+              </label>
+            )}
+          </section>
+        )}
+
+        <section
+          className={`landing-hero ${heroBg ? "landing-hero-has-bg" : ""}`}
+          style={heroBg ? { backgroundImage: `url(${heroBg})` } : {}}
+          id="home"
+        >
+          <div className="landing-hero-overlay">
+            <div className="landing-wide-shell">
+              <div className="landing-hero-grid">
+                <div className="landing-hero-copy">
+                  <div className="hero-kicker">
+                    Municipal Disaster Risk Reduction and Management Office
+                  </div>
+
+                  {isInlineEditing ? (
+                    <div className="inline-edit-block hero-edit-block">
+                      <label className="inline-edit-label">Hero Title</label>
+                      <textarea
+                        className="landing-inline-textarea hero-title-input"
+                        value={draftContent.hero.title}
+                        maxLength={90}
+                        rows={2}
+                        onChange={(e) => updateDraft("hero.title", e.target.value)}
+                        placeholder="Hero title"
+                      />
+
+                      <label className="inline-edit-label">Hero Subtitle</label>
+                      <textarea
+                        className="landing-inline-textarea hero-subtitle-input"
+                        value={draftContent.hero.subtitle}
+                        maxLength={180}
+                        rows={3}
+                        onChange={(e) =>
+                          updateDraft("hero.subtitle", e.target.value)
+                        }
+                        placeholder="Hero subtitle"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <h1>{pageContent.hero.title}</h1>
+                      <p>{pageContent.hero.subtitle}</p>
+                    </>
+                  )}
+
+                  <div className="landing-hero-actions">
+                    <button
+                      type="button"
+                      className="hero-btn primary"
+                      onClick={scrollToWeather}
+                    >
+                      {isInlineEditing ? (
+                        <input
+                          className="landing-inline-input cta-inline-input"
+                          type="text"
+                          value={draftContent.hero.primaryCtaLabel}
+                          maxLength={24}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) =>
+                            updateDraft("hero.primaryCtaLabel", e.target.value)
+                          }
+                          placeholder="Primary button"
+                        />
+                      ) : (
+                        pageContent.hero.primaryCtaLabel || "View Weather"
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="hero-btn secondary"
+                      onClick={scrollToMap}
+                    >
+                      View Evacuation Map
+                    </button>
+
+                    <button
+                      type="button"
+                      className="hero-btn ghost"
+                      onClick={scrollToFooter}
+                    >
+                      {isInlineEditing ? (
+                        <input
+                          className="landing-inline-input cta-inline-input"
+                          type="text"
+                          value={draftContent.hero.secondaryCtaLabel}
+                          maxLength={24}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) =>
+                            updateDraft("hero.secondaryCtaLabel", e.target.value)
+                          }
+                          placeholder="Secondary button"
+                        />
+                      ) : (
+                        pageContent.hero.secondaryCtaLabel || "Emergency Contacts"
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="hero-highlights">
+                    <div className="hero-highlight-card">
+                      <FaCloudSun />
+                      <div>
+                        <strong>Live Weather Outlook</strong>
+                        <span>Quick rain, wind, and temperature view for Jaen.</span>
+                      </div>
+                    </div>
+
+                    <div className="hero-highlight-card">
+                      <FaMap />
+                      <div>
+                        <strong>Barangay-Based Public Map</strong>
+                        <span>Focus the page on a specific barangay when needed.</span>
+                      </div>
+                    </div>
+
+                    <div className="hero-highlight-card">
+                      <FaBell />
+                      <div>
+                        <strong>Official Advisories</strong>
+                        <span>Updates, preparedness, contacts, and public guidance.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="landing-hero-side">
+                  <div className="hero-status-panel">
+                    <div className="hero-status-head">
+                      <span>Current focus</span>
+                      <strong>{focusedBarangayLabel}</strong>
+                    </div>
+
+                    {weatherLoading ? (
+                      <div className="weather-loading-box">Loading weather…</div>
+                    ) : weatherError ? (
+                      <div className="weather-loading-box error">
+                        {weatherError}
+                      </div>
+                    ) : (
+                      <div
+                        className={`hero-weather-compact tone-${weatherIconTone(
+                          topWeather?.weather_code
+                        )}`}
+                      >
+                        <div className="hero-weather-compact-main">
+                          <div className="hero-weather-icon">
+                            <FaCloudSun />
+                          </div>
+
+                          <div className="hero-weather-compact-copy">
+                            <strong>
+                              {Math.round(topWeather?.temperature_2m || 0)}°C
+                            </strong>
+                            <span>{weatherCodeLabel(topWeather?.weather_code)}</span>
+                          </div>
+
+                          <div className="hero-weather-compact-rain">
+                            <label>Rain</label>
+                            <b>{todaySummary.rain}%</b>
+                          </div>
+                        </div>
+
+                        <div className="hero-weather-compact-grid">
+                          <div>
+                            <label>High / Low</label>
+                            <strong>
+                              {todaySummary.high}° / {todaySummary.low}°
+                            </strong>
+                          </div>
+
+                          <div>
+                            <label>Feels Like</label>
+                            <strong>
+                              {Math.round(topWeather?.apparent_temperature || 0)}°
+                            </strong>
+                          </div>
+
+                          <div>
+                            <label>Humidity</label>
+                            <strong>{topWeather?.relative_humidity_2m ?? 0}%</strong>
+                          </div>
+
+                          <div>
+                            <label>Wind</label>
+                            <strong>
+                              {Math.round(topWeather?.wind_speed_10m || 0)} km/h
+                            </strong>
+                          </div>
+                        </div>
+
+                        <div className="hero-weather-note">
+                          {getRainAdvisory(todaySummary.rain)}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="hero-incident-compact">
+                      <div>
+                        <span>Resolved incidents</span>
+                        <strong>{formatNumber(incidentSummary.resolved)}</strong>
+                      </div>
+                      <div>
+                        <span>Active reports</span>
+                        <strong>
+                          {formatNumber(
+                            incidentSummary.reported + incidentSummary.onProcess
+                          )}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="hero-slide-indicators" aria-hidden="true">
+                {heroImages.map((_, index) => (
+                  <span
+                    key={`hero-dot-${index}`}
+                    className={`hero-slide-dot ${
+                      currentHero === index ? "active" : ""
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <main className="landing-main">
+          <div className="landing-wide-shell">
+            <section className="weather-landing-section" id="weather">
+              <div className="landing-section-head landing-section-head-spread">
+                <div>
+                  <span className="section-kicker">Weather Overview</span>
+                  <h2>Local Weather Forecast</h2>
+                  <p>
+                    Today’s conditions, rain outlook, and short-term forecast for
+                    Jaen.
+                  </p>
+                </div>
+
+                <button
+                  className="inline-action-btn"
+                  onClick={fetchWeather}
+                  type="button"
+                >
+                  Refresh
+                </button>
+              </div>
+
+              {weatherLoading ? (
+                <div className="panel-empty">Loading weather…</div>
+              ) : weatherError ? (
+                <div className="panel-empty error">{weatherError}</div>
+              ) : (
+                <section
+                  className={`weather-connected-surface tone-${weatherIconTone(
+                    topWeather?.weather_code
+                  )}`}
+                >
+                  <div className="weather-connected-main">
+                    <div className="weather-connected-summary">
+                      <div className="weather-connected-heading">
+                        <span className="muted-label">
+                          Now in {focusedBarangayLabel}
+                        </span>
+
+                        <div className="weather-connected-pill">
+                          <FaCloudSun />
+                          <span>{todaySummary.rain}% rain chance</span>
+                        </div>
+                      </div>
+
+                      <div className="weather-connected-temp-row">
+                        <div className="weather-connected-temp-block">
+                          <h3>{Math.round(topWeather?.temperature_2m || 0)}°C</h3>
+                          <p>{weatherCodeLabel(topWeather?.weather_code)}</p>
+                        </div>
+
+                        <div className="weather-connected-story">
+                          <strong>Today at a glance</strong>
+                          <span>
+                            {getRainAdvisory(todaySummary.rain)} with expected
+                            high of {todaySummary.high}° and low of{" "}
+                            {todaySummary.low}°.
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="weather-connected-stats">
+                      <div className="weather-connected-stat">
+                        <label>Feels Like</label>
+                        <strong>
+                          {Math.round(topWeather?.apparent_temperature || 0)}°C
+                        </strong>
+                      </div>
+
+                      <div className="weather-connected-stat">
+                        <label>Humidity</label>
+                        <strong>{topWeather?.relative_humidity_2m ?? 0}%</strong>
+                      </div>
+
+                      <div className="weather-connected-stat">
+                        <label>Wind</label>
+                        <strong>
+                          {Math.round(topWeather?.wind_speed_10m || 0)} km/h
+                        </strong>
+                      </div>
+
+                      <div className="weather-connected-stat">
+                        <label>High / Low</label>
+                        <strong>
+                          {todaySummary.high}° / {todaySummary.low}°
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="weather-connected-forecast">
+                    {forecastCards.map((item) => (
+                      <article
+                        key={item.key}
+                        className={`weather-outlook-card tone-${weatherIconTone(
+                          item.code
+                        )}`}
+                      >
+                        <div className="weather-outlook-head">
+                          <div>
+                            <span>{item.label}</span>
+                            <small>{item.condition}</small>
+                          </div>
+                        </div>
+
+                        <div className="weather-outlook-temp">
+                          <strong>{item.high}°</strong>
+                          <span>{item.low}°</span>
+                        </div>
+
+                        <div className="weather-outlook-rain">
+                          {item.rain}% rain
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </section>
+
+                        <section className="landing-content-grid">
+              <section className="landing-map-column" id="public-evac-map">
+                <div className="landing-map-shell">
+                  <div className="landing-section-head">
+                    <div>
+                      <span className="section-kicker">Evacuation Areas</span>
+                      <h2>Public Evacuation Map</h2>
+                      <p>
+                        View public evacuation areas and capacity status by
+                        barangay.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="public-map-toolbar">
+                    <label className="public-map-filter">
+                      <span>Barangay</span>
+                      <select
+                        value={publicBarangayFilter}
+                        onChange={(e) => setPublicBarangayFilter(e.target.value)}
+                      >
+                        <option value="all">All Barangays</option>
+                        {publicBarangayOptions.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <div className="public-map-mini-summary">
+                      <span className="mini-status available">
+                        {formatNumber(publicMapSummary.availableCount)} available
+                      </span>
+                      <span className="mini-status limited">
+                        {formatNumber(publicMapSummary.limitedCount)} limited
+                      </span>
+                      <span className="mini-status full">
+                        {formatNumber(publicMapSummary.fullCount)} full
+                      </span>
+                    </div>
+                  </div>
+
+                  {mapLoading ? (
+                    <div className="panel-empty">Loading evacuation map…</div>
+                  ) : mapError ? (
+                    <div className="panel-empty error">{mapError}</div>
+                  ) : (
+                    <div className="landing-map-layout map-minimal-layout">
+                      <div className="landing-map-main">
+                        <div className="landing-map-stage map-dominant-stage">
+                          <EvacMap
+                            places={filteredPublicPlaces}
+                            selectedPlaceId={selectedPublicPlaceId}
+                            onSelectPlace={setSelectedPublicPlaceId}
+                            readOnly
+                            publicMode
+                          />
+
+                          <div className="public-map-overlay legend-overlay">
+                            <PublicMapLegend />
+                          </div>
+
+                          <div className="public-map-overlay place-overlay">
+                            {selectedPublicPlace ? (
+                              <div className="public-place-inline-card">
+                                <strong>
+                                  {selectedPublicPlace?.name || "Evacuation area"}
+                                </strong>
+                                <span
+                                  className={`public-status-pill ${safeLower(
+                                    selectedPublicPlace.capacityStatus
+                                  )}`}
+                                >
+                                  {selectedPublicPlace.capacityStatus ||
+                                    "Status unavailable"}
+                                </span>
+                                <small>
+                                  {selectedPublicPlace.barangayName || "Unknown barangay"}
+                                  {selectedPublicPlace.location
+                                    ? ` • ${selectedPublicPlace.location}`
+                                    : ""}
+                                </small>
+                              </div>
+                            ) : (
+                              <div className="public-place-inline-card empty">
+                                <strong>Select an evacuation area</strong>
+                                <small>Tap any marker on the map to preview status.</small>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <aside className="landing-side-column">
+                <section className="landing-side-card focus-card" id="hazard-focus">
+                  <div className="landing-section-head">
+                    <span className="section-kicker">Hazard Focus</span>
+                    <h2>Hazard Monitoring</h2>
+                    <p>
+                      Barangay-focused hazard information can be shown here for
+                      public viewing.
+                    </p>
+                  </div>
+
+                  <div className="focus-info-grid">
+                    <div className="focus-info-item">
+                      <label>Focused Barangay</label>
+                      <strong>{focusedBarangayLabel}</strong>
+                    </div>
+
+                    <div className="focus-info-item">
+                      <label>Evac Areas Visible</label>
+                      <strong>{formatNumber(publicMapSummary.total)}</strong>
+                    </div>
+
+                    <div className="focus-info-item">
+                      <label>Available</label>
+                      <strong>
+                        {formatNumber(publicMapSummary.availableCount)}
+                      </strong>
+                    </div>
+
+                    <div className="focus-info-item">
+                      <label>Full</label>
+                      <strong>{formatNumber(publicMapSummary.fullCount)}</strong>
+                    </div>
+                  </div>
+
+                  <p className="landing-empty-copy">
+                    Connect your real hazard layer here later for flood, storm
+                    surge, or other public risk overlays.
+                  </p>
+                </section>
+
+                <section className="landing-side-card focus-card" id="incident-focus">
+                  <div className="landing-section-head">
+                    <span className="section-kicker">Incident Focus</span>
+                    <h2>Incident Reports</h2>
+                    <p>
+                      Public incident information now includes resolved report
+                      summaries from the incident module.
+                    </p>
+                  </div>
+
+                  {incidentsLoading ? (
+                    <div className="panel-empty landing-incident-loading">
+                      Loading incidents…
+                    </div>
+                  ) : incidentsError ? (
+                    <div className="panel-empty error">{incidentsError}</div>
+                  ) : (
+                    <>
+                      <div className="public-incident-summary-grid">
+                        <div className="public-incident-stat">
+                          <span className="public-incident-stat-icon success">
+                            <FaCheckCircle />
+                          </span>
+                          <label>Resolved</label>
+                          <strong>{formatNumber(incidentSummary.resolved)}</strong>
+                        </div>
+
+                        <div className="public-incident-stat">
+                          <span className="public-incident-stat-icon neutral">
+                            <FaBell />
+                          </span>
+                          <label>Total</label>
+                          <strong>{formatNumber(incidentSummary.total)}</strong>
+                        </div>
+                      </div>
+
+                      <div className="resolved-incident-public-list">
+                        <div className="resolved-incident-public-head">
+                          <h3>
+                            {incidentFeedMode === "resolved-only"
+                              ? "Recently Resolved"
+                              : "Recent Incidents"}
+                          </h3>
+                          <span>{formatNumber(filteredIncidentFeedList.length)}</span>
+                        </div>
+
+                        {filteredIncidentFeedList.length ? (
+                          filteredIncidentFeedList.map((incident) => (
+                            <article
+                              className="resolved-incident-public-card"
+                              key={incident._id}
+                            >
+                              <div className="resolved-incident-public-top">
+                                <span
+                                  className={`resolved-severity-badge ${getSeverityTone(
+                                    incident.level
+                                  )}`}
+                                >
+                                  {incident.level || "unknown"}
+                                </span>
+
+                                <span className="resolved-status-badge">
+                                  {getIncidentStatusLabel(incident.status)}
+                                </span>
+                              </div>
+
+                              <h4>{incident.type || "Incident"}</h4>
+
+                              <p>
+                                {incident.location ||
+                                  incident.address ||
+                                  "Location not specified"}
+                              </p>
+
+                                <small>
+                                 {incidentFeedMode === "resolved-only"
+                                   ? "Resolved:"
+                                   : "Updated:"}{" "}
+                                 {formatDateTime(
+                                   incident.updatedAt ||
+                                     incident.createdAt ||
+                                    incident.date ||
+                                    incident.reportedAt
+                                )}
+                              </small>
+                            </article>
+                          ))
+                        ) : (
+                          <div className="resolved-incident-empty">
+                            <FaCheckCircle />
+                            <strong>
+                              {incidentFeedMode === "resolved-only"
+                                ? "No resolved incidents for this focus."
+                                : "No incidents available for this focus."}
+                            </strong>
+                            <span>
+                              {incidentFeedMode === "resolved-only"
+                                ? "Resolved reports will appear here after incident status is marked as resolved."
+                                : "Incident reports will appear here when available for this barangay focus."}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </section>
+              </aside>
+            </section>
+
+            <section className="lower-info-grid">
+              <section className="landing-side-card updates-card" id="updates">
+                <div className="landing-section-head landing-section-head-spread">
+                  <div>
+                    <span className="section-kicker">Official Notices</span>
+                    <h2>More Official Updates</h2>
+                  </div>
+
+                  {isInlineEditing && (
+                    <button
+                      type="button"
+                      className="inline-action-btn"
+                      onClick={() =>
+                        addItem("announcements", {
+                          title: "New Announcement",
+                          body: "Write the announcement details here.",
+                          tag: "Public Advisory",
+                        })
+                      }
+                      disabled={
+                        (draftContent.announcements || []).length >=
+                        LIMITS.announcements
+                      }
+                    >
+                      Add Notice
+                    </button>
+                  )}
+                </div>
+
+                <div className="inline-list-stack">
+                  {(pageContent.announcements || []).map((item, index) => (
+                    <article
+                      className={`inline-editable-item ${
+                        isInlineEditing ? "is-editable" : ""
+                      }`}
+                      key={item.id || `announcement-${index}`}
+                    >
+                      {isInlineEditing ? (
+                        <>
+                          <div className="inline-edit-row">
+                            <label className="inline-edit-mini-field">
+                              <span>Tag</span>
+                              <input
+                                type="text"
+                                className="landing-inline-input"
+                                value={draftContent.announcements[index]?.tag || ""}
+                                maxLength={32}
+                                onChange={(e) =>
+                                  updateArrayItem(
+                                    "announcements",
+                                    index,
+                                    "tag",
+                                    e.target.value
+                                  )
+                                }
+                                placeholder="Notice tag"
+                              />
+                            </label>
+
+                            <button
+                              type="button"
+                              className="inline-delete-btn"
+                              onClick={() =>
+                                removeItem(
+                                  "announcements",
+                                  draftContent.announcements[index]?.id
+                                )
+                              }
+                              disabled={
+                                (draftContent.announcements || []).length <= 1
+                              }
+                              title="Remove announcement"
+                            >
+                              <FaTrash />
+                            </button>
+                          </div>
+
+                          <label className="inline-edit-field">
+                            <span>Title</span>
+                            <input
+                              type="text"
+                              className="landing-inline-input"
+                              value={
+                                draftContent.announcements[index]?.title || ""
+                              }
+                              maxLength={80}
+                              onChange={(e) =>
+                                updateArrayItem(
+                                  "announcements",
+                                  index,
+                                  "title",
+                                  e.target.value
+                                )
+                              }
+                              placeholder="Announcement title"
+                            />
+                          </label>
+
+                          <label className="inline-edit-field">
+                            <span>Details</span>
+                            <textarea
+                              className="landing-inline-textarea"
+                              value={draftContent.announcements[index]?.body || ""}
+                              maxLength={180}
+                              rows={4}
+                              onChange={(e) =>
+                                updateArrayItem(
+                                  "announcements",
+                                  index,
+                                  "body",
+                                  e.target.value
+                                )
+                              }
+                              placeholder="Announcement details"
+                            />
+                          </label>
+                        </>
+                      ) : (
+                        <>
+                          <p>{item.tag}</p>
+                          <h3>{item.title}</h3>
+                          <p>{item.body}</p>
+                        </>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+                            <section
+                className="landing-side-card preparedness-card"
+                id="preparedness"
+              >
+                <div className="landing-section-head landing-section-head-spread">
+                  <div>
+                    <span className="section-kicker">Preparedness</span>
+                    <h2>What to Prepare</h2>
+                  </div>
+
+                  {isInlineEditing && (
+                    <button
+                      type="button"
+                      className="inline-action-btn"
+                      onClick={() =>
+                        addItem("tips", {
+                          text: "Write another preparedness reminder.",
+                        })
+                      }
+                      disabled={(draftContent.tips || []).length >= LIMITS.tips}
+                    >
+                      Add Tip
+                    </button>
+                  )}
+                </div>
+
+                <div className="preparedness-list compact">
+                  {(pageContent.tips || []).map((tip, index) => (
+                    <div
+                      className={`preparedness-item ${
+                        isInlineEditing ? "is-editable" : ""
+                      }`}
+                      key={tip.id || `tip-${index}`}
+                    >
+                      <FaShieldAlt />
+
+                      {isInlineEditing ? (
+                        <div className="preparedness-inline-edit">
+                          <input
+                            type="text"
+                            className="landing-inline-input"
+                            value={draftContent.tips[index]?.text || ""}
+                            maxLength={120}
+                            onChange={(e) =>
+                              updateArrayItem(
+                                "tips",
+                                index,
+                                "text",
+                                e.target.value
+                              )
+                            }
+                            placeholder="Preparedness reminder"
+                          />
+
+                          <button
+                            type="button"
+                            className="inline-delete-btn"
+                            onClick={() =>
+                              removeItem("tips", draftContent.tips[index]?.id)
+                            }
+                            disabled={(draftContent.tips || []).length <= 1}
+                            title="Remove tip"
+                          >
+                            <FaTrash />
+                          </button>
+                        </div>
+                      ) : (
+                        <span>{tip.text}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </section>
+          </div>
+
+          <footer className="dashboard-footer site-footer" id="footer-info">
+            <div className="landing-wide-shell">
+              <div className="site-footer-main">
+                <div className="site-footer-brand">
+                  <div className="site-footer-brand-top">
+                    {jaenlogo ? (
+                      <img
+                        src={jaenlogo}
+                        alt="Jaen Logo"
+                        className="site-footer-logo"
+                      />
+                    ) : (
+                      <div className="site-footer-logo-fallback">J</div>
+                    )}
+
+                    <div className="site-footer-brand-copy">
+                      {isInlineEditing ? (
+                        <>
+                          <label className="footer-inline-field">
+                            <span>Office Name</span>
+                            <input
+                              type="text"
+                              className="landing-inline-input"
+                              value={draftContent.office.name}
+                              maxLength={50}
+                              onChange={(e) =>
+                                updateDraft("office.name", e.target.value)
+                              }
+                              placeholder="Office name"
+                            />
+                          </label>
+
+                          <label className="footer-inline-field">
+                            <span>Address</span>
+                            <input
+                              type="text"
+                              className="landing-inline-input"
+                              value={draftContent.office.address}
+                              maxLength={120}
+                              onChange={(e) =>
+                                updateDraft("office.address", e.target.value)
+                              }
+                              placeholder="Office address"
+                            />
+                          </label>
+                        </>
+                      ) : (
+                        <>
+                          <strong>{pageContent.office.name}</strong>
+                          <span>{pageContent.office.address}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="site-footer-description">
+                    Official public portal for weather, advisories, evacuation
+                    information, and emergency contact access in Jaen, Nueva Ecija.
+                  </p>
+                </div>
+
+                <div className="site-footer-center">
+                  <div className="site-footer-section-head">
+                    <h3>Emergency Contacts</h3>
+
+                    {isInlineEditing && (
+                      <button
+                        type="button"
+                        className="inline-action-btn footer-add-btn"
+                        onClick={() =>
+                          addItem("hotlines", {
+                            label: "New Contact",
+                            number: "Enter contact detail",
+                            type: "call",
+                          })
+                        }
+                        disabled={
+                          (draftContent.hotlines || []).length >= LIMITS.hotlines
+                        }
+                      >
+                        Add Contact
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="site-contact-list compact">
+                    {(pageContent.hotlines || []).map((item, index) => (
+                      <div
+                        key={item.id || `${item.label}-${index}`}
+                        className={`site-contact-row single-icon-layout ${
+                          isInlineEditing ? "is-editable" : ""
+                        }`}
+                      >
+                        <div className="site-contact-action-left">
+                          <span className="site-contact-icon-badge">
+                            {getHotlineIcon(item.type)}
+                          </span>
+
+                          <div className="site-contact-copy">
+                            {isInlineEditing ? (
+                              <>
+                                <div className="footer-contact-edit-head">
+                                  <label className="footer-inline-field">
+                                    <span>Label</span>
+                                    <input
+                                      type="text"
+                                      className="landing-inline-input"
+                                      value={
+                                        draftContent.hotlines[index]?.label || ""
+                                      }
+                                      maxLength={40}
+                                      onChange={(e) =>
+                                        updateArrayItem(
+                                          "hotlines",
+                                          index,
+                                          "label",
+                                          e.target.value
+                                        )
+                                      }
+                                      placeholder="Contact label"
+                                    />
+                                  </label>
+
+                                  <label className="footer-inline-field">
+                                    <span>Type</span>
+                                    <select
+                                      className="landing-inline-input footer-contact-type"
+                                      value={
+                                        draftContent.hotlines[index]?.type ||
+                                        "call"
+                                      }
+                                      onChange={(e) =>
+                                        updateArrayItem(
+                                          "hotlines",
+                                          index,
+                                          "type",
+                                          e.target.value
+                                        )
+                                      }
+                                    >
+                                      <option value="call">Call</option>
+                                      <option value="sms">SMS</option>
+                                      <option value="email">Email</option>
+                                      <option value="link">Link</option>
+                                    </select>
+                                  </label>
+
+                                  <button
+                                    type="button"
+                                    className="inline-delete-btn footer-delete-btn"
+                                    onClick={() =>
+                                      removeItem(
+                                        "hotlines",
+                                        draftContent.hotlines[index]?.id
+                                      )
+                                    }
+                                    disabled={
+                                      (draftContent.hotlines || []).length <= 1
+                                    }
+                                    title="Remove contact"
+                                  >
+                                    <FaTrash />
+                                  </button>
+                                </div>
+
+                                <label className="footer-inline-field">
+                                  <span>Contact Detail</span>
+                                  <input
+                                    type="text"
+                                    className="landing-inline-input"
+                                    value={
+                                      draftContent.hotlines[index]?.number || ""
+                                    }
+                                    maxLength={120}
+                                    onChange={(e) =>
+                                      updateArrayItem(
+                                        "hotlines",
+                                        index,
+                                        "number",
+                                        e.target.value
+                                      )
+                                    }
+                                    placeholder="Phone, SMS, email, or link"
+                                  />
+                                </label>
+                              </>
+                            ) : (
+                              <>
+                                <strong>{item.label}</strong>
+                                <span>{item.number}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="site-footer-right">
+                  <h3>Office Information</h3>
+
+                  <div className="site-office-list compact">
+                    <div className="site-office-row">
+                      <FaMapMarkedAlt />
+
+                      {isInlineEditing ? (
+                        <label className="footer-inline-field full">
+                          <span>Office Address</span>
+                          <input
+                            type="text"
+                            className="landing-inline-input"
+                            value={draftContent.office.address}
+                            maxLength={120}
+                            onChange={(e) =>
+                              updateDraft("office.address", e.target.value)
+                            }
+                            placeholder="Office address"
+                          />
+                        </label>
+                      ) : (
+                        <span>{pageContent.office.address}</span>
+                      )}
+                    </div>
+
+                    <div className="site-office-row">
+                      <FaHome />
+
+                      {isInlineEditing ? (
+                        <label className="footer-inline-field full">
+                          <span>Office Hours</span>
+                          <input
+                            type="text"
+                            className="landing-inline-input"
+                            value={draftContent.office.hours}
+                            maxLength={120}
+                            onChange={(e) =>
+                              updateDraft("office.hours", e.target.value)
+                            }
+                            placeholder="Office hours"
+                          />
+                        </label>
+                      ) : (
+                        <span>{pageContent.office.hours}</span>
+                      )}
+                    </div>
+
+                    <div className="site-office-row">
+                      <FaEnvelope />
+
+                      {isInlineEditing ? (
+                        <label className="footer-inline-field full">
+                          <span>Email Address</span>
+                          <input
+                            type="text"
+                            className="landing-inline-input"
+                            value={draftContent.office.email}
+                            maxLength={80}
+                            onChange={(e) =>
+                              updateDraft("office.email", e.target.value)
+                            }
+                            placeholder="Office email"
+                          />
+                        </label>
+                      ) : (
+                        <span>{pageContent.office.email}</span>
+                      )}
+                    </div>
+
+                    <div className="site-office-row">
+                      <FaFacebookF />
+
+                      {isInlineEditing ? (
+                        <label className="footer-inline-field full">
+                          <span>Facebook Page</span>
+                          <input
+                            type="text"
+                            className="landing-inline-input"
+                            value={draftContent.office.facebook}
+                            maxLength={120}
+                            onChange={(e) =>
+                              updateDraft("office.facebook", e.target.value)
+                            }
+                            placeholder="Facebook page link"
+                          />
+                        </label>
+                      ) : (
+                        <span>{pageContent.office.facebook}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="site-footer-bottom site-footer-bottom-simple">
+                <div className="site-footer-meta">
+                  <span>Privacy</span>
+                  <span>Terms</span>
+                  <span>© 2026 Jaen MDRRMO</span>
+                </div>
+              </div>
+            </div>
+          </footer>
+        </main>
+      </div>
+    </div>
+  );
+}

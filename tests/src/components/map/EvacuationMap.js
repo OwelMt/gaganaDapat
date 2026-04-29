@@ -3,10 +3,15 @@ import axios from "axios";
 import Map from "./Map";
 import "./MapIcon";
 
+
 const EvacuationMap = () => {
   const [places, setPlaces] = useState([]);
   const [pickMode, setPickMode] = useState(false);
 
+  const [selectedFacilities, setSelectedFacilities] = useState([]);
+
+  const [selectedBarangays, setSelectedBarangays] = useState([]);
+  const [allBarangays, setAllBarangays] = useState([]);
   // Coordinates
   const [currentCoords, setCurrentCoords] = useState({ lat: null, lng: null });
   const [evacCoords, setEvacCoords] = useState({ lat: null, lng: null });
@@ -18,17 +23,96 @@ const EvacuationMap = () => {
   // Transport mode
   const [transportMode, setTransportMode] = useState("driving");
 
+  const BASE_URL = process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
+
   /* ---------------- Fetch Evac Centers ---------------- */
   const fetchPlaces = () => {
     axios
-      .get("http://localhost:8000/evacs")
-      .then((res) => setPlaces(res.data))
+      .get(`${BASE_URL}/evacs`)
+      .then((res) => {
+      setPlaces(res.data);
+
+      // Get unique barangays
+      const barangays = [...new Set(res.data.map((p) => p.barangay))];
+      setAllBarangays(barangays);
+    })
       .catch(console.error);
   };
 
   useEffect(() => {
     fetchPlaces();
   }, []);
+
+
+  const facilityOptions = [
+    { key: "femaleCR", label: "Female CR" },
+    { key: "maleCR", label: "Male CR" },
+    { key: "commonCR", label: "Common CR" },
+    { key: "potableWater", label: "Potable Water" },
+    { key: "nonPotableWater", label: "Non-potable Water" },
+  ];
+
+  const handleFacilityChange = (facility) => {
+  setSelectedFacilities((prev) =>
+    prev.includes(facility)
+      ? prev.filter((f) => f !== facility)
+      : [...prev, facility]
+  );
+};
+
+
+  const handleBarangayChange = (barangay) => {
+    setSelectedBarangays((prev) =>
+      prev.includes(barangay)
+        ? prev.filter((b) => b !== barangay) // remove if already selected
+        : [...prev, barangay] // add if not selected
+    );
+  };
+
+  const filteredPlaces = places.filter((p) => {
+    const barangayMatch =
+      selectedBarangays.length === 0 ||
+      selectedBarangays.includes(p.barangay);
+
+    const facilityMatch =
+      selectedFacilities.length === 0 ||
+      selectedFacilities.every((f) => p[f] === true);
+
+    return barangayMatch && facilityMatch;
+  });
+
+  const groupedPlaces = filteredPlaces.reduce((acc, place) => {
+    if (!acc[place.barangay]) {
+      acc[place.barangay] = [];
+    }
+    acc[place.barangay].push(place);
+    return acc;
+  }, {});
+
+  /* ---------------- Get User Current Location ---------------- */
+  const getUserLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+
+        setCurrentCoords({
+          lat: latitude,
+          lng: longitude,
+        });
+
+        console.log("User location:", latitude, longitude);
+      },
+      (error) => {
+        console.error(error);
+        alert("Unable to retrieve your location");
+      }
+    );
+  };
 
   /* ---------------- Map Click ---------------- */
   const handleMapSelectLocation = useCallback(
@@ -42,6 +126,16 @@ const EvacuationMap = () => {
     },
     [pickMode]
   );
+
+  /* ---------------- Select Evac from List ---------------- */
+  const selectEvacPlace = (place) => {
+    setEvacCoords({
+      lat: place.latitude,
+      lng: place.longitude,
+    });
+
+    console.log("Selected Evacuation Place:", place);
+  };
 
   /* ---------------- Route Logic ---------------- */
   const fetchRoute = () => {
@@ -63,31 +157,25 @@ const EvacuationMap = () => {
         if (res.data.routes && res.data.routes.length > 0) {
           const route = res.data.routes[0];
 
-          // Convert coordinates
-          const coords = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+          const coords = route.geometry.coordinates.map(([lng, lat]) => [
+            lat,
+            lng,
+          ]);
           setRouteCoords(coords);
 
-          // ✅ Distance in KM
           const distanceKm = route.distance / 1000;
 
-          // ✅ Realistic speeds
-          let speed = 35; // driving default
-
+          let speed = 35;
           if (transportMode === "walking") speed = 5;
           else if (transportMode === "cycling") speed = 15;
           else if (transportMode === "driving") speed = 35;
 
-          // ✅ Compute duration manually
           const durationSeconds = (distanceKm / speed) * 3600;
 
           setRouteInfo({
             distance: route.distance,
             duration: durationSeconds,
           });
-
-          console.log("Mode:", transportMode);
-          console.log("Distance:", distanceKm, "km");
-          console.log("Duration:", durationSeconds, "sec");
         }
       })
       .catch((err) => console.error("OSRM Error:", err));
@@ -96,7 +184,7 @@ const EvacuationMap = () => {
   return (
     <div>
       {/* Toolbar */}
-      <div className="evac-toolbar">
+      <div className="evac-toolbar" >
         <strong>Evacuation Center Management</strong>
         <button className="tbtn" onClick={fetchPlaces}>
           ↻ Refresh
@@ -106,11 +194,7 @@ const EvacuationMap = () => {
       {/* Map */}
       <div
         className="evac-map"
-        style={{
-          width: "100%",
-          height: "500px",
-          position: "relative",
-        }}
+        style={{ width: "100%", height: "500px", position: "relative" }}
       >
         <Map
           onSelectLocation={handleMapSelectLocation}
@@ -123,15 +207,7 @@ const EvacuationMap = () => {
 
         {pickMode && (
           <div
-            style={{
-              position: "absolute",
-              top: 16,
-              right: 16,
-              background: "#fff",
-              padding: 10,
-              borderRadius: 8,
-              zIndex: 10,
-            }}
+            className="control-wrapper"
           >
             Click map to select evacuation location
             <button onClick={() => setPickMode(false)}>Cancel</button>
@@ -140,12 +216,22 @@ const EvacuationMap = () => {
       </div>
 
       {/* Controls */}
-      <div style={{ marginTop: 12, maxWidth: 320 }}>
+      <div style={{
+        marginTop: 12,
+        maxWidth: 320,
+        maxHeight: '500px', // or whatever height fits your layout
+        overflowY: 'auto',
+        paddingRight: '8px', // optional, prevents content cutoff when scrollbar appears
+      }}>
         <button onClick={() => setPickMode(true)}>
           Pick Evac Location on Map
         </button>
 
-        {/* Current */}
+        <button onClick={getUserLocation} style={{ marginLeft: 8 }}>
+          📍 Use My Current Location
+        </button>
+
+        {/* CURRENT LOCATION */}
         <div>
           <p>CURRENT LOCATION</p>
           <input
@@ -172,7 +258,34 @@ const EvacuationMap = () => {
           />
         </div>
 
-        {/* Evac */}
+        <div style={{ marginTop: 12 }}>
+          <p><strong>Select Barangay</strong></p>
+          {allBarangays.map((b) => (
+            <label key={b} style={{ display: "block" }}>
+              <input
+                type="checkbox"
+                value={b}
+                checked={selectedBarangays.includes(b)}
+                onChange={() => handleBarangayChange(b)}
+              />
+              {b}
+            </label>
+          ))}
+          <div style={{ marginTop: 12 }}>
+            <p><strong>Filter by Facilities</strong></p>
+            {facilityOptions.map((f) => (
+              <label key={f.key} style={{ display: "block" }}>
+                <input
+                  type="checkbox"
+                  checked={selectedFacilities.includes(f.key)}
+                  onChange={() => handleFacilityChange(f.key)}
+                />
+                {f.label}
+              </label>
+            ))}
+          </div>
+        </div>
+        {/* EVAC LOCATION */}
         <div>
           <p>EVACUATION LOCATION</p>
           <input
@@ -198,8 +311,7 @@ const EvacuationMap = () => {
             }
           />
         </div>
-
-        {/* Mode */}
+        {/* MODE */}
         <div>
           <p>Mode of Transport</p>
           <select
@@ -212,10 +324,10 @@ const EvacuationMap = () => {
           </select>
         </div>
 
-        {/* Button */}
+        {/* ROUTE BUTTON */}
         <button onClick={fetchRoute}>Show Route</button>
 
-        {/* Output */}
+        {/* OUTPUT */}
         {routeCoords.length > 0 && (
           <div>
             <strong>Route Info</strong>
@@ -227,6 +339,73 @@ const EvacuationMap = () => {
             </div>
           </div>
         )}
+
+        {/* Evacuation Center List */}
+        <div style={{ marginTop: 20 }}>
+          <p>
+            <strong>Select Evacuation Center</strong>
+          </p>
+
+         {filteredPlaces.length === 0 ? (
+          <div style={{ padding: "10px", color: "#888" }}>
+            No matches found
+          </div>
+        ) : (
+          Object.entries(groupedPlaces.map ? groupedPlaces : groupedPlaces).map(
+            ([barangay, places]) => (
+              <div key={barangay} style={{ marginBottom: "15px" }}>
+                <div
+                  style={{
+                    fontWeight: "bold",
+                    background: "#f0f0f0",
+                    padding: "6px",
+                    borderRadius: "4px",
+                  }}
+                >
+                  {barangay}
+                </div>
+
+                {places.map((place) => (
+                  <div
+                    key={place._id}
+                    onClick={() => selectEvacPlace(place)}
+                    style={{
+                      cursor: "pointer",
+                      padding: "8px",
+                      border: "1px solid #ccc",
+                      marginTop: "5px",
+                      borderRadius: "6px",
+                    }}
+                  >
+                    <strong>{place.name}</strong>
+                    <div>{place.location}</div>
+                    <small>
+                      Lat: {place.latitude}, Lng: {place.longitude}
+                    </small>
+
+                    <div>
+                      Individual: {place.capacityIndividual} | Family: {place.capacityFamily} | Bed: {place.bedCapacity}
+                    </div>
+
+                    <div>
+                      Facilities:
+                      {place.femaleCR && " Female CR"}
+                      {place.maleCR && " Male CR"}
+                      {place.commonCR && " Common CR"}
+                      {place.potableWater && " Potable Water"}
+                      {place.nonPotableWater && " Non-potable Water"}
+                    </div>
+
+                    <div>Status: {place.capacityStatus}</div>
+                  </div>
+                ))}
+              </div>
+            )
+          )
+        )}
+        </div>
+
+        
       </div>
     </div>
   );
