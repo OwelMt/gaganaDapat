@@ -1,5 +1,4 @@
 const mongoose = require("mongoose");
-const PDFDocument = require("pdfkit");
 const ReliefRequest = require("../models/ReliefRequest");
 const ReliefRelease = require("../models/ReliefRelease");
 const InventoryItem = require("../models/InventoryItem");
@@ -7,6 +6,26 @@ const InventoryLog = require("../models/InventoryLog");
 const Audit = require("../models/Audit");
 const FoodPackTemplate = require("../models/FoodPackTemplate");
 const createNotification = require("../utils/createNotification");
+const {
+  createPdfDocument,
+  drawPdfEmptyState,
+  drawPdfFooter,
+  drawPdfHeader,
+  drawPdfLabelValue,
+  drawPdfParagraphBlock,
+  drawPdfSectionTitle,
+  drawPdfTable,
+  formatPdfDateValue,
+} = require("../utils/pdfTheme");
+
+const REQUEST_TYPE_FOODPACKS = "foodpacks";
+const REQUEST_TYPE_MONETARY = "monetary";
+const REQUEST_TYPE_BOTH = "both";
+const VALID_REQUEST_TYPES = [
+  REQUEST_TYPE_FOODPACKS,
+  REQUEST_TYPE_MONETARY,
+  REQUEST_TYPE_BOTH,
+];
 
 const normalizeString = (value) => {
   if (value === undefined || value === null) return "";
@@ -18,25 +37,53 @@ const normalizeLower = (value) => {
   return String(value).trim().toLowerCase();
 };
 
+const normalizeRequestType = (value) => {
+  const normalized = normalizeLower(value);
+  return VALID_REQUEST_TYPES.includes(normalized)
+    ? normalized
+    : REQUEST_TYPE_FOODPACKS;
+};
+
 const toNumber = (value) => {
   if (value === undefined || value === null || value === "") return 0;
   const parsed = Number(value);
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
-const formatDateValue = (value) => {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-
-  return date.toLocaleString("en-PH", {
-    year: "numeric",
-    month: "long",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
+const formatMonetaryAmount = (value) =>
+  toNumber(value).toLocaleString("en-PH", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
   });
+
+const requiresFoodPackFulfillment = (requestType) =>
+  [REQUEST_TYPE_FOODPACKS, REQUEST_TYPE_BOTH].includes(
+    normalizeRequestType(requestType)
+  );
+
+const requiresMonetaryFulfillment = (requestType) =>
+  [REQUEST_TYPE_MONETARY, REQUEST_TYPE_BOTH].includes(
+    normalizeRequestType(requestType)
+  );
+
+const getRequestDemandProfile = (request = {}) => {
+  const requestType = normalizeRequestType(request.requestType);
+  const totals = request.totals || {};
+
+  return {
+    requestType,
+    requiresFoodPacks: requiresFoodPackFulfillment(requestType),
+    requiresMonetary: requiresMonetaryFulfillment(requestType),
+    requestedFoodPacks: requiresFoodPackFulfillment(requestType)
+      ? toNumber(totals.requestedFoodPacks)
+      : 0,
+    requestedMonetaryAmount: requiresMonetaryFulfillment(requestType)
+      ? toNumber(totals.requestedMonetaryAmount)
+      : 0,
+  };
 };
+
+const formatDateValue = formatPdfDateValue;
 
 const formatStatusLabel = (status) => {
   const normalized = normalizeString(status).toLowerCase();
@@ -45,74 +92,6 @@ const formatStatusLabel = (status) => {
   return normalized
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
-};
-
-const drawPdfLabelValue = (doc, label, value) => {
-  doc.font("Helvetica-Bold").text(`${label}: `, { continued: true });
-  doc.font("Helvetica").text(value ?? "-");
-};
-
-const ensurePdfPageSpace = (doc, neededSpace = 80) => {
-  if (doc.y + neededSpace > doc.page.height - doc.page.margins.bottom) {
-    doc.addPage();
-  }
-};
-
-const drawPdfSectionTitle = (doc, title) => {
-  ensurePdfPageSpace(doc, 40);
-  doc.moveDown(0.4);
-  doc.font("Helvetica-Bold").fontSize(13).text(title);
-  doc.moveDown(0.3);
-  doc.font("Helvetica").fontSize(10);
-};
-
-const drawSimpleTableHeader = (doc, columns) => {
-  ensurePdfPageSpace(doc, 30);
-  const startX = doc.page.margins.left;
-  const startY = doc.y;
-
-  doc.font("Helvetica-Bold").fontSize(8);
-  let x = startX;
-
-  columns.forEach((col) => {
-    doc.text(col.label, x, startY, {
-      width: col.width,
-      align: col.align || "left",
-    });
-    x += col.width;
-  });
-
-  doc.moveTo(startX, startY + 14)
-    .lineTo(doc.page.width - doc.page.margins.right, startY + 14)
-    .stroke();
-
-  doc.y = startY + 18;
-  doc.font("Helvetica").fontSize(8);
-};
-
-const drawSimpleTableRow = (doc, columns, row, rowHeight = 24) => {
-  ensurePdfPageSpace(doc, rowHeight + 12);
-
-  const startX = doc.page.margins.left;
-  const startY = doc.y;
-  let x = startX;
-
-  columns.forEach((col) => {
-    const value = row[col.key] ?? "-";
-    doc.text(String(value), x, startY, {
-      width: col.width,
-      align: col.align || "left",
-    });
-    x += col.width;
-  });
-
-  doc.moveTo(startX, startY + rowHeight - 4)
-    .lineTo(doc.page.width - doc.page.margins.right, startY + rowHeight - 4)
-    .strokeColor("#dddddd")
-    .stroke()
-    .strokeColor("#000000");
-
-  doc.y = startY + rowHeight;
 };
 
 const computePrioritySnapshotFromRequest = (request) => {
@@ -299,6 +278,48 @@ const allocateInventoryForReleaseItem = async (item, session) => {
   };
 };
 
+const allocateMonetaryInventory = async (requestedAmount, session) => {
+  const normalizedAmount = toNumber(requestedAmount);
+
+  const candidates = await InventoryItem.find({
+    isArchive: false,
+    type: "monetary",
+    amount: { $gt: 0 },
+  })
+    .sort({ createdAt: 1, _id: 1 })
+    .session(session);
+
+  const totalAvailable = candidates.reduce(
+    (sum, doc) => sum + toNumber(doc.amount),
+    0
+  );
+
+  let remainingAmount = normalizedAmount;
+  const allocations = [];
+
+  for (const candidate of candidates) {
+    if (remainingAmount <= 0) break;
+
+    const availableAmount = toNumber(candidate.amount);
+    if (availableAmount <= 0) continue;
+
+    const amountToUse = Math.min(remainingAmount, availableAmount);
+    remainingAmount -= amountToUse;
+
+    allocations.push({
+      inventoryDoc: candidate,
+      amount: amountToUse,
+    });
+  }
+
+  return {
+    requestedAmount: normalizedAmount,
+    totalAvailable,
+    allocations,
+    primaryInventoryDoc: allocations[0]?.inventoryDoc || candidates[0] || null,
+  };
+};
+
 const buildTemplateReleaseItems = async (
   foodPackTemplateId,
   foodPacksToRelease,
@@ -420,6 +441,15 @@ const buildFulfillmentFromReleases = (releases = []) => {
     .filter((release) => release.releaseStatus === "received")
     .reduce((sum, release) => sum + toNumber(release.foodPacksReleased), 0);
 
+  const releasedMonetaryAmount = releases.reduce(
+    (sum, release) => sum + toNumber(release.releasedMonetaryAmount),
+    0
+  );
+
+  const receivedMonetaryAmount = releases
+    .filter((release) => release.releaseStatus === "received")
+    .reduce((sum, release) => sum + toNumber(release.receivedMonetaryAmount), 0);
+
   const receivedReleases = releases.filter(
     (release) => release.releaseStatus === "received"
   ).length;
@@ -436,6 +466,8 @@ const buildFulfillmentFromReleases = (releases = []) => {
     totalReleases,
     releasedFoodPacks,
     receivedFoodPacks,
+    releasedMonetaryAmount,
+    receivedMonetaryAmount,
     receivedReleases,
     pendingReleases,
     lastReleaseAt: lastRelease?.releasedAt || lastRelease?.createdAt || null,
@@ -468,15 +500,19 @@ const refreshRequestProgress = async (requestId, session = null) => {
     .session(session);
 
   const fulfillment = buildFulfillmentFromReleases(releases);
-  const requestedFoodPacks = toNumber(request?.totals?.requestedFoodPacks);
+  const demand = getRequestDemandProfile(request);
   const releasedFoodPacks = toNumber(fulfillment.releasedFoodPacks);
   const receivedFoodPacks = toNumber(fulfillment.receivedFoodPacks);
+  const releasedMonetaryAmount = toNumber(fulfillment.releasedMonetaryAmount);
+  const receivedMonetaryAmount = toNumber(fulfillment.receivedMonetaryAmount);
 
   const hasAnyRelease = releases.length > 0;
 
   request.fulfillment = {
     totalReleases: fulfillment.totalReleases,
     releasedFoodPacks: fulfillment.releasedFoodPacks,
+    releasedMonetaryAmount: fulfillment.releasedMonetaryAmount,
+    receivedMonetaryAmount: fulfillment.receivedMonetaryAmount,
     receivedReleases: fulfillment.receivedReleases,
     pendingReleases: fulfillment.pendingReleases,
     lastReleaseAt: fulfillment.lastReleaseAt,
@@ -489,14 +525,29 @@ const refreshRequestProgress = async (requestId, session = null) => {
       request.status = "approved";
       request.currentStage = "approved_waiting_release";
     }
-  } else if (requestedFoodPacks > 0) {
-    if (receivedFoodPacks >= requestedFoodPacks) {
+  } else if (
+    demand.requestedFoodPacks > 0 ||
+    demand.requestedMonetaryAmount > 0
+  ) {
+    const fullyReleased =
+      (!demand.requiresFoodPacks ||
+        releasedFoodPacks >= demand.requestedFoodPacks) &&
+      (!demand.requiresMonetary ||
+        releasedMonetaryAmount >= demand.requestedMonetaryAmount);
+
+    const fullyReceived =
+      (!demand.requiresFoodPacks ||
+        receivedFoodPacks >= demand.requestedFoodPacks) &&
+      (!demand.requiresMonetary ||
+        receivedMonetaryAmount >= demand.requestedMonetaryAmount);
+
+    if (fullyReceived) {
       request.status = "received";
       request.currentStage = "completed";
       if (!request.receivedAt) {
         request.receivedAt = new Date();
       }
-    } else if (releasedFoodPacks >= requestedFoodPacks) {
+    } else if (fullyReleased) {
       request.status = "released";
       request.currentStage = "released_waiting_receipt";
       request.receivedAt = null;
@@ -546,7 +597,27 @@ const getApprovedRequestsForRelease = async (req, res) => {
       isArchived: false,
     }).sort({ createdAt: -1 });
 
-    res.json(requests);
+    res.json(
+      requests.map((request) => ({
+        ...(request.toObject?.() || request),
+        requestType: normalizeRequestType(request.requestType),
+        totals: {
+          ...(request.totals?.toObject?.() || request.totals || {}),
+          requestedMonetaryAmount: toNumber(
+            request?.totals?.requestedMonetaryAmount
+          ),
+        },
+        fulfillment: {
+          ...(request.fulfillment?.toObject?.() || request.fulfillment || {}),
+          releasedMonetaryAmount: toNumber(
+            request?.fulfillment?.releasedMonetaryAmount
+          ),
+          receivedMonetaryAmount: toNumber(
+            request?.fulfillment?.receivedMonetaryAmount
+          ),
+        },
+      }))
+    );
   } catch (err) {
     console.error("Get Approved Requests For Release Error:", err);
     res.status(500).json({ message: err.message });
@@ -568,65 +639,21 @@ const createReliefRelease = async (req, res) => {
       isFinalRelease,
     } = req.body;
 
-    const incomingFoodPackCount = Number(
+    const incomingFoodPackCount = toNumber(
       req.body.foodPacksToRelease ??
         req.body.foodPacksReleased ??
         req.body.foodPacks ??
         0
     );
+    const incomingMonetaryAmount = toNumber(
+      req.body.releasedMonetaryAmount ??
+        req.body.monetaryAmountToRelease ??
+        req.body.monetaryAmount ??
+        0
+    );
 
     if (!reliefRequestId) {
       return res.status(400).json({ message: "Relief request ID is required." });
-    }
-
-    const requestedMode = normalizeLower(releaseMode);
-    const isTemplateMode =
-      requestedMode === "template" || !!normalizeString(foodPackTemplateId);
-
-    let finalReleaseMode = "manual";
-    let releaseItems = [];
-    let foodPackTemplate = null;
-    let releasedFoodPackCount = 0;
-
-    if (isTemplateMode) {
-      finalReleaseMode = "template";
-
-      const built = await buildTemplateReleaseItems(
-        foodPackTemplateId,
-        incomingFoodPackCount,
-        session
-      );
-
-      if (built.error) {
-        return res.status(400).json({ message: built.error });
-      }
-
-      foodPackTemplate = built.template;
-      releaseItems = built.items;
-      releasedFoodPackCount = built.foodPacksReleased;
-    } else {
-      finalReleaseMode = "manual";
-
-      releaseItems = Array.isArray(items)
-        ? items.map((item) => ({
-            inventoryItemId: item.inventoryItemId || null,
-            itemName: normalizeString(item.itemName),
-            category: normalizeLower(item.category),
-            quantityReleased: toNumber(item.quantityReleased),
-            unit: normalizeString(item.unit),
-            remarks: normalizeString(item.remarks),
-          }))
-        : [];
-
-      const validationError = validateReleaseItems(releaseItems);
-      if (validationError) {
-        return res.status(400).json({ message: validationError });
-      }
-
-      releasedFoodPackCount =
-        toNumber(incomingFoodPackCount) > 0
-          ? toNumber(incomingFoodPackCount)
-          : inferManualFoodPacksReleased(releaseItems);
     }
 
     session.startTransaction();
@@ -647,42 +674,215 @@ const createReliefRelease = async (req, res) => {
       });
     }
 
-    const requestedFoodPacks = toNumber(reliefRequest?.totals?.requestedFoodPacks);
+    const requestType = normalizeRequestType(reliefRequest.requestType);
+    const demand = getRequestDemandProfile(reliefRequest);
+    const currentReleasedFoodPacks = toNumber(
+      reliefRequest?.fulfillment?.releasedFoodPacks
+    );
+    const currentReleasedMonetaryAmount = toNumber(
+      reliefRequest?.fulfillment?.releasedMonetaryAmount
+    );
+    const remainingFoodPacks = Math.max(
+      0,
+      demand.requestedFoodPacks - currentReleasedFoodPacks
+    );
+    const remainingMonetaryAmount = Math.max(
+      0,
+      demand.requestedMonetaryAmount - currentReleasedMonetaryAmount
+    );
 
-    if (
-      finalReleaseMode === "manual" &&
-      requestedFoodPacks > 0 &&
-      releasedFoodPackCount <= 0
-    ) {
-      await session.abortTransaction();
-      return res.status(400).json({
-        message:
-          "Food Packs Equivalent is required for manual release. Enter how many requested food packs this release fulfills.",
-      });
+    const requestedMode = normalizeLower(releaseMode);
+    const isTemplateMode =
+      demand.requiresFoodPacks &&
+      (requestedMode === "template" || !!normalizeString(foodPackTemplateId));
+
+    let finalReleaseMode = "manual";
+    let releaseItems = [];
+    let foodPackTemplate = null;
+    let releasedFoodPackCount = 0;
+    let releasedMonetaryAmount = 0;
+
+    if (demand.requiresFoodPacks) {
+      if (isTemplateMode) {
+        finalReleaseMode = "template";
+
+        const built = await buildTemplateReleaseItems(
+          foodPackTemplateId,
+          incomingFoodPackCount,
+          session
+        );
+
+        if (built.error) {
+          await session.abortTransaction();
+          return res.status(400).json({ message: built.error });
+        }
+
+        foodPackTemplate = built.template;
+        releaseItems = built.items;
+        releasedFoodPackCount = built.foodPacksReleased;
+      } else {
+        finalReleaseMode = "manual";
+
+        releaseItems = Array.isArray(items)
+          ? items.map((item) => ({
+              inventoryItemId: item.inventoryItemId || null,
+              itemName: normalizeString(item.itemName),
+              category: normalizeLower(item.category),
+              quantityReleased: toNumber(item.quantityReleased),
+              unit: normalizeString(item.unit),
+              remarks: normalizeString(item.remarks),
+            }))
+          : [];
+
+        const validationError = validateReleaseItems(releaseItems);
+        if (validationError) {
+          await session.abortTransaction();
+          return res.status(400).json({ message: validationError });
+        }
+
+        releasedFoodPackCount =
+          incomingFoodPackCount > 0
+            ? incomingFoodPackCount
+            : inferManualFoodPacksReleased(releaseItems);
+      }
+
+      if (releasedFoodPackCount <= 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          message:
+            "Food pack release quantity is required for this request type.",
+        });
+      }
+
+      if (remainingFoodPacks <= 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          message: "This request no longer has pending food packs to release.",
+        });
+      }
+
+      if (releasedFoodPackCount !== remainingFoodPacks) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          message: `Release must fulfill the exact remaining approved food packs (${remainingFoodPacks}).`,
+        });
+      }
+    }
+
+    if (demand.requiresMonetary) {
+      releasedMonetaryAmount = incomingMonetaryAmount;
+
+      if (releasedMonetaryAmount <= 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          message: "Released monetary amount is required for this request type.",
+        });
+      }
+
+      if (remainingMonetaryAmount <= 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          message:
+            "This request no longer has a pending monetary amount to release.",
+        });
+      }
+
+      if (releasedMonetaryAmount !== remainingMonetaryAmount) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          message: `Monetary release must match the full remaining approved amount of PHP ${formatMonetaryAmount(
+            remainingMonetaryAmount
+          )}.`,
+        });
+      }
     }
 
     const preparedItems = [];
 
-    for (const item of releaseItems) {
-      const allocation = await allocateInventoryForReleaseItem(item, session);
+    if (demand.requiresFoodPacks) {
+      for (const item of releaseItems) {
+        const allocation = await allocateInventoryForReleaseItem(item, session);
 
-      if (!allocation.primaryInventoryDoc) {
+        if (!allocation.primaryInventoryDoc) {
+          await session.abortTransaction();
+          return res.status(404).json({
+            message: `Inventory item not found for "${item.itemName}".`,
+          });
+        }
+
+        if (allocation.totalAvailable < allocation.requestedQty) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            message: `Insufficient stock for "${item.itemName}". Available: ${allocation.totalAvailable}, requested release: ${allocation.requestedQty}.`,
+          });
+        }
+
+        for (const split of allocation.allocations) {
+          split.inventoryDoc.quantity =
+            Number(split.inventoryDoc.quantity || 0) - split.quantity;
+
+          await split.inventoryDoc.save({ session });
+
+          await InventoryLog.create(
+            [
+              {
+                inventoryItem: split.inventoryDoc._id,
+                itemName: split.inventoryDoc.name,
+                itemType: split.inventoryDoc.type,
+                action: "release",
+                quantity: split.quantity,
+                amount: undefined,
+                performedBy: username,
+                remarks: `Released for relief request ${reliefRequest.requestNo}`,
+              },
+            ],
+            { session }
+          );
+        }
+
+        preparedItems.push({
+          inventoryItemId:
+            item.inventoryItemId || allocation.primaryInventoryDoc._id,
+          itemName: normalizeString(
+            item.itemName || allocation.primaryInventoryDoc.name
+          ),
+          category: normalizeLower(
+            item.category || allocation.primaryInventoryDoc.category
+          ),
+          quantityReleased: allocation.requestedQty,
+          unit: normalizeString(item.unit || allocation.primaryInventoryDoc.unit),
+          remarks: item.remarks,
+        });
+      }
+    }
+
+    if (demand.requiresMonetary) {
+      const monetaryAllocation = await allocateMonetaryInventory(
+        releasedMonetaryAmount,
+        session
+      );
+
+      if (!monetaryAllocation.primaryInventoryDoc) {
         await session.abortTransaction();
         return res.status(404).json({
-          message: `Inventory item not found for "${item.itemName}".`,
+          message: "No monetary inventory is available for release.",
         });
       }
 
-      if (allocation.totalAvailable < allocation.requestedQty) {
+      if (monetaryAllocation.totalAvailable < monetaryAllocation.requestedAmount) {
         await session.abortTransaction();
         return res.status(400).json({
-          message: `Insufficient stock for "${item.itemName}". Available: ${allocation.totalAvailable}, requested release: ${allocation.requestedQty}.`,
+          message: `Insufficient monetary inventory. Available: PHP ${formatMonetaryAmount(
+            monetaryAllocation.totalAvailable
+          )}, requested release: PHP ${formatMonetaryAmount(
+            monetaryAllocation.requestedAmount
+          )}.`,
         });
       }
 
-      for (const split of allocation.allocations) {
-        split.inventoryDoc.quantity =
-          Number(split.inventoryDoc.quantity || 0) - split.quantity;
+      for (const split of monetaryAllocation.allocations) {
+        split.inventoryDoc.amount =
+          toNumber(split.inventoryDoc.amount) - split.amount;
 
         await split.inventoryDoc.save({ session });
 
@@ -693,24 +893,15 @@ const createReliefRelease = async (req, res) => {
               itemName: split.inventoryDoc.name,
               itemType: split.inventoryDoc.type,
               action: "release",
-              quantity: split.quantity,
-              amount: undefined,
+              quantity: undefined,
+              amount: split.amount,
               performedBy: username,
-              remarks: `Released for relief request ${reliefRequest.requestNo}`,
+              remarks: `Released monetary support for relief request ${reliefRequest.requestNo}`,
             },
           ],
           { session }
         );
       }
-
-      preparedItems.push({
-        inventoryItemId: item.inventoryItemId || allocation.primaryInventoryDoc._id,
-        itemName: normalizeString(item.itemName || allocation.primaryInventoryDoc.name),
-        category: normalizeLower(item.category || allocation.primaryInventoryDoc.category),
-        quantityReleased: allocation.requestedQty,
-        unit: normalizeString(item.unit || allocation.primaryInventoryDoc.unit),
-        remarks: item.remarks,
-      });
     }
 
     const releaseNo = await generateReleaseNo(session);
@@ -723,10 +914,13 @@ const createReliefRelease = async (req, res) => {
           barangayId: reliefRequest.barangayId,
           barangayName: reliefRequest.barangayName,
           releaseNo,
+          requestType,
           releaseMode: finalReleaseMode,
           foodPackTemplateId: isTemplateMode ? foodPackTemplate._id : null,
           foodPackTemplateName: isTemplateMode ? foodPackTemplate.name : "",
           foodPacksReleased: releasedFoodPackCount,
+          releasedMonetaryAmount,
+          receivedMonetaryAmount: 0,
           items: preparedItems.map((item) => ({
             inventoryItemId: item.inventoryItemId,
             itemName: item.itemName,
@@ -752,6 +946,7 @@ const createReliefRelease = async (req, res) => {
               (sum, item) => sum + Number(item.quantityReleased || 0),
               0
             ),
+            totalMonetaryReleased: releasedMonetaryAmount,
           },
         },
       ],
@@ -772,14 +967,18 @@ const createReliefRelease = async (req, res) => {
           barangayId: reliefRequest.barangayId,
           barangayName: reliefRequest.barangayName,
           category: "relief_release",
-          peopleRange: isTemplateMode
-            ? `Released ${releasedFoodPackCount} food packs`
-            : releasedFoodPackCount > 0
-              ? `Released ${releasedFoodPackCount} food packs manually`
-              : `Released total quantity: ${preparedItems.reduce(
-                  (sum, item) => sum + Number(item.quantityReleased || 0),
-                  0
-                )}`,
+          peopleRange: [
+            demand.requiresFoodPacks
+              ? `${
+                  isTemplateMode ? "Released" : "Released"
+                } ${releasedFoodPackCount} food pack(s)`
+              : null,
+            demand.requiresMonetary
+              ? `Released PHP ${formatMonetaryAmount(releasedMonetaryAmount)}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" and "),
           status: refreshedRequest?.status || "partially_released",
           actionBy: "drrmo",
         },
@@ -807,12 +1006,19 @@ await createNotification({
   type: "relief_goods_released",
   priority: "high",
 
-  title: "Relief goods released",
-  message: `DRRMO released goods for your request ${reliefRequest.requestNo}. ${
-    releasedFoodPackCount > 0
-      ? `${releasedFoodPackCount} food pack(s) were released.`
-      : "Please review the release details."
-  }`,
+  title: "Relief release prepared",
+  message: `DRRMO released support for your request ${
+    reliefRequest.requestNo
+  }. ${[
+    demand.requiresFoodPacks
+      ? `${releasedFoodPackCount} food pack(s) released`
+      : null,
+    demand.requiresMonetary
+      ? `PHP ${formatMonetaryAmount(releasedMonetaryAmount)} released`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" and ")}.`,
   link: "/barangay/relief-request",
 
   referenceId: reliefRelease._id,
@@ -822,8 +1028,10 @@ await createNotification({
     requestNo: reliefRequest.requestNo,
     barangayName: reliefRequest.barangayName,
     disaster: reliefRequest.disaster,
+    requestType,
     releaseMode: finalReleaseMode,
     foodPacksReleased: releasedFoodPackCount,
+    releasedMonetaryAmount,
     totalItemsReleased: preparedItems.reduce(
       (sum, item) => sum + Number(item.quantityReleased || 0),
       0
@@ -833,7 +1041,7 @@ await createNotification({
 });
 
     res.status(201).json({
-      message: "Relief goods released successfully.",
+      message: "Relief release created successfully.",
       release: updatedRelease,
       request: updatedRequest,
     });
@@ -880,29 +1088,25 @@ const exportReliefReleasePdf = async (req, res) => {
       `inline; filename="${safeReleaseNo}.pdf"`
     );
 
-    const doc = new PDFDocument({
+    const doc = createPdfDocument({
       size: "A4",
+      layout: "portrait",
       margin: 40,
-      bufferPages: true,
     });
 
     doc.pipe(res);
 
-    doc.font("Helvetica-Bold").fontSize(18).text("Relief Release Receipt", {
-      align: "center",
+    drawPdfHeader(doc, {
+      title: "Relief Release Receipt",
+      subtitle: reliefRelease.releaseNo || normalizeString(reliefRelease._id),
+      generatedAt: new Date(),
     });
-    doc.moveDown(0.3);
-    doc.font("Helvetica").fontSize(10).text(
-      "Generated from Disaster Relief Management System",
-      { align: "center" }
-    );
-
-    doc.moveDown(1);
 
     drawPdfSectionTitle(doc, "Release Information");
     drawPdfLabelValue(doc, "Release No", reliefRelease.releaseNo || "-");
     drawPdfLabelValue(doc, "Request No", relatedRequest?.requestNo || "-");
     drawPdfLabelValue(doc, "Barangay", reliefRelease.barangayName || "-");
+    drawPdfLabelValue(doc, "Request Type", formatStatusLabel(reliefRelease.requestType));
     drawPdfLabelValue(doc, "Release Status", formatStatusLabel(reliefRelease.releaseStatus));
     drawPdfLabelValue(doc, "Release Mode", formatStatusLabel(reliefRelease.releaseMode));
     drawPdfLabelValue(
@@ -914,6 +1118,11 @@ const exportReliefReleasePdf = async (req, res) => {
       doc,
       "Food Packs Released",
       String(toNumber(reliefRelease.foodPacksReleased))
+    );
+    drawPdfLabelValue(
+      doc,
+      "Monetary Released",
+      `PHP ${formatMonetaryAmount(reliefRelease.releasedMonetaryAmount)}`
     );
     drawPdfLabelValue(
       doc,
@@ -947,7 +1156,7 @@ const exportReliefReleasePdf = async (req, res) => {
     drawPdfLabelValue(doc, "Received At", formatDateValue(reliefRelease.receivedAt));
 
     drawPdfSectionTitle(doc, "Remarks");
-    doc.font("Helvetica").text(normalizeString(reliefRelease.remarks) || "None");
+    drawPdfParagraphBlock(doc, "", normalizeString(reliefRelease.remarks) || "None");
 
     drawPdfSectionTitle(doc, "Released Item Breakdown");
 
@@ -962,29 +1171,33 @@ const exportReliefReleasePdf = async (req, res) => {
     const items = Array.isArray(reliefRelease.items) ? reliefRelease.items : [];
 
     if (!items.length) {
-      doc.font("Helvetica").fontSize(10).text("No released items available.");
+      drawPdfEmptyState(doc, "No released items available.");
     } else {
-      drawSimpleTableHeader(doc, columns);
-
-      items.forEach((item) => {
-        drawSimpleTableRow(
-          doc,
-          columns,
-          {
-            itemName: normalizeString(item.itemName) || "-",
-            category: normalizeString(item.category) || "-",
-            quantityReleased: toNumber(item.quantityReleased),
-            unit: normalizeString(item.unit) || "-",
-            remarks: normalizeString(item.remarks) || "-",
-          },
-          28
-        );
-      });
+      drawPdfTable(
+        doc,
+        columns,
+        items.map((item) => ({
+          itemName: normalizeString(item.itemName) || "-",
+          category: normalizeString(item.category) || "-",
+          quantityReleased: toNumber(item.quantityReleased),
+          unit: normalizeString(item.unit) || "-",
+          remarks: normalizeString(item.remarks) || "-",
+        })),
+        {
+          rowHeight: 28,
+          emptyMessage: "No released items available.",
+        }
+      );
     }
 
     if (relatedRequest) {
       drawPdfSectionTitle(doc, "Related Request Snapshot");
       drawPdfLabelValue(doc, "Disaster", relatedRequest.disaster || "-");
+      drawPdfLabelValue(
+        doc,
+        "Request Type",
+        formatStatusLabel(relatedRequest.requestType)
+      );
       drawPdfLabelValue(doc, "Request Date", formatDateValue(relatedRequest.requestDate));
       drawPdfLabelValue(doc, "Request Status", formatStatusLabel(relatedRequest.status));
       drawPdfLabelValue(
@@ -992,14 +1205,16 @@ const exportReliefReleasePdf = async (req, res) => {
         "Requested Food Packs",
         String(toNumber(relatedRequest?.totals?.requestedFoodPacks))
       );
+      drawPdfLabelValue(
+        doc,
+        "Requested Monetary Amount",
+        `PHP ${formatMonetaryAmount(
+          relatedRequest?.totals?.requestedMonetaryAmount
+        )}`
+      );
     }
 
-    ensurePdfPageSpace(doc, 80);
-    doc.moveDown(1);
-    doc.font("Helvetica").fontSize(9).text(
-      `Document generated on ${formatDateValue(new Date())}`,
-      { align: "right" }
-    );
+    drawPdfFooter(doc, { generatedAt: new Date() });
 
     doc.end();
   } catch (err) {
@@ -1058,6 +1273,9 @@ const receiveReliefRelease = async (req, res) => {
     reliefRelease.releaseStatus = "received";
     reliefRelease.receivedAt = new Date();
     reliefRelease.receivedBy = username;
+    reliefRelease.receivedMonetaryAmount = toNumber(
+      reliefRelease.releasedMonetaryAmount
+    );
 
     await reliefRelease.save({ session });
 
@@ -1076,10 +1294,18 @@ const receiveReliefRelease = async (req, res) => {
             barangayId: relatedRequest.barangayId,
             barangayName: relatedRequest.barangayName,
             category: "relief_release",
-            peopleRange:
+            peopleRange: [
               toNumber(reliefRelease.foodPacksReleased) > 0
-                ? `Received ${toNumber(reliefRelease.foodPacksReleased)} food packs`
-                : `Received release ${reliefRelease.releaseNo}`,
+                ? `Received ${toNumber(reliefRelease.foodPacksReleased)} food pack(s)`
+                : null,
+              toNumber(reliefRelease.releasedMonetaryAmount) > 0
+                ? `Received PHP ${formatMonetaryAmount(
+                    reliefRelease.releasedMonetaryAmount
+                  )}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" and ") || `Received release ${reliefRelease.releaseNo}`,
             status: refreshedRequest?.status || "partially_released",
             actionBy: "barangay",
           },
@@ -1119,13 +1345,14 @@ await createNotification({
     requestNo: updatedRequest?.requestNo || "",
     barangayName: updatedRelease?.barangayName || "",
     foodPacksReleased: updatedRelease?.foodPacksReleased || 0,
+    releasedMonetaryAmount: updatedRelease?.releasedMonetaryAmount || 0,
     receivedBy: username,
     requestStatus: updatedRequest?.status || "",
   },
 });
 
     res.json({
-      message: "Relief goods received successfully.",
+      message: "Relief release marked as received successfully.",
       release: updatedRelease,
       request: updatedRequest,
     });

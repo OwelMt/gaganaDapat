@@ -1,4 +1,9 @@
 const mongoose = require("mongoose");
+const VALID_REQUEST_TYPES = ["foodpacks", "monetary", "both"];
+const normalizeRequestType = (value) => {
+  const normalized = String(value || "foodpacks").trim().toLowerCase();
+  return VALID_REQUEST_TYPES.includes(normalized) ? normalized : "foodpacks";
+};
 
 const requestRowSchema = new mongoose.Schema(
   {
@@ -109,6 +114,14 @@ const reliefRequestSchema = new mongoose.Schema(
       trim: true,
     },
 
+    requestType: {
+      type: String,
+      enum: VALID_REQUEST_TYPES,
+      default: "foodpacks",
+      trim: true,
+      set: normalizeRequestType,
+    },
+
     requestDate: {
       type: Date,
       default: Date.now,
@@ -135,6 +148,7 @@ const reliefRequestSchema = new mongoose.Schema(
       pregnant: { type: Number, default: 0, min: 0 },
       senior: { type: Number, default: 0, min: 0 },
       requestedFoodPacks: { type: Number, default: 0, min: 0 },
+      requestedMonetaryAmount: { type: Number, default: 0, min: 0 },
     },
 
     status: {
@@ -273,6 +287,8 @@ lastEditedBy: {
 fulfillment: {
   totalReleases: { type: Number, default: 0, min: 0 },
   releasedFoodPacks: { type: Number, default: 0, min: 0 },
+  releasedMonetaryAmount: { type: Number, default: 0, min: 0 },
+  receivedMonetaryAmount: { type: Number, default: 0, min: 0 },
   receivedReleases: { type: Number, default: 0, min: 0 },
   pendingReleases: { type: Number, default: 0, min: 0 },
   lastReleaseAt: { type: Date, default: null },
@@ -290,8 +306,9 @@ prioritySnapshot: {
 
 reliefRequestSchema.pre("save", function () {
   const rows = this.rows || [];
+  const requestedMonetaryAmount = Number(this.totals?.requestedMonetaryAmount) || 0;
 
-  
+  this.requestType = normalizeRequestType(this.requestType);
 
   this.totals = {
     households: rows.reduce((sum, row) => sum + (Number(row.households) || 0), 0),
@@ -306,8 +323,8 @@ reliefRequestSchema.pre("save", function () {
       (sum, row) => sum + (Number(row.requestedFoodPacks) || 0),
       0
     ),
+    requestedMonetaryAmount,
   };
-
 });
 
 module.exports = mongoose.model("ReliefRequest", reliefRequestSchema);

@@ -22,9 +22,46 @@ const ACTIVE_QUEUE_STATUSES = [
   "partially_released",
   "released",
 ];
+const REQUEST_TYPE_FOODPACKS = "foodpacks";
+const REQUEST_TYPE_MONETARY = "monetary";
+const REQUEST_TYPE_BOTH = "both";
+const VALID_REQUEST_TYPES = [
+  REQUEST_TYPE_FOODPACKS,
+  REQUEST_TYPE_MONETARY,
+  REQUEST_TYPE_BOTH,
+];
 
 const COMPLETED_QUEUE_STATUSES = ["received", "cancelled"];
 const HISTORY_QUEUE_STATUSES = ["rejected", "received", "cancelled"];
+
+const normalizeRequestType = (value) => {
+  const normalized = normalizeString(value).toLowerCase();
+  return VALID_REQUEST_TYPES.includes(normalized)
+    ? normalized
+    : REQUEST_TYPE_FOODPACKS;
+};
+
+const formatMonetaryAmount = (value) =>
+  toNumber(value).toLocaleString("en-PH", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+
+const buildDemandSummaryLabel = (request = {}) => {
+  const requestType = normalizeRequestType(request.requestType);
+  const totals = request.totals || {};
+  const parts = [];
+
+  if ([REQUEST_TYPE_FOODPACKS, REQUEST_TYPE_BOTH].includes(requestType)) {
+    parts.push(`${toNumber(totals.requestedFoodPacks)} food pack(s)`);
+  }
+
+  if ([REQUEST_TYPE_MONETARY, REQUEST_TYPE_BOTH].includes(requestType)) {
+    parts.push(`PHP ${formatMonetaryAmount(totals.requestedMonetaryAmount)}`);
+  }
+
+  return parts.join(" and ") || "No quantified support";
+};
 
 const computePrioritySnapshot = (request) => {
   const totals = request?.totals || {};
@@ -181,6 +218,23 @@ const enrichRequestForQueue = (request) => {
 
   return {
     ...requestObj,
+    requestType: normalizeRequestType(requestObj.requestType),
+    demandSummaryLabel: buildDemandSummaryLabel(requestObj),
+    totals: {
+      ...(requestObj.totals || {}),
+      requestedMonetaryAmount: toNumber(
+        requestObj?.totals?.requestedMonetaryAmount
+      ),
+    },
+    fulfillment: {
+      ...(requestObj.fulfillment || {}),
+      releasedMonetaryAmount: toNumber(
+        requestObj?.fulfillment?.releasedMonetaryAmount
+      ),
+      receivedMonetaryAmount: toNumber(
+        requestObj?.fulfillment?.receivedMonetaryAmount
+      ),
+    },
     currentStage: normalizedStage,
     prioritySnapshot,
     priorityLevel: getPriorityLevel(prioritySnapshot, requestObj.totals || {}),
@@ -197,10 +251,16 @@ const enrichRequestForQueue = (request) => {
 };
 
 const summarizeInventoryByCategory = async () => {
-  const goodsItems = await InventoryItem.find({
+  const inventoryItems = await InventoryItem.find({
     isArchive: false,
-    type: "goods",
   }).lean();
+
+  const goodsItems = inventoryItems.filter(
+    (item) => normalizeString(item.type).toLowerCase() === "goods"
+  );
+  const monetaryItems = inventoryItems.filter(
+    (item) => normalizeString(item.type).toLowerCase() === "monetary"
+  );
 
   const byCategory = {};
   let totalStockUnits = 0;
@@ -219,7 +279,12 @@ const summarizeInventoryByCategory = async () => {
 
   return {
     totalGoodsEntries: goodsItems.length,
+    totalMonetaryEntries: monetaryItems.length,
     totalStockUnits,
+    totalMonetaryAmount: monetaryItems.reduce(
+      (sum, item) => sum + toNumber(item.amount),
+      0
+    ),
     categories: byCategory,
   };
 };
@@ -440,7 +505,11 @@ const getRequestFeasibility = async (req, res) => {
     res.json({
       requestNo: enrichedRequest.requestNo,
       barangayName: enrichedRequest.barangayName,
+      requestType: enrichedRequest.requestType,
       requestedFoodPacks: toNumber(enrichedRequest.totals?.requestedFoodPacks),
+      requestedMonetaryAmount: toNumber(
+        enrichedRequest.totals?.requestedMonetaryAmount
+      ),
       totalAffected: toNumber(enrichedRequest.prioritySnapshot?.totalAffected),
       vulnerableCount: toNumber(
         enrichedRequest.prioritySnapshot?.vulnerableCount
@@ -501,7 +570,7 @@ const updateReliefStatus = async (req, res) => {
         barangayId: request.barangayId,
         barangayName: request.barangayName,
         category: "relief_request",
-        peopleRange: `Food packs requested: ${request.totals.requestedFoodPacks}`,
+        peopleRange: buildDemandSummaryLabel(request),
         status: "approved",
         actionBy: "drrmo",
       });
@@ -531,7 +600,10 @@ const updateReliefStatus = async (req, res) => {
           requestNo: request.requestNo,
           barangayName: request.barangayName,
           disaster: request.disaster,
+          requestType: request.requestType,
           requestedFoodPacks: request.totals?.requestedFoodPacks || 0,
+          requestedMonetaryAmount:
+            request.totals?.requestedMonetaryAmount || 0,
           approvalRemarks: request.approvalRemarks || "",
           approvedBy: username,
         },
@@ -568,7 +640,7 @@ const updateReliefStatus = async (req, res) => {
         barangayId: request.barangayId,
         barangayName: request.barangayName,
         category: "relief_request",
-        peopleRange: `Food packs requested: ${request.totals.requestedFoodPacks}`,
+        peopleRange: buildDemandSummaryLabel(request),
         status: "rejected",
         actionBy: "drrmo",
       });
@@ -600,7 +672,10 @@ const updateReliefStatus = async (req, res) => {
           requestNo: request.requestNo,
           barangayName: request.barangayName,
           disaster: request.disaster,
+          requestType: request.requestType,
           requestedFoodPacks: request.totals?.requestedFoodPacks || 0,
+          requestedMonetaryAmount:
+            request.totals?.requestedMonetaryAmount || 0,
           rejectionReason: remarks,
           rejectedBy: username,
         },

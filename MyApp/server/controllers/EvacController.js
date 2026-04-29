@@ -1,9 +1,21 @@
 const mongoose = require("mongoose");
-const PDFDocument = require("pdfkit");
 const Place = require("../models/EvacPlace.js");
 const EHistory = require("../models/EvacHistory.js");
+const Barangay = require("../models/Barangay");
 const Notification = require("../models/Notification");
 const createNotification = require("../utils/createNotification");
+const {
+  createPdfDocument,
+  drawPdfEmptyState,
+  drawPdfFooter,
+  drawPdfHeader,
+  drawPdfLabelValue,
+  drawPdfParagraphBlock,
+  drawPdfSectionTitle,
+  drawPdfTable,
+  ensurePdfPageSpace,
+  formatPdfDateValue,
+} = require("../utils/pdfTheme");
 
 // -----------------------------
 // HELPERS
@@ -104,6 +116,62 @@ const buildHistoryMeta = (
       sanitizeText(req.session?.barangayName || req.session?.username || req.session?.name),
     performedBy: sanitizeText(req.session?.username || req.session?.name || "unknown"),
     performedByRole: sanitizeText(req.session?.role || ""),
+  };
+};
+
+const buildBarangayLookupMaps = async () => {
+  const rows = await Barangay.find({}, "barangayName username").lean();
+  const byId = new Map();
+  const byNormalizedName = new Map();
+
+  rows.forEach((row) => {
+    const id = row?._id ? String(row._id) : "";
+    const barangayName = sanitizeText(row?.barangayName);
+    const username = sanitizeText(row?.username);
+
+    if (id && barangayName) {
+      byId.set(id, barangayName);
+    }
+
+    if (barangayName) {
+      byNormalizedName.set(normalizeBarangayKey(barangayName), barangayName);
+    }
+
+    if (username && barangayName) {
+      byNormalizedName.set(normalizeBarangayKey(username), barangayName);
+    }
+  });
+
+  return { byId, byNormalizedName };
+};
+
+const resolvePlaceBarangayName = (place, barangayMaps) => {
+  const rawName = sanitizeText(place?.barangayName);
+  if (rawName) return rawName;
+
+  const placeBarangayId = place?.barangayId ? String(place.barangayId) : "";
+  if (placeBarangayId && barangayMaps?.byId?.has(placeBarangayId)) {
+    return barangayMaps.byId.get(placeBarangayId) || "";
+  }
+
+  const fallbackName = sanitizeText(place?.barangay || place?.username);
+  if (
+    fallbackName &&
+    barangayMaps?.byNormalizedName?.has(normalizeBarangayKey(fallbackName))
+  ) {
+    return (
+      barangayMaps.byNormalizedName.get(normalizeBarangayKey(fallbackName)) || ""
+    );
+  }
+
+  return rawName;
+};
+
+const attachResolvedBarangayMeta = (place, barangayMaps) => {
+  const resolvedBarangayName = resolvePlaceBarangayName(place, barangayMaps);
+  return {
+    ...place,
+    barangayName: resolvedBarangayName || "",
   };
 };
 
@@ -468,12 +536,17 @@ const isBarangayOwnerOfPlace = (req, place) => {
   return Boolean(idMatch || nameMatch);
 };
 
-const buildRoleAwarePlaceFilter = (req) => {
+const buildRoleAwarePlaceFilter = (req, options = {}) => {
   const role = req.session?.role;
   const userId = req.session?.userId;
   const barangayCandidates = getSessionBarangayCandidates(req);
-
-  const filter = { isArchived: false };
+  const includeArchived = options.includeArchived === true;
+  const archivedOnly = options.archivedOnly === true;
+  const filter = includeArchived
+    ? archivedOnly
+      ? { isArchived: true }
+      : {}
+    : { isArchived: false };
 
   if (role === "barangay") {
     const ownConditions = [];
@@ -657,19 +730,7 @@ const sanitizePublicPlace = (place) => {
   };
 };
 
-const formatDateValue = (value) => {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-
-  return date.toLocaleString("en-PH", {
-    year: "numeric",
-    month: "long",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-};
+const formatDateValue = formatPdfDateValue;
 
 const formatLabel = (value) => {
   const normalized = sanitizeText(value).toLowerCase();
@@ -678,74 +739,6 @@ const formatLabel = (value) => {
   return normalized
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
-};
-
-const drawPdfLabelValue = (doc, label, value) => {
-  doc.font("Helvetica-Bold").text(`${label}: `, { continued: true });
-  doc.font("Helvetica").text(value ?? "-");
-};
-
-const ensurePdfPageSpace = (doc, neededSpace = 80) => {
-  if (doc.y + neededSpace > doc.page.height - doc.page.margins.bottom) {
-    doc.addPage();
-  }
-};
-
-const drawPdfSectionTitle = (doc, title) => {
-  ensurePdfPageSpace(doc, 40);
-  doc.moveDown(0.4);
-  doc.font("Helvetica-Bold").fontSize(13).text(title);
-  doc.moveDown(0.3);
-  doc.font("Helvetica").fontSize(10);
-};
-
-const drawSimpleTableHeader = (doc, columns) => {
-  ensurePdfPageSpace(doc, 30);
-  const startX = doc.page.margins.left;
-  const startY = doc.y;
-
-  doc.font("Helvetica-Bold").fontSize(8);
-  let x = startX;
-
-  columns.forEach((col) => {
-    doc.text(col.label, x, startY, {
-      width: col.width,
-      align: col.align || "left",
-    });
-    x += col.width;
-  });
-
-  doc.moveTo(startX, startY + 14)
-    .lineTo(doc.page.width - doc.page.margins.right, startY + 14)
-    .stroke();
-
-  doc.y = startY + 18;
-  doc.font("Helvetica").fontSize(8);
-};
-
-const drawSimpleTableRow = (doc, columns, row, rowHeight = 24) => {
-  ensurePdfPageSpace(doc, rowHeight + 12);
-
-  const startX = doc.page.margins.left;
-  const startY = doc.y;
-  let x = startX;
-
-  columns.forEach((col) => {
-    const value = row[col.key] ?? "-";
-    doc.text(String(value), x, startY, {
-      width: col.width,
-      align: col.align || "left",
-    });
-    x += col.width;
-  });
-
-  doc.moveTo(startX, startY + rowHeight - 4)
-    .lineTo(doc.page.width - doc.page.margins.right, startY + rowHeight - 4)
-    .strokeColor("#dddddd")
-    .stroke()
-    .strokeColor("#000000");
-
-  doc.y = startY + rowHeight;
 };
 
 // -----------------------------
@@ -919,16 +912,30 @@ const createPlace = async (req, res) => {
 // -----------------------------
 const getPlaces = async (req, res) => {
   try {
-    const baseFilter = buildRoleAwarePlaceFilter(req);
+    const archivedQuery = safeLower(req.query?.archived);
+    const includeArchived =
+      archivedQuery === "all" || archivedQuery === "true";
+    const archivedOnly =
+      archivedQuery === "only" || archivedQuery === "archived";
+
+    const baseFilter = buildRoleAwarePlaceFilter(req, {
+      includeArchived,
+      archivedOnly,
+    });
     const finalFilter = applyPlaceQueryFilters(baseFilter, req);
 
-    const places = await Place.find(finalFilter).sort({
+    const places = await Place.find(finalFilter).lean().sort({
       barangayName: 1,
       name: 1,
       createdAt: -1,
     });
 
-    return res.json(places);
+    const barangayMaps = await buildBarangayLookupMaps();
+    const resolvedPlaces = places.map((place) =>
+      attachResolvedBarangayMeta(place, barangayMaps)
+    );
+
+    return res.json(resolvedPlaces);
   } catch (err) {
     console.error("Get Places Error:", err);
     return res.status(500).json({ message: "Server error" });
@@ -1082,23 +1089,19 @@ const exportPlacesPdf = async (req, res) => {
       `inline; filename="evacuation-areas-${new Date().toISOString().slice(0, 10)}.pdf"`
     );
 
-    const doc = new PDFDocument({
+    const doc = createPdfDocument({
       size: "A4",
       layout: "landscape",
       margin: 30,
-      bufferPages: true,
     });
 
     doc.pipe(res);
 
-    doc.font("Helvetica-Bold").fontSize(18).text("Evacuation Areas Report", {
-      align: "center",
+    drawPdfHeader(doc, {
+      title: "Evacuation Areas Report",
+      subtitle: "Current place records",
+      generatedAt: new Date(),
     });
-    doc.moveDown(0.3);
-    doc.font("Helvetica").fontSize(10).text(
-      "Generated from Disaster Relief Management System",
-      { align: "center" }
-    );
 
     drawPdfSectionTitle(doc, "Summary");
     drawPdfLabelValue(doc, "Total Places", String(totalPlaces));
@@ -1135,20 +1138,18 @@ const exportPlacesPdf = async (req, res) => {
     ];
 
     if (!places.length) {
-      doc.font("Helvetica").fontSize(10).text("No evacuation areas available for this filter.");
+      drawPdfEmptyState(doc, "No evacuation areas available for this filter.");
     } else {
-      drawSimpleTableHeader(doc, columns);
+      drawPdfTable(
+        doc,
+        columns,
+        places.map((place) => {
+          const current = Number(place.currentOccupants || 0);
+          const capacity = Number(place.capacityIndividual || 0);
+          const percent =
+            capacity > 0 ? Math.min(100, Math.round((current / capacity) * 100)) : 0;
 
-      places.forEach((place) => {
-        const current = Number(place.currentOccupants || 0);
-        const capacity = Number(place.capacityIndividual || 0);
-        const percent =
-          capacity > 0 ? Math.min(100, Math.round((current / capacity) * 100)) : 0;
-
-        drawSimpleTableRow(
-          doc,
-          columns,
-          {
+          return {
             name: sanitizeText(place.name) || "-",
             barangayName: sanitizeText(place.barangayName) || "-",
             location: sanitizeText(place.location) || "-",
@@ -1171,10 +1172,13 @@ const exportPlacesPdf = async (req, res) => {
                 : "-",
             showOnLanding: place.showOnLanding ? "Yes" : "No",
             updatedAt: formatDateValue(place.updatedAt),
-          },
-          26
-        );
-      });
+          };
+        }),
+        {
+          rowHeight: 26,
+          emptyMessage: "No evacuation areas available for this filter.",
+        }
+      );
     }
 
     const placesWithRemarks = places.filter((place) => sanitizeText(place.remarks));
@@ -1184,20 +1188,15 @@ const exportPlacesPdf = async (req, res) => {
 
       placesWithRemarks.forEach((place, index) => {
         ensurePdfPageSpace(doc, 50);
-        doc.font("Helvetica-Bold").fontSize(10).text(
-          `${index + 1}. ${sanitizeText(place.name) || "Unnamed Area"}`
+        drawPdfParagraphBlock(
+          doc,
+          `${index + 1}. ${sanitizeText(place.name) || "Unnamed Area"}`,
+          sanitizeText(place.remarks)
         );
-        doc.font("Helvetica").fontSize(10).text(sanitizeText(place.remarks));
-        doc.moveDown(0.35);
       });
     }
 
-    ensurePdfPageSpace(doc, 60);
-    doc.moveDown(1);
-    doc.font("Helvetica").fontSize(9).text(
-      `Document generated on ${formatDateValue(new Date())}`,
-      { align: "right" }
-    );
+    drawPdfFooter(doc, { generatedAt: new Date() });
 
     doc.end();
   } catch (err) {
@@ -1720,11 +1719,15 @@ const getAnalyticsSummary = async (req, res) => {
     const baseFilter = buildRoleAwarePlaceFilter(req);
     const finalFilter = applyPlaceQueryFilters(baseFilter, req);
 
-    const places = await Place.find(finalFilter);
+    const places = await Place.find(finalFilter).lean();
+    const barangayMaps = await buildBarangayLookupMaps();
+    const resolvedPlaces = places.map((place) =>
+      attachResolvedBarangayMeta(place, barangayMaps)
+    );
 
-    const totalPlaces = places.length;
+    const totalPlaces = resolvedPlaces.length;
 
-    const statusCounts = places.reduce(
+    const statusCounts = resolvedPlaces.reduce(
       (acc, p) => {
         const status = p.capacityStatus || "available";
         acc[status] = (acc[status] || 0) + 1;
@@ -1733,12 +1736,12 @@ const getAnalyticsSummary = async (req, res) => {
       { available: 0, limited: 0, full: 0 }
     );
 
-    const totalIndividualCapacity = places.reduce(
+    const totalIndividualCapacity = resolvedPlaces.reduce(
       (sum, p) => sum + Number(p.capacityIndividual || 0),
       0
     );
 
-    const totalCurrentOccupants = places.reduce(
+    const totalCurrentOccupants = resolvedPlaces.reduce(
       (sum, p) => sum + Number(p.currentOccupants || 0),
       0
     );
@@ -1756,30 +1759,30 @@ const getAnalyticsSummary = async (req, res) => {
           )
         : 0;
 
-    const totalFamilyCapacity = places.reduce(
+    const totalFamilyCapacity = resolvedPlaces.reduce(
       (sum, p) => sum + Number(p.capacityFamily || 0),
       0
     );
 
-    const totalCurrentFamilies = places.reduce(
+    const totalCurrentFamilies = resolvedPlaces.reduce(
       (sum, p) => sum + Number(p.currentFamilies || 0),
       0
     );
 
-    const totalBedCapacity = places.reduce(
+    const totalBedCapacity = resolvedPlaces.reduce(
       (sum, p) => sum + Number(p.bedCapacity || 0),
       0
     );
 
-    const totalOccupiedBeds = places.reduce(
+    const totalOccupiedBeds = resolvedPlaces.reduce(
       (sum, p) => sum + Number(p.occupiedBeds || 0),
       0
     );
 
-    const permanentCount = places.filter((p) => p.isPermanent).length;
-    const covidFacilities = places.filter((p) => p.isCovidFacility).length;
+    const permanentCount = resolvedPlaces.filter((p) => p.isPermanent).length;
+    const covidFacilities = resolvedPlaces.filter((p) => p.isCovidFacility).length;
 
-    const barangayBreakdownMap = places.reduce((acc, place) => {
+    const barangayBreakdownMap = resolvedPlaces.reduce((acc, place) => {
       const key = sanitizeText(place.barangayName) || "Unassigned";
 
       if (!acc[key]) {
@@ -1872,6 +1875,52 @@ const getAnalyticsSummary = async (req, res) => {
   }
 };
 
+// -----------------------------
+// UNARCHIVE PLACE
+// -----------------------------
+const unarchivePlace = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const existing = await Place.findById(id);
+    if (!existing) {
+      return res.status(404).json({ message: "Place not found" });
+    }
+
+    if (!isBarangayOwnerOfPlace(req, existing)) {
+      return res.status(403).json({
+        message: "You are not allowed to unarchive this evacuation area",
+      });
+    }
+
+    existing.isArchived = false;
+    existing.archivedAt = null;
+    await existing.save();
+
+    await EHistory.create({
+      action: "UPDATE",
+      placeName: existing.name,
+      details: "Place unarchived",
+      ...buildHistoryMeta(req, existing),
+    });
+
+    await notifyEvacEvent({
+      req,
+      place: existing,
+      eventType: "updated",
+      customMessage: `${existing.name} in ${existing.barangayName} was unarchived.`,
+    });
+
+    return res.json({
+      message: "Place unarchived successfully",
+      place: existing,
+    });
+  } catch (err) {
+    console.error("Unarchive Place Error:", err);
+    return res.status(500).json({ message: "Unarchive failed" });
+  }
+};
+
 module.exports = {
   createPlace,
   getPlaces,
@@ -1883,5 +1932,6 @@ module.exports = {
   updateOccupancy,
   updateLandingVisibility,
   deletePlace,
+  unarchivePlace,
   getAnalyticsSummary,
 };

@@ -1,4 +1,9 @@
 const mongoose = require("mongoose");
+const VALID_REQUEST_TYPES = ["foodpacks", "monetary", "both"];
+const normalizeRequestType = (value) => {
+  const normalized = String(value || "foodpacks").trim().toLowerCase();
+  return VALID_REQUEST_TYPES.includes(normalized) ? normalized : "foodpacks";
+};
 
 const releaseItemSchema = new mongoose.Schema(
   {
@@ -68,6 +73,14 @@ const reliefReleaseSchema = new mongoose.Schema(
       trim: true,
     },
 
+    requestType: {
+      type: String,
+      enum: VALID_REQUEST_TYPES,
+      default: "foodpacks",
+      trim: true,
+      set: normalizeRequestType,
+    },
+
     releaseMode: {
       type: String,
       enum: ["manual", "template"],
@@ -92,14 +105,29 @@ const reliefReleaseSchema = new mongoose.Schema(
       min: 0,
     },
 
+    releasedMonetaryAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    receivedMonetaryAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     items: {
       type: [releaseItemSchema],
       default: [],
       validate: {
         validator: function (value) {
-          return Array.isArray(value) && value.length > 0;
+          return (
+            (Array.isArray(value) && value.length > 0) ||
+            Number(this.releasedMonetaryAmount || 0) > 0
+          );
         },
-        message: "At least one released item is required.",
+        message: "At least one released item or a released monetary amount is required.",
       },
     },
 
@@ -154,6 +182,7 @@ const reliefReleaseSchema = new mongoose.Schema(
 releaseSummary: {
   totalLineItems: { type: Number, default: 0, min: 0 },
   totalQuantityReleased: { type: Number, default: 0, min: 0 },
+  totalMonetaryReleased: { type: Number, default: 0, min: 0 },
 },
 
   },
@@ -189,6 +218,8 @@ reliefReleaseSchema.pre("validate", function () {
     this.foodPackTemplateName = String(this.foodPackTemplateName).trim();
   }
 
+  this.requestType = normalizeRequestType(this.requestType);
+
   if (this.remarks) {
     this.remarks = String(this.remarks).trim();
   }
@@ -201,12 +232,14 @@ reliefReleaseSchema.pre("save", function () {
     (sum, item) => sum + (Number(item.quantityReleased) || 0),
     0
   );
+  const totalMonetaryReleased = Number(this.releasedMonetaryAmount || 0);
 
   this.totalItemsReleased = totalQuantityReleased;
 
   this.releaseSummary = {
     totalLineItems: items.length,
     totalQuantityReleased,
+    totalMonetaryReleased,
   };
 });
 

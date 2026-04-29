@@ -1,4 +1,3 @@
-const PDFDocument = require("pdfkit");
 const Barangay = require("../models/Barangay");
 const EvacPlace = require("../models/EvacPlace");
 const ReliefRequest = require("../models/ReliefRequest");
@@ -6,6 +5,18 @@ const ReliefRelease = require("../models/ReliefRelease");
 const Audit = require("../models/Audit");
 const sendReliefRequestEmail = require("../utils/sendReliefRequestEmail");
 const createNotification = require("../utils/createNotification");
+const {
+  createPdfDocument,
+  drawPdfEmptyState,
+  drawPdfFooter,
+  drawPdfHeader,
+  drawPdfLabelValue,
+  drawPdfParagraphBlock,
+  drawPdfSectionTitle,
+  drawPdfTable,
+  ensurePdfPageSpace,
+  formatPdfDateValue,
+} = require("../utils/pdfTheme");
 
 const ACTIVE_REQUEST_STATUSES = ["pending", "approved", "partially_released", "released"];
 const VIEWABLE_REQUEST_STATUSES = [
@@ -20,6 +31,14 @@ const VIEWABLE_REQUEST_STATUSES = [
   "canceled",
 ];
 const FINAL_REQUEST_STATUSES = ["received", "cancelled", "canceled", "rejected", "completed"];
+const REQUEST_TYPE_FOODPACKS = "foodpacks";
+const REQUEST_TYPE_MONETARY = "monetary";
+const REQUEST_TYPE_BOTH = "both";
+const VALID_REQUEST_TYPES = [
+  REQUEST_TYPE_FOODPACKS,
+  REQUEST_TYPE_MONETARY,
+  REQUEST_TYPE_BOTH,
+];
 
 const generateRequestNo = async () => {
   const year = new Date().getFullYear();
@@ -48,11 +67,126 @@ const normalizeString = (value) => {
 };
 
 const normalizeStatus = (value) => normalizeString(value).toLowerCase();
+const normalizeRequestType = (value) => {
+  const normalized = normalizeString(value).toLowerCase();
+  return VALID_REQUEST_TYPES.includes(normalized)
+    ? normalized
+    : REQUEST_TYPE_FOODPACKS;
+};
 
 const toNumber = (value) => {
   if (value === undefined || value === null || value === "") return 0;
   const parsed = Number(value);
   return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const formatMonetaryAmount = (value) =>
+  toNumber(value).toLocaleString("en-PH", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+
+const requiresFoodPackFulfillment = (requestType) =>
+  [REQUEST_TYPE_FOODPACKS, REQUEST_TYPE_BOTH].includes(
+    normalizeRequestType(requestType)
+  );
+
+const requiresMonetaryFulfillment = (requestType) =>
+  [REQUEST_TYPE_MONETARY, REQUEST_TYPE_BOTH].includes(
+    normalizeRequestType(requestType)
+  );
+
+const getRequestedFoodPacksFromRows = (rows = []) =>
+  rows.reduce((sum, row) => sum + toNumber(row.requestedFoodPacks), 0);
+
+const getRequestedMonetaryAmountInput = (payload = {}) =>
+  toNumber(payload.requestedMonetaryAmount ?? payload?.totals?.requestedMonetaryAmount);
+
+const getRequestDemandProfile = (request = {}) => {
+  const requestType = normalizeRequestType(request.requestType);
+  const totals = request.totals || {};
+  const requestedFoodPacks = requiresFoodPackFulfillment(requestType)
+    ? toNumber(totals.requestedFoodPacks)
+    : 0;
+  const requestedMonetaryAmount = requiresMonetaryFulfillment(requestType)
+    ? toNumber(totals.requestedMonetaryAmount)
+    : 0;
+
+  return {
+    requestType,
+    requiresFoodPacks: requiresFoodPackFulfillment(requestType),
+    requiresMonetary: requiresMonetaryFulfillment(requestType),
+    requestedFoodPacks,
+    requestedMonetaryAmount,
+  };
+};
+
+const buildRequestDemandLabel = (request = {}) => {
+  const demand = getRequestDemandProfile(request);
+  const parts = [];
+
+  if (demand.requiresFoodPacks) {
+    parts.push(`${demand.requestedFoodPacks} food pack(s)`);
+  }
+
+  if (demand.requiresMonetary) {
+    parts.push(`PHP ${formatMonetaryAmount(demand.requestedMonetaryAmount)}`);
+  }
+
+  return parts.length ? `Requested ${parts.join(" and ")}` : "No quantified request totals";
+};
+
+const shapeReliefRequestResponse = (request) => {
+  if (!request) return request;
+
+  const requestObject =
+    typeof request.toObject === "function" ? request.toObject() : { ...request };
+
+  return {
+    ...requestObject,
+    requestType: normalizeRequestType(requestObject.requestType),
+    totals: {
+      ...(requestObject.totals || {}),
+      requestedMonetaryAmount: toNumber(
+        requestObject?.totals?.requestedMonetaryAmount
+      ),
+    },
+    fulfillment: {
+      ...(requestObject.fulfillment || {}),
+      releasedMonetaryAmount: toNumber(
+        requestObject?.fulfillment?.releasedMonetaryAmount
+      ),
+      receivedMonetaryAmount: toNumber(
+        requestObject?.fulfillment?.receivedMonetaryAmount
+      ),
+    },
+  };
+};
+
+const validateRequestDemand = ({
+  requestType,
+  rows,
+  requestedMonetaryAmount,
+  remarks,
+}) => {
+  const normalizedRequestType = normalizeRequestType(requestType);
+  const requestedFoodPacks = getRequestedFoodPacksFromRows(rows);
+  const requiresFoodPacks = requiresFoodPackFulfillment(normalizedRequestType);
+  const requiresMonetary = requiresMonetaryFulfillment(normalizedRequestType);
+
+  if (requiresFoodPacks && requestedFoodPacks <= 0) {
+    return "Requested food packs must be greater than 0 for this request type.";
+  }
+
+  if (requiresMonetary && requestedMonetaryAmount <= 0) {
+    return "Requested monetary amount must be greater than 0 for this request type.";
+  }
+
+  if (requiresMonetary && !normalizeString(remarks)) {
+    return "Remarks are required for monetary requests.";
+  }
+
+  return null;
 };
 
 const sanitizeRow = (row = {}) => ({
@@ -165,7 +299,7 @@ const computePrioritySnapshotFromRows = (rows = []) => {
   };
 };
 
-const buildFulfillmentFromReleases = (releases = []) => {
+const buildFulfillmentFromReleases = (releases = [], currentFulfillment = {}) => {
   const totalReleases = releases.length;
 
   const releasedFoodPacks = releases.reduce(
@@ -176,6 +310,15 @@ const buildFulfillmentFromReleases = (releases = []) => {
   const receivedFoodPacks = releases
     .filter((release) => release.releaseStatus === "received")
     .reduce((sum, release) => sum + toNumber(release.foodPacksReleased), 0);
+
+  const releasedMonetaryAmount = releases.reduce(
+    (sum, release) => sum + toNumber(release.releasedMonetaryAmount),
+    0
+  );
+
+  const receivedMonetaryAmount = releases
+    .filter((release) => release.releaseStatus === "received")
+    .reduce((sum, release) => sum + toNumber(release.receivedMonetaryAmount), 0);
 
   const receivedReleases = releases.filter(
     (release) => release.releaseStatus === "received"
@@ -193,6 +336,14 @@ const buildFulfillmentFromReleases = (releases = []) => {
     totalReleases,
     releasedFoodPacks,
     receivedFoodPacks,
+    releasedMonetaryAmount:
+      releasedMonetaryAmount > 0
+        ? releasedMonetaryAmount
+        : toNumber(currentFulfillment.releasedMonetaryAmount),
+    receivedMonetaryAmount:
+      receivedMonetaryAmount > 0
+        ? receivedMonetaryAmount
+        : toNumber(currentFulfillment.receivedMonetaryAmount),
     receivedReleases,
     pendingReleases,
     lastReleaseAt: lastRelease?.releasedAt || lastRelease?.createdAt || null,
@@ -248,19 +399,7 @@ const getDecisionRemarks = (request) => {
   );
 };
 
-const formatDateValue = (value) => {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-
-  return date.toLocaleString("en-PH", {
-    year: "numeric",
-    month: "long",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-};
+const formatDateValue = formatPdfDateValue;
 
 const formatStatusLabel = (status) => {
   const normalized = normalizeStatus(status);
@@ -269,74 +408,6 @@ const formatStatusLabel = (status) => {
   return normalized
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
-};
-
-const drawPdfLabelValue = (doc, label, value) => {
-  doc.font("Helvetica-Bold").text(`${label}: `, { continued: true });
-  doc.font("Helvetica").text(value ?? "-");
-};
-
-const ensurePdfPageSpace = (doc, neededSpace = 80) => {
-  if (doc.y + neededSpace > doc.page.height - doc.page.margins.bottom) {
-    doc.addPage();
-  }
-};
-
-const drawPdfSectionTitle = (doc, title) => {
-  ensurePdfPageSpace(doc, 40);
-  doc.moveDown(0.4);
-  doc.font("Helvetica-Bold").fontSize(13).text(title);
-  doc.moveDown(0.3);
-  doc.font("Helvetica").fontSize(10);
-};
-
-const drawSimpleTableHeader = (doc, columns) => {
-  ensurePdfPageSpace(doc, 30);
-  const startX = doc.page.margins.left;
-  const startY = doc.y;
-
-  doc.font("Helvetica-Bold").fontSize(8);
-  let x = startX;
-
-  columns.forEach((col) => {
-    doc.text(col.label, x, startY, {
-      width: col.width,
-      align: col.align || "left",
-    });
-    x += col.width;
-  });
-
-  doc.moveTo(startX, startY + 14)
-    .lineTo(doc.page.width - doc.page.margins.right, startY + 14)
-    .stroke();
-
-  doc.y = startY + 18;
-  doc.font("Helvetica").fontSize(8);
-};
-
-const drawSimpleTableRow = (doc, columns, row, rowHeight = 24) => {
-  ensurePdfPageSpace(doc, rowHeight + 12);
-
-  const startX = doc.page.margins.left;
-  const startY = doc.y;
-  let x = startX;
-
-  columns.forEach((col) => {
-    const value = row[col.key] ?? "-";
-    doc.text(String(value), x, startY, {
-      width: col.width,
-      align: col.align || "left",
-    });
-    x += col.width;
-  });
-
-  doc.moveTo(startX, startY + rowHeight - 4)
-    .lineTo(doc.page.width - doc.page.margins.right, startY + rowHeight - 4)
-    .strokeColor("#dddddd")
-    .stroke()
-    .strokeColor("#000000");
-
-  doc.y = startY + rowHeight;
 };
 
 const refreshRequestProgress = async (requestId) => {
@@ -363,15 +434,32 @@ const refreshRequestProgress = async (requestId) => {
     isArchived: false,
   }).sort({ createdAt: -1 });
 
-  const fulfillment = buildFulfillmentFromReleases(releases);
-  const requestedFoodPacks = toNumber(request?.totals?.requestedFoodPacks);
+  request.requestType = normalizeRequestType(request.requestType);
+
+  const fulfillment = buildFulfillmentFromReleases(releases, request.fulfillment);
+  const demand = getRequestDemandProfile(request);
   const releasedFoodPacks = toNumber(fulfillment.releasedFoodPacks);
   const receivedFoodPacks = toNumber(fulfillment.receivedFoodPacks);
-  const hasAnyRelease = releases.length > 0;
+  const releasedMonetaryAmount = toNumber(fulfillment.releasedMonetaryAmount);
+  const receivedMonetaryAmount = toNumber(fulfillment.receivedMonetaryAmount);
+  const hasAnyFulfillment =
+    releases.length > 0 || releasedMonetaryAmount > 0 || receivedMonetaryAmount > 0;
+  const hasQuantifiedDemand =
+    demand.requestedFoodPacks > 0 || demand.requestedMonetaryAmount > 0;
+  const isFullyReleased =
+    (!demand.requiresFoodPacks || releasedFoodPacks >= demand.requestedFoodPacks) &&
+    (!demand.requiresMonetary ||
+      releasedMonetaryAmount >= demand.requestedMonetaryAmount);
+  const isFullyReceived =
+    (!demand.requiresFoodPacks || receivedFoodPacks >= demand.requestedFoodPacks) &&
+    (!demand.requiresMonetary ||
+      receivedMonetaryAmount >= demand.requestedMonetaryAmount);
 
   request.fulfillment = {
     totalReleases: fulfillment.totalReleases,
     releasedFoodPacks: fulfillment.releasedFoodPacks,
+    releasedMonetaryAmount: fulfillment.releasedMonetaryAmount,
+    receivedMonetaryAmount: fulfillment.receivedMonetaryAmount,
     receivedReleases: fulfillment.receivedReleases,
     pendingReleases: fulfillment.pendingReleases,
     lastReleaseAt: fulfillment.lastReleaseAt,
@@ -379,7 +467,7 @@ const refreshRequestProgress = async (requestId) => {
 
   request.prioritySnapshot = computePrioritySnapshotFromRows(request.rows || []);
 
-  if (!hasAnyRelease) {
+  if (!hasAnyFulfillment) {
     if (
       !["pending", "rejected", "cancelled", "canceled", "received", "completed"].includes(
         normalizeStatus(request.status)
@@ -388,14 +476,14 @@ const refreshRequestProgress = async (requestId) => {
       request.status = "approved";
       request.currentStage = "approved_waiting_release";
     }
-  } else if (requestedFoodPacks > 0) {
-    if (receivedFoodPacks >= requestedFoodPacks) {
+  } else if (hasQuantifiedDemand) {
+    if (isFullyReceived) {
       request.status = "received";
       request.currentStage = "completed";
       if (!request.receivedAt) {
         request.receivedAt = new Date();
       }
-    } else if (releasedFoodPacks >= requestedFoodPacks) {
+    } else if (isFullyReleased) {
       request.status = "released";
       request.currentStage = "released_waiting_receipt";
       request.receivedAt = null;
@@ -478,7 +566,7 @@ const getReliefRequestBootstrap = async (req, res) => {
 
     return res.json({
       hasActiveRequest: Boolean(activeRequest),
-      activeRequest: activeRequest || null,
+      activeRequest: activeRequest ? shapeReliefRequestResponse(activeRequest) : null,
       barangay: {
         _id: barangay._id,
         barangayName: barangay.barangayName,
@@ -509,7 +597,9 @@ const submitReliefRequest = async (req, res) => {
     }
 
     const disaster = normalizeString(req.body.disaster);
+    const requestType = normalizeRequestType(req.body.requestType);
     const remarks = normalizeString(req.body.remarks);
+    const requestedMonetaryAmount = getRequestedMonetaryAmountInput(req.body);
     const approvalRemarks = "";
     const releaseNotes = "";
     const requestDate = req.body.requestDate
@@ -545,6 +635,16 @@ const submitReliefRequest = async (req, res) => {
       return res.status(400).json({ message: rowsError });
     }
 
+    const requestDemandError = validateRequestDemand({
+      requestType,
+      rows,
+      requestedMonetaryAmount,
+      remarks,
+    });
+    if (requestDemandError) {
+      return res.status(400).json({ message: requestDemandError });
+    }
+
     const hasActiveRequest = await ReliefRequest.findOne({
       barangayId: barangay._id,
       status: {
@@ -567,8 +667,12 @@ const submitReliefRequest = async (req, res) => {
       barangayId: barangay._id,
       barangayName: barangay.barangayName,
       disaster,
+      requestType,
       requestDate,
       rows,
+      totals: {
+        requestedMonetaryAmount,
+      },
       remarks,
       approvalRemarks,
       releaseNotes,
@@ -579,6 +683,8 @@ const submitReliefRequest = async (req, res) => {
       fulfillment: {
         totalReleases: 0,
         releasedFoodPacks: 0,
+        releasedMonetaryAmount: 0,
+        receivedMonetaryAmount: 0,
         receivedReleases: 0,
         pendingReleases: 0,
         lastReleaseAt: null,
@@ -596,7 +702,7 @@ const submitReliefRequest = async (req, res) => {
       barangayId: barangay._id,
       barangayName: barangay.barangayName,
       category: "relief_request",
-      peopleRange: `Food packs requested: ${reliefRequest.totals.requestedFoodPacks}`,
+      peopleRange: buildRequestDemandLabel(reliefRequest),
       status: "requested",
       actionBy: "barangay",
     });
@@ -621,7 +727,10 @@ const submitReliefRequest = async (req, res) => {
     requestNo: reliefRequest.requestNo,
     barangayName: barangay.barangayName,
     disaster: reliefRequest.disaster,
+    requestType: reliefRequest.requestType,
     requestedFoodPacks: reliefRequest.totals?.requestedFoodPacks || 0,
+    requestedMonetaryAmount:
+      reliefRequest.totals?.requestedMonetaryAmount || 0,
     totalAffected: reliefRequest.prioritySnapshot?.totalAffected || 0,
     vulnerableCount: reliefRequest.prioritySnapshot?.vulnerableCount || 0,
   },
@@ -645,7 +754,7 @@ const submitReliefRequest = async (req, res) => {
       message: emailSent
         ? "Relief request submitted successfully."
         : "Relief request submitted successfully, but email notification failed.",
-      request: latestRequest || reliefRequest,
+      request: shapeReliefRequestResponse(latestRequest || reliefRequest),
     });
   } catch (err) {
     console.error("Submit Relief Request Error:", err);
@@ -665,7 +774,7 @@ const getMyReliefRequests = async (req, res) => {
       isArchived: false,
     }).sort({ createdAt: -1 });
 
-    res.json(requests);
+    res.json(requests.map(shapeReliefRequestResponse));
   } catch (err) {
     console.error("Get My Relief Requests Error:", err);
     res.status(500).json({ message: err.message });
@@ -689,7 +798,7 @@ const getMyReliefRequestById = async (req, res) => {
       return res.status(404).json({ message: "Relief request not found" });
     }
 
-    res.json(request);
+    res.json(shapeReliefRequestResponse(request));
   } catch (err) {
     console.error("Get My Relief Request By Id Error:", err);
     res.status(500).json({ message: err.message });
@@ -726,23 +835,19 @@ const exportMyReliefRequestPdf = async (req, res) => {
       `inline; filename="${safeRequestNo}.pdf"`
     );
 
-    const doc = new PDFDocument({
+    const doc = createPdfDocument({
       size: "A4",
+      layout: "portrait",
       margin: 40,
-      bufferPages: true,
     });
 
     doc.pipe(res);
 
-    doc.font("Helvetica-Bold").fontSize(18).text("Relief Request", {
-      align: "center",
+    drawPdfHeader(doc, {
+      title: "Relief Request",
+      subtitle: request.requestNo || normalizeString(request._id),
+      generatedAt: new Date(),
     });
-    doc.moveDown(0.3);
-    doc.font("Helvetica").fontSize(10).text("Generated from Disaster Relief Management System", {
-      align: "center",
-    });
-
-    doc.moveDown(1);
 
     drawPdfSectionTitle(doc, "Request Information");
     drawPdfLabelValue(doc, "Request No", request.requestNo || "-");
@@ -767,12 +872,8 @@ const exportMyReliefRequestPdf = async (req, res) => {
     }
 
     drawPdfSectionTitle(doc, "Remarks");
-    doc.font("Helvetica-Bold").text("Barangay Remarks:");
-    doc.font("Helvetica").text(normalizeString(request.remarks) || "None");
-    doc.moveDown(0.5);
-
-    doc.font("Helvetica-Bold").text("Decision / Rejection Remarks:");
-    doc.font("Helvetica").text(decisionRemarks || "None");
+    drawPdfParagraphBlock(doc, "Barangay Remarks", normalizeString(request.remarks) || "None");
+    drawPdfParagraphBlock(doc, "Decision / Rejection Remarks", decisionRemarks || "None");
 
     drawPdfSectionTitle(doc, "Request Totals");
     drawPdfLabelValue(doc, "Households", String(toNumber(totals.households)));
@@ -801,12 +902,12 @@ const exportMyReliefRequestPdf = async (req, res) => {
     ];
 
     if (!rows.length) {
-      doc.font("Helvetica").fontSize(10).text("No evacuation center rows available.");
+      drawPdfEmptyState(doc, "No evacuation center rows available.");
     } else {
-      drawSimpleTableHeader(doc, columns);
-
-      rows.forEach((row) => {
-        drawSimpleTableRow(doc, columns, {
+      drawPdfTable(
+        doc,
+        columns,
+        rows.map((row) => ({
           evacuationCenterName: normalizeString(row.evacuationCenterName) || "-",
           households: toNumber(row.households),
           families: toNumber(row.families),
@@ -817,8 +918,12 @@ const exportMyReliefRequestPdf = async (req, res) => {
           pregnant: toNumber(row.pregnant),
           senior: toNumber(row.senior),
           requestedFoodPacks: toNumber(row.requestedFoodPacks),
-        });
-      });
+        })),
+        {
+          rowHeight: 24,
+          emptyMessage: "No evacuation center rows available.",
+        }
+      );
     }
 
     const rowsWithRemarks = rows.filter((row) => normalizeString(row.rowRemarks));
@@ -828,11 +933,11 @@ const exportMyReliefRequestPdf = async (req, res) => {
 
       rowsWithRemarks.forEach((row, index) => {
         ensurePdfPageSpace(doc, 50);
-        doc.font("Helvetica-Bold").fontSize(10).text(
-          `${index + 1}. ${normalizeString(row.evacuationCenterName) || "Unnamed Evacuation Center"}`
+        drawPdfParagraphBlock(
+          doc,
+          `${index + 1}. ${normalizeString(row.evacuationCenterName) || "Unnamed Evacuation Center"}`,
+          normalizeString(row.rowRemarks)
         );
-        doc.font("Helvetica").fontSize(10).text(normalizeString(row.rowRemarks));
-        doc.moveDown(0.4);
       });
     }
 
@@ -863,12 +968,7 @@ const exportMyReliefRequestPdf = async (req, res) => {
       formatDateValue(request.fulfillment?.lastReleaseAt)
     );
 
-    ensurePdfPageSpace(doc, 80);
-    doc.moveDown(1);
-    doc.font("Helvetica").fontSize(9).text(
-      `Document generated on ${formatDateValue(new Date())}`,
-      { align: "right" }
-    );
+    drawPdfFooter(doc, { generatedAt: new Date() });
 
     doc.end();
   } catch (err) {
@@ -905,11 +1005,18 @@ const getCurrentReliefJourney = async (req, res) => {
       isArchived: false,
     }).sort({ createdAt: -1 });
 
-    const fulfillment = buildFulfillmentFromReleases(releases);
+    const fulfillment = buildFulfillmentFromReleases(
+      releases,
+      requestDoc.fulfillment
+    );
+    const demand = getRequestDemandProfile(requestDoc);
     const stage = deriveCurrentStage(requestDoc, releases);
-    const requestedFoodPacks = requestDoc.totals?.requestedFoodPacks || 0;
+    const requestedFoodPacks = demand.requestedFoodPacks;
+    const requestedMonetaryAmount = demand.requestedMonetaryAmount;
     const releasedFoodPacks = fulfillment.releasedFoodPacks || 0;
     const receivedFoodPacks = fulfillment.receivedFoodPacks || 0;
+    const releasedMonetaryAmount = fulfillment.releasedMonetaryAmount || 0;
+    const receivedMonetaryAmount = fulfillment.receivedMonetaryAmount || 0;
     const decisionRemarks = getDecisionRemarks(requestDoc);
 
     const canEdit = requestStatus === "pending";
@@ -920,7 +1027,7 @@ const getCurrentReliefJourney = async (req, res) => {
     const canRequestAgain = FINAL_REQUEST_STATUSES.includes(requestStatus);
 
     return res.json({
-      request: requestDoc,
+      request: shapeReliefRequestResponse(requestDoc),
       releases,
       stage,
       canEdit,
@@ -928,10 +1035,18 @@ const getCurrentReliefJourney = async (req, res) => {
       canReceiveAnyRelease,
       canRequestAgain,
       summary: {
+        requestType: demand.requestType,
         requestedFoodPacks,
+        requestedMonetaryAmount,
         releasedFoodPacks,
         receivedFoodPacks,
+        releasedMonetaryAmount,
+        receivedMonetaryAmount,
         remainingFoodPacks: Math.max(0, requestedFoodPacks - receivedFoodPacks),
+        remainingMonetaryAmount: Math.max(
+          0,
+          requestedMonetaryAmount - receivedMonetaryAmount
+        ),
         totalReleases: fulfillment.totalReleases || 0,
         receivedReleases: fulfillment.receivedReleases || 0,
         pendingReleases: fulfillment.pendingReleases || 0,
@@ -978,7 +1093,18 @@ const updateOwnReliefRequest = async (req, res) => {
     }
 
     const disaster = normalizeString(req.body.disaster);
+    const requestType = normalizeRequestType(req.body.requestType || request.requestType);
     const remarks = normalizeString(req.body.remarks);
+    const requestedMonetaryAmount = getRequestedMonetaryAmountInput(
+      req.body.requestType !== undefined ||
+        req.body.requestedMonetaryAmount !== undefined ||
+        req.body?.totals?.requestedMonetaryAmount !== undefined
+        ? req.body
+        : {
+            requestType: request.requestType,
+            requestedMonetaryAmount: request?.totals?.requestedMonetaryAmount,
+          }
+    );
     const requestDate = req.body.requestDate
       ? new Date(req.body.requestDate)
       : request.requestDate;
@@ -1012,9 +1138,26 @@ const updateOwnReliefRequest = async (req, res) => {
       return res.status(400).json({ message: rowsError });
     }
 
+    const requestDemandError = validateRequestDemand({
+      requestType,
+      rows,
+      requestedMonetaryAmount,
+      remarks,
+    });
+    if (requestDemandError) {
+      return res.status(400).json({ message: requestDemandError });
+    }
+
     request.disaster = disaster;
+    request.requestType = requestType;
     request.requestDate = requestDate;
     request.rows = rows;
+    request.totals = {
+      ...(request.totals
+        ? request.totals.toObject?.() || request.totals
+        : {}),
+      requestedMonetaryAmount,
+    };
     request.remarks = remarks;
     request.entryMode = entryMode;
     request.rowSource = rowSource;
@@ -1046,7 +1189,7 @@ const updateOwnReliefRequest = async (req, res) => {
       barangayId: request.barangayId,
       barangayName: request.barangayName,
       category: "relief_request",
-      peopleRange: `Updated food packs requested: ${request.totals.requestedFoodPacks}`,
+      peopleRange: buildRequestDemandLabel(request),
       status: isRejectedResubmission ? "resubmitted" : "updated",
       actionBy: "barangay",
     });
@@ -1077,7 +1220,9 @@ const updateOwnReliefRequest = async (req, res) => {
     requestNo: request.requestNo,
     barangayName: request.barangayName,
     disaster: request.disaster,
+    requestType: request.requestType,
     requestedFoodPacks: request.totals?.requestedFoodPacks || 0,
+    requestedMonetaryAmount: request.totals?.requestedMonetaryAmount || 0,
     editCount: request.editCount || 0,
   },
 });
@@ -1086,7 +1231,7 @@ const updateOwnReliefRequest = async (req, res) => {
       message: isRejectedResubmission
         ? "Relief request resubmitted successfully."
         : "Relief request updated successfully.",
-      request,
+      request: shapeReliefRequestResponse(request),
     });
   } catch (err) {
     console.error("Update Own Relief Request Error:", err);
@@ -1130,7 +1275,7 @@ const cancelOwnReliefRequest = async (req, res) => {
       barangayId: request.barangayId,
       barangayName: request.barangayName,
       category: "relief_request",
-      peopleRange: `Food packs requested: ${request.totals.requestedFoodPacks}`,
+      peopleRange: buildRequestDemandLabel(request),
       status: "cancelled",
       actionBy: "barangay",
     });
@@ -1155,13 +1300,15 @@ const cancelOwnReliefRequest = async (req, res) => {
     requestNo: request.requestNo,
     barangayName: request.barangayName,
     disaster: request.disaster,
+    requestType: request.requestType,
     requestedFoodPacks: request.totals?.requestedFoodPacks || 0,
+    requestedMonetaryAmount: request.totals?.requestedMonetaryAmount || 0,
   },
 });
 
     return res.json({
       message: "Relief request cancelled successfully.",
-      request,
+      request: shapeReliefRequestResponse(request),
       journey: buildEmptyJourneyResponse(),
     });
   } catch (err) {
@@ -1250,29 +1397,50 @@ const markReliefRequestReceived = async (req, res) => {
     requestNo: request.requestNo,
     barangayName: request.barangayName,
     disaster: request.disaster,
+    requestType: updatedRequest?.requestType || request.requestType,
     status: updatedRequest?.status || request.status,
     releasedFoodPacks: updatedRequest?.fulfillment?.releasedFoodPacks || 0,
+    releasedMonetaryAmount:
+      updatedRequest?.fulfillment?.releasedMonetaryAmount || 0,
   },
 });
 
-    const requestedFoodPacks = toNumber(updatedRequest?.totals?.requestedFoodPacks);
-    const receivedFoodPacks = toNumber(
-      buildFulfillmentFromReleases(
-        await ReliefRelease.find({
-          reliefRequestId: request._id,
-          isArchived: false,
-        })
-      ).receivedFoodPacks
+    const refreshedReleases = await ReliefRelease.find({
+      reliefRequestId: request._id,
+      isArchived: false,
+    });
+    const refreshedFulfillment = buildFulfillmentFromReleases(
+      refreshedReleases,
+      updatedRequest?.fulfillment
     );
+    const demand = getRequestDemandProfile(updatedRequest || request);
+    const remainingFoodPacks = Math.max(
+      0,
+      demand.requestedFoodPacks - toNumber(refreshedFulfillment.receivedFoodPacks)
+    );
+    const remainingMonetaryAmount = Math.max(
+      0,
+      demand.requestedMonetaryAmount -
+        toNumber(refreshedFulfillment.receivedMonetaryAmount)
+    );
+    const remainingParts = [];
 
-    const remainingFoodPacks = Math.max(0, requestedFoodPacks - receivedFoodPacks);
+    if (remainingFoodPacks > 0) {
+      remainingParts.push(`${remainingFoodPacks} food pack(s)`);
+    }
+
+    if (remainingMonetaryAmount > 0) {
+      remainingParts.push(`PHP ${formatMonetaryAmount(remainingMonetaryAmount)}`);
+    }
 
     res.json({
       message:
-        remainingFoodPacks > 0
-          ? `Relief received. ${remainingFoodPacks} food pack(s) still remaining to fulfill this request.`
+        remainingParts.length > 0
+          ? `Relief received. ${remainingParts.join(
+              " and "
+            )} still remaining to fulfill this request.`
           : "Relief request marked as received successfully.",
-      request: updatedRequest,
+      request: shapeReliefRequestResponse(updatedRequest),
     });
   } catch (err) {
     console.error("Mark Relief Request Received Error:", err);

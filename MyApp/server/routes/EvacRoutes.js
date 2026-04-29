@@ -72,6 +72,12 @@ router.delete(
   controller.deletePlace
 );
 
+router.put(
+  "/:id/unarchive",
+  requireLogin,
+  controller.unarchivePlace
+);
+
 router.put("/:id/occupancy", requireLogin, controller.updateOccupancy);
 
 module.exports = router;
