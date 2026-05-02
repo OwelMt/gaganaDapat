@@ -35,6 +35,7 @@ const incidentAnalyticsRoutes = require("./routes/incidentAnalyticsRoutes");
 const evacAnalyticsRoutes = require("./routes/EvacAnalyticsRoutes");
 const overviewAnalyticsRoutes = require("./routes/overviewAnalysticsRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const waterLevelRoutes = require('./routes/waterLevelRoutes');
 
 const app = express();
 app.set("trust proxy", 1);
@@ -169,6 +170,7 @@ app.use("/api/incident-analytics", incidentAnalyticsRoutes);
 app.use("/api/evac-analytics", evacAnalyticsRoutes);
 app.use("/api/overview-analytics", overviewAnalyticsRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/water-levels", waterLevelRoutes);
 
 // --------------------
 // Hazard proxy
