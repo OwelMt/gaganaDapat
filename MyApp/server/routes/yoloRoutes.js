@@ -1,4 +1,3 @@
-You ran out of storage 20 days ago … Not enough storage. You can't save to Drive, back up to Photos or use Gmail. Get 30 GB for ₱10 for 3 months ₱49.
 const express = require("express");
 const router = express.Router();
 
