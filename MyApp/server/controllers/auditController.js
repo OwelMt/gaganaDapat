@@ -1,144 +1,20 @@
-const Notification = require("../models/Notification");
-
-const normalizeString = (value) => {
-  if (value === undefined || value === null) return "";
-  return String(value).trim();
-};
-
-const normalizeLower = (value) => normalizeString(value).toLowerCase();
+const Audit = require("../models/Audit");
+const {
+  buildAuditSearchText,
+  formatModuleLabel,
+  formatRoleLabel,
+  mapAuditDocToEvent,
+  normalizeActorRoleValue,
+  normalizeModuleValue,
+  normalizeString,
+} = require("../utils/auditEventUtils");
 
 const toNumber = (value) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const moduleLabels = {
-  relief: "Relief",
-  inventory: "Inventory",
-  donation: "Donation",
-  announcement: "Announcement",
-  incident: "Incident",
-  evacuation: "Evacuation",
-  guidelines: "Guidelines",
-  account: "Account",
-  analytics: "Analytics",
-  system: "System",
-};
-
-const VALID_MODULES = new Set(Object.keys(moduleLabels));
-const VALID_ACTOR_ROLES = new Set(["admin", "drrmo", "barangay", "system"]);
-
-const roleLabels = {
-  admin: "Admin",
-  drrmo: "DRRMO",
-  barangay: "Barangay",
-  system: "System",
-  all: "All",
-};
-
-const formatModuleLabel = (moduleName) =>
-  moduleLabels[normalizeLower(moduleName)] || normalizeString(moduleName) || "System";
-
-const formatRoleLabel = (roleName) =>
-  roleLabels[normalizeLower(roleName)] || normalizeString(roleName) || "System";
-
-const normalizeModuleValue = (moduleName) => {
-  const value = normalizeLower(moduleName);
-  return VALID_MODULES.has(value) ? value : "system";
-};
-
-const normalizeActorRoleValue = (roleName) => {
-  const value = normalizeLower(roleName);
-  return VALID_ACTOR_ROLES.has(value) ? value : "system";
-};
-
-const buildSearchText = (event) =>
-  [
-    event.title,
-    event.message,
-    event.module,
-    event.moduleLabel,
-    event.type,
-    event.actorName,
-    event.actorRole,
-    event.actorRoleLabel,
-    event.barangayName,
-    event.requestNo,
-    event.disaster,
-    event.referenceModel,
-    event.targetLabel,
-  ]
-    .map((value) => normalizeString(value))
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-const mapNotificationToAuditEvent = (notification) => {
-  const metadata =
-    notification && typeof notification.metadata === "object" && notification.metadata !== null
-      ? notification.metadata
-      : {};
-
-  const actorName =
-    normalizeString(notification.senderName) ||
-    normalizeString(metadata.username) ||
-    normalizeString(metadata.adminUsername) ||
-    "System";
-
-  const actorRole = normalizeActorRoleValue(
-    normalizeLower(notification.senderRole) ||
-      normalizeLower(metadata.senderRole) ||
-      "system"
-  );
-
-  const module = normalizeModuleValue(notification.module);
-
-  const barangayName =
-    normalizeString(metadata.barangayName) ||
-    normalizeString(notification.recipientBarangayName) ||
-    normalizeString(metadata.recipientBarangayName) ||
-    "";
-
-  const requestNo =
-    normalizeString(metadata.requestNo) ||
-    normalizeString(metadata.referenceNo) ||
-    "";
-
-  const disaster =
-    normalizeString(metadata.disaster) ||
-    normalizeString(metadata.hazard) ||
-    "";
-
-  const targetLabel =
-    barangayName ||
-    requestNo ||
-    normalizeString(notification.referenceModel) ||
-    normalizeString(notification.recipientRole) ||
-    "";
-
-  return {
-    _id: String(notification._id),
-    source: "notification",
-    module,
-    moduleLabel: formatModuleLabel(module),
-    type: normalizeLower(notification.type) || "general",
-    priority: normalizeLower(notification.priority) || "normal",
-    title: normalizeString(notification.title) || "System activity",
-    message: normalizeString(notification.message) || "No message available.",
-    actorName,
-    actorRole,
-    actorRoleLabel: formatRoleLabel(actorRole),
-    recipientRole: normalizeLower(notification.recipientRole) || "unknown",
-    recipientRoleLabel: formatRoleLabel(notification.recipientRole),
-    barangayName,
-    requestNo,
-    disaster,
-    referenceId: notification.referenceId || null,
-    referenceModel: normalizeString(notification.referenceModel),
-    targetLabel,
-    createdAt: notification.createdAt || notification.updatedAt || null,
-  };
-};
+const normalizeLower = (value) => normalizeString(value).toLowerCase();
 
 const buildSummary = (events = []) => {
   const modules = new Set();
@@ -184,38 +60,36 @@ const getAuditLogs = async (req, res) => {
     const days = Math.max(0, toNumber(req.query.days));
     const limit = Math.min(500, Math.max(25, toNumber(req.query.limit) || 250));
 
-    const notificationQuery = {};
+    const auditQuery = {};
 
     if (moduleFilter && moduleFilter !== "all") {
-      notificationQuery.module = moduleFilter;
+      auditQuery.module = normalizeModuleValue(moduleFilter);
+    }
+
+    if (actorRoleFilter && actorRoleFilter !== "all") {
+      auditQuery.actorRole = normalizeActorRoleValue(actorRoleFilter);
     }
 
     if (days > 0) {
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-      notificationQuery.createdAt = { $gte: since };
+      auditQuery.$or = [{ createdAt: { $gte: since } }, { actionAt: { $gte: since } }];
     }
 
-    const notifications = await Notification.find(notificationQuery).sort({ createdAt: -1 }).limit(limit);
+    const audits = await Audit.find(auditQuery)
+      .sort({ actionAt: -1, createdAt: -1 })
+      .limit(limit);
 
-    const normalizedEvents = notifications.map(mapNotificationToAuditEvent).sort((a, b) => {
-      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return bTime - aTime;
-    });
+    const normalizedEvents = audits
+      .map(mapAuditDocToEvent)
+      .sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
 
     const filterBaseEvents = searchQuery
-      ? normalizedEvents.filter((event) => buildSearchText(event).includes(searchQuery))
+      ? normalizedEvents.filter((event) => buildAuditSearchText(event).includes(searchQuery))
       : normalizedEvents;
-
-    let events = filterBaseEvents;
-
-    if (moduleFilter && moduleFilter !== "all") {
-      events = events.filter((event) => event.module === moduleFilter);
-    }
-
-    if (actorRoleFilter && actorRoleFilter !== "all") {
-      events = events.filter((event) => event.actorRole === actorRoleFilter);
-    }
 
     const availableModules = Array.from(
       new Set(filterBaseEvents.map((event) => event.module).filter(Boolean))
@@ -226,7 +100,7 @@ const getAuditLogs = async (req, res) => {
     ).sort();
 
     res.json({
-      events,
+      events: filterBaseEvents,
       filters: {
         modules: availableModules.map((moduleName) => ({
           value: moduleName,
@@ -237,7 +111,7 @@ const getAuditLogs = async (req, res) => {
           label: formatRoleLabel(roleName),
         })),
       },
-      summary: buildSummary(events),
+      summary: buildSummary(filterBaseEvents),
     });
   } catch (err) {
     console.error("Audit log fetch error:", err);

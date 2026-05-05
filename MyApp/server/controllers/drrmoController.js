@@ -1,9 +1,9 @@
 const ReliefRequest = require("../models/ReliefRequest");
 const ReliefRelease = require("../models/ReliefRelease");
-const Audit = require("../models/Audit");
 const FoodPackTemplate = require("../models/FoodPackTemplate");
 const InventoryItem = require("../models/InventoryItem");
 const createNotification = require("../utils/createNotification");
+const createAuditEvent = require("../utils/createAuditEvent");
 const {
   SUPPORT_TYPE_APPLIANCE,
   SUPPORT_TYPE_FOODPACKS,
@@ -617,13 +617,29 @@ const updateReliefStatus = async (req, res) => {
 
       await request.save();
 
-      await Audit.create({
+      await createAuditEvent({
+        module: "relief",
+        type: "relief_request_approved",
+        priority: "high",
+        title: "Relief request approved",
+        message: `${username} approved relief request ${request.requestNo} for ${request.barangayName}.`,
+        actorId: req.session?.userId || null,
+        actorName: username,
+        actorRole: "drrmo",
         barangayId: request.barangayId,
         barangayName: request.barangayName,
-        category: "relief_request",
-        peopleRange: buildDemandSummaryLabel(request),
+        requestNo: request.requestNo,
+        disaster: request.disaster,
         status: "approved",
-        actionBy: "drrmo",
+        referenceId: request._id,
+        referenceModel: "ReliefRequest",
+        targetLabel: request.requestNo,
+        metadata: {
+          requestType: request.requestType,
+          requestedFoodPacks: request.totals?.requestedFoodPacks || 0,
+          requestedMonetaryAmount: request.totals?.requestedMonetaryAmount || 0,
+          approvalRemarks: request.approvalRemarks || "",
+        },
       });
 
       await createNotification({
@@ -647,6 +663,7 @@ const updateReliefStatus = async (req, res) => {
 
         referenceId: request._id,
         referenceModel: "ReliefRequest",
+        audit: false,
         metadata: {
           requestNo: request.requestNo,
           barangayName: request.barangayName,
@@ -693,13 +710,29 @@ const updateReliefStatus = async (req, res) => {
 
       await request.save();
 
-      await Audit.create({
+      await createAuditEvent({
+        module: "relief",
+        type: "relief_request_rejected",
+        priority: "high",
+        title: "Relief request rejected",
+        message: `${username} rejected relief request ${request.requestNo} for ${request.barangayName}.`,
+        actorId: req.session?.userId || null,
+        actorName: username,
+        actorRole: "drrmo",
         barangayId: request.barangayId,
         barangayName: request.barangayName,
-        category: "relief_request",
-        peopleRange: buildDemandSummaryLabel(request),
+        requestNo: request.requestNo,
+        disaster: request.disaster,
         status: "rejected",
-        actionBy: "drrmo",
+        referenceId: request._id,
+        referenceModel: "ReliefRequest",
+        targetLabel: request.requestNo,
+        metadata: {
+          requestType: request.requestType,
+          requestedFoodPacks: request.totals?.requestedFoodPacks || 0,
+          requestedMonetaryAmount: request.totals?.requestedMonetaryAmount || 0,
+          rejectionReason: remarks,
+        },
       });
 
       await createNotification({
@@ -725,6 +758,7 @@ const updateReliefStatus = async (req, res) => {
 
         referenceId: request._id,
         referenceModel: "ReliefRequest",
+        audit: false,
         metadata: {
           requestNo: request.requestNo,
           barangayName: request.barangayName,

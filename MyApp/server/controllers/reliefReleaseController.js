@@ -3,9 +3,9 @@ const ReliefRequest = require("../models/ReliefRequest");
 const ReliefRelease = require("../models/ReliefRelease");
 const InventoryItem = require("../models/InventoryItem");
 const InventoryLog = require("../models/InventoryLog");
-const Audit = require("../models/Audit");
 const FoodPackTemplate = require("../models/FoodPackTemplate");
 const createNotification = require("../utils/createNotification");
+const createAuditEvent = require("../utils/createAuditEvent");
 const {
   createPdfDocument,
   drawPdfEmptyState,
@@ -1176,31 +1176,38 @@ const createReliefRelease = async (req, res) => {
 
     const refreshedRequest = await refreshRequestProgress(reliefRequest._id, session);
 
-    await Audit.create(
-      [
-        {
-          barangayId: reliefRequest.barangayId,
-          barangayName: reliefRequest.barangayName,
-          category: "relief_release",
-          peopleRange: [
-            demand.requiresFoodPacks
-              ? `${
-                  isTemplateMode ? "Released" : "Released"
-                } ${releasedFoodPackCount} food pack(s)`
-              : null,
-            demand.requiresMonetary
-              ? `Released PHP ${formatMonetaryAmount(releasedMonetaryAmount)}`
-              : null,
-            isReleasingAppliances
-              ? `Released ${releasedApplianceQuantity} appliance unit(s)`
-              : null,
-          ]
-            .filter(Boolean)
-            .join(" and "),
-          status: refreshedRequest?.status || "partially_released",
-          actionBy: "drrmo",
+    await createAuditEvent(
+      {
+        module: "relief",
+        type: "relief_goods_released",
+        priority: "high",
+        title: "Relief release prepared",
+        message: `${username} released support for request ${reliefRequest.requestNo}.`,
+        actorId: req.session?.userId || null,
+        actorName: username,
+        actorRole: "drrmo",
+        barangayId: reliefRequest.barangayId,
+        barangayName: reliefRequest.barangayName,
+        requestNo: reliefRequest.requestNo,
+        releaseNo,
+        disaster: reliefRequest.disaster,
+        status: refreshedRequest?.status || "partially_released",
+        referenceId: reliefRelease._id,
+        referenceModel: "ReliefRelease",
+        targetLabel: releaseNo,
+        metadata: {
+          requestType,
+          releaseMode: finalReleaseMode,
+          foodPacksReleased: releasedFoodPackCount,
+          releasedMonetaryAmount,
+          releasedApplianceQuantity,
+          totalItemsReleased: preparedItems.reduce(
+            (sum, item) => sum + Number(item.quantityReleased || 0),
+            0
+          ),
+          isFinalRelease: releaseIsFinal,
         },
-      ],
+      },
       { session }
     );
 
@@ -1244,6 +1251,7 @@ await createNotification({
 
   referenceId: reliefRelease._id,
   referenceModel: "ReliefRelease",
+  audit: false,
   metadata: {
     releaseNo,
     requestNo: reliefRequest.requestNo,
@@ -1549,28 +1557,31 @@ const receiveReliefRelease = async (req, res) => {
     if (relatedRequest && !relatedRequest.isArchived) {
       refreshedRequest = await refreshRequestProgress(relatedRequest._id, session);
 
-      await Audit.create(
-        [
-          {
-            barangayId: relatedRequest.barangayId,
-            barangayName: relatedRequest.barangayName,
-            category: "relief_release",
-            peopleRange: [
-              toNumber(reliefRelease.foodPacksReleased) > 0
-                ? `Received ${toNumber(reliefRelease.foodPacksReleased)} food pack(s)`
-                : null,
-              toNumber(reliefRelease.releasedMonetaryAmount) > 0
-                ? `Received PHP ${formatMonetaryAmount(
-                    reliefRelease.releasedMonetaryAmount
-                  )}`
-                : null,
-            ]
-              .filter(Boolean)
-              .join(" and ") || `Received release ${reliefRelease.releaseNo}`,
-            status: refreshedRequest?.status || "partially_released",
-            actionBy: "barangay",
+      await createAuditEvent(
+        {
+          module: "relief",
+          type: "relief_goods_received",
+          priority: "normal",
+          title: "Relief goods received",
+          message: `${relatedRequest.barangayName} confirmed receipt of release ${reliefRelease.releaseNo} for request ${relatedRequest.requestNo}.`,
+          actorId: req.session?.userId || null,
+          actorName: relatedRequest.barangayName || username,
+          actorRole: role || "barangay",
+          barangayId: relatedRequest.barangayId,
+          barangayName: relatedRequest.barangayName,
+          requestNo: relatedRequest.requestNo,
+          releaseNo: reliefRelease.releaseNo,
+          disaster: relatedRequest.disaster,
+          status: refreshedRequest?.status || "partially_released",
+          referenceId: reliefRelease._id,
+          referenceModel: "ReliefRelease",
+          targetLabel: reliefRelease.releaseNo,
+          metadata: {
+            foodPacksReleased: reliefRelease.foodPacksReleased || 0,
+            releasedMonetaryAmount: reliefRelease.releasedMonetaryAmount || 0,
+            receivedBy: username,
           },
-        ],
+        },
         { session }
       );
     }
@@ -1601,6 +1612,7 @@ await createNotification({
 
   referenceId: updatedRelease?._id || reliefRelease._id,
   referenceModel: "ReliefRelease",
+  audit: false,
   metadata: {
     releaseNo: updatedRelease?.releaseNo || reliefRelease.releaseNo,
     requestNo: updatedRequest?.requestNo || "",

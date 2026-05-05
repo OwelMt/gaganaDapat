@@ -2,9 +2,9 @@ const Barangay = require("../models/Barangay");
 const EvacPlace = require("../models/EvacPlace");
 const ReliefRequest = require("../models/ReliefRequest");
 const ReliefRelease = require("../models/ReliefRelease");
-const Audit = require("../models/Audit");
 const sendReliefRequestEmail = require("../utils/sendReliefRequestEmail");
 const createNotification = require("../utils/createNotification");
+const createAuditEvent = require("../utils/createAuditEvent");
 const {
   createPdfDocument,
   drawPdfEmptyState,
@@ -834,13 +834,31 @@ const submitReliefRequest = async (req, res) => {
       lastEditedBy: "",
     });
 
-    await Audit.create({
+    await createAuditEvent({
+      module: "relief",
+      type: "relief_request_submitted",
+      priority: "high",
+      title: "Relief request submitted",
+      message: `${barangay.barangayName} submitted relief request ${reliefRequest.requestNo} for ${reliefRequest.disaster}.`,
+      actorId: barangay._id,
+      actorName: barangay.barangayName || barangay.username,
+      actorRole: "barangay",
       barangayId: barangay._id,
       barangayName: barangay.barangayName,
-      category: "relief_request",
-      peopleRange: buildRequestDemandLabel(reliefRequest),
-      status: "requested",
-      actionBy: "barangay",
+      requestNo: reliefRequest.requestNo,
+      disaster: reliefRequest.disaster,
+      status: "pending",
+      referenceId: reliefRequest._id,
+      referenceModel: "ReliefRequest",
+      targetLabel: reliefRequest.requestNo,
+      metadata: {
+        requestType: reliefRequest.requestType,
+        requestedFoodPacks: reliefRequest.totals?.requestedFoodPacks || 0,
+        requestedMonetaryAmount:
+          reliefRequest.totals?.requestedMonetaryAmount || 0,
+        totalAffected: reliefRequest.prioritySnapshot?.totalAffected || 0,
+        vulnerableCount: reliefRequest.prioritySnapshot?.vulnerableCount || 0,
+      },
     });
 
     await createNotification({
@@ -859,6 +877,7 @@ const submitReliefRequest = async (req, res) => {
 
   referenceId: reliefRequest._id,
   referenceModel: "ReliefRequest",
+  audit: false,
   metadata: {
     requestNo: reliefRequest.requestNo,
     barangayName: barangay.barangayName,
@@ -1407,13 +1426,36 @@ const updateOwnReliefRequest = async (req, res) => {
 
     await request.save();
 
-    await Audit.create({
+    await createAuditEvent({
+      module: "relief",
+      type: isRejectedResubmission
+        ? "relief_request_resubmitted"
+        : "relief_request_updated",
+      priority: isRejectedResubmission ? "high" : "normal",
+      title: isRejectedResubmission
+        ? "Relief request resubmitted"
+        : "Relief request updated",
+      message: `${request.barangayName} ${
+        isRejectedResubmission ? "resubmitted" : "updated"
+      } relief request ${request.requestNo}.`,
+      actorId: request.barangayId,
+      actorName: request.barangayName,
+      actorRole: "barangay",
       barangayId: request.barangayId,
       barangayName: request.barangayName,
-      category: "relief_request",
-      peopleRange: buildRequestDemandLabel(request),
-      status: isRejectedResubmission ? "resubmitted" : "updated",
-      actionBy: "barangay",
+      requestNo: request.requestNo,
+      disaster: request.disaster,
+      status: isRejectedResubmission ? "pending" : request.status,
+      referenceId: request._id,
+      referenceModel: "ReliefRequest",
+      targetLabel: request.requestNo,
+      metadata: {
+        requestType: request.requestType,
+        requestedFoodPacks: request.totals?.requestedFoodPacks || 0,
+        requestedMonetaryAmount: request.totals?.requestedMonetaryAmount || 0,
+        editCount: request.editCount || 0,
+        action: isRejectedResubmission ? "resubmitted" : "updated",
+      },
     });
 
     await createNotification({
@@ -1438,6 +1480,7 @@ const updateOwnReliefRequest = async (req, res) => {
 
   referenceId: request._id,
   referenceModel: "ReliefRequest",
+  audit: false,
   metadata: {
     requestNo: request.requestNo,
     barangayName: request.barangayName,
@@ -1493,13 +1536,28 @@ const cancelOwnReliefRequest = async (req, res) => {
 
     await request.save();
 
-    await Audit.create({
+    await createAuditEvent({
+      module: "relief",
+      type: "relief_request_cancelled",
+      priority: "normal",
+      title: "Relief request cancelled",
+      message: `${request.barangayName} cancelled relief request ${request.requestNo}.`,
+      actorId: request.barangayId,
+      actorName: request.barangayName,
+      actorRole: "barangay",
       barangayId: request.barangayId,
       barangayName: request.barangayName,
-      category: "relief_request",
-      peopleRange: buildRequestDemandLabel(request),
+      requestNo: request.requestNo,
+      disaster: request.disaster,
       status: "cancelled",
-      actionBy: "barangay",
+      referenceId: request._id,
+      referenceModel: "ReliefRequest",
+      targetLabel: request.requestNo,
+      metadata: {
+        requestType: request.requestType,
+        requestedFoodPacks: request.totals?.requestedFoodPacks || 0,
+        requestedMonetaryAmount: request.totals?.requestedMonetaryAmount || 0,
+      },
     });
 
     await createNotification({
@@ -1518,6 +1576,7 @@ const cancelOwnReliefRequest = async (req, res) => {
 
   referenceId: request._id,
   referenceModel: "ReliefRequest",
+  audit: false,
   metadata: {
     requestNo: request.requestNo,
     barangayName: request.barangayName,
@@ -1617,16 +1676,29 @@ const markReliefRequestReceived = async (req, res) => {
 
     const updatedRequest = await refreshRequestProgress(request._id);
 
-    await Audit.create({
+    await createAuditEvent({
+      module: "relief",
+      type: "relief_request_received",
+      priority: "normal",
+      title: "Relief request marked received",
+      message: `${request.barangayName} marked relief request ${request.requestNo} as received.`,
+      actorId: request.barangayId,
+      actorName: request.barangayName,
+      actorRole: "barangay",
       barangayId: request.barangayId,
       barangayName: request.barangayName,
-      category: "relief_request",
-      peopleRange:
-        toNumber(updatedRequest?.fulfillment?.releasedFoodPacks) > 0
-          ? `Received ${toNumber(updatedRequest.fulfillment.releasedFoodPacks)} released food packs so far`
-          : `Received released deliveries for request ${request.requestNo}`,
+      requestNo: request.requestNo,
+      disaster: request.disaster,
       status: updatedRequest?.status || "partially_released",
-      actionBy: "barangay",
+      referenceId: request._id,
+      referenceModel: "ReliefRequest",
+      targetLabel: request.requestNo,
+      metadata: {
+        requestType: updatedRequest?.requestType || request.requestType,
+        releasedFoodPacks: updatedRequest?.fulfillment?.releasedFoodPacks || 0,
+        releasedMonetaryAmount:
+          updatedRequest?.fulfillment?.releasedMonetaryAmount || 0,
+      },
     });
 
     await createNotification({
@@ -1645,6 +1717,7 @@ const markReliefRequestReceived = async (req, res) => {
 
   referenceId: request._id,
   referenceModel: "ReliefRequest",
+  audit: false,
   metadata: {
     requestNo: request.requestNo,
     barangayName: request.barangayName,
@@ -1718,13 +1791,26 @@ const reportReliefRequestNotReceived = async (req, res) => {
 
     const updatedRequest = await refreshRequestProgress(request._id);
 
-    await Audit.create({
+    await createAuditEvent({
+      module: "relief",
+      type: "relief_request_not_received",
+      priority: "high",
+      title: "Relief delivery not received",
+      message: `${request.barangayName} reported that relief request ${request.requestNo} was not received.`,
+      actorId: request.barangayId,
+      actorName: request.barangayName,
+      actorRole: "barangay",
       barangayId: request.barangayId,
       barangayName: request.barangayName,
-      category: "relief_request",
-      peopleRange: `Reported undelivered release for request ${request.requestNo}`,
+      requestNo: request.requestNo,
+      disaster: request.disaster,
       status: updatedRequest?.status || request.status,
-      actionBy: "barangay",
+      referenceId: request._id,
+      referenceModel: "ReliefRequest",
+      targetLabel: request.requestNo,
+      metadata: {
+        requestType: request.requestType,
+      },
     });
 
     await createNotification({
@@ -1740,6 +1826,7 @@ const reportReliefRequestNotReceived = async (req, res) => {
       link: "/drrmo/relief-lists",
       referenceId: request._id,
       referenceModel: "ReliefRequest",
+      audit: false,
       metadata: {
         requestNo: request.requestNo,
         barangayName: request.barangayName,
