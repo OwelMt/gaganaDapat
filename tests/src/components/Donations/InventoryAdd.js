@@ -1,13 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
+import * as XLSX from "xlsx";
 import "../css/InventoryAdd.css";
 import DashboardShell from "../layout/DashboardShell";
 import {
+  FaBlender,
   FaArchive,
   FaBell,
   FaBoxes,
   FaCheck,
+  FaClipboardCheck,
   FaExclamationTriangle,
   FaFilePdf,
   FaFileInvoiceDollar,
@@ -22,6 +26,15 @@ import {
   FaUndo,
   FaUpload,
 } from "react-icons/fa";
+import {
+  INVENTORY_IMPORT_HEADER_ALIASES,
+  getInventoryImportModeConfig,
+  validateInventoryImportRow,
+} from "./inventoryImportUtils";
+import {
+  mapSpreadsheetRow,
+  parseSafeNumber,
+} from "../shared/spreadsheetImportUtils";
 
 const BASE_URL =
   process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
@@ -29,10 +42,37 @@ const BASE_URL =
 const CUSTOM_CATEGORY_VALUE = "__custom__";
 const TOAST_LIMIT = 3;
 const TOAST_DURATION = 10000;
+const DEFAULT_NON_EXPIRING_GOODS_CATEGORIES = [
+  "clothes",
+  "shoes/footwear",
+  "blankets",
+  "mats",
+  "towels",
+  "bedding",
+  "mosquito nets",
+];
+const DEFAULT_APPLIANCE_CATEGORIES = [
+  "kitchen appliances",
+  "cleaning appliances",
+  "cooling appliances",
+  "lighting equipment",
+  "communication devices",
+  "power equipment",
+  "emergency equipment",
+];
 
-const APPLIANCE_EXPIRY_EXEMPT_KEYWORDS = ["appliance", "appliances", "equipment"];
+const extractReferenceFromDescription = (description = "") => {
+  const match = String(description || "").match(/Reference Number:\s*(.+)$/im);
+  return match ? String(match[1] || "").trim() : "";
+};
+
+const stripReferenceFromDescription = (description = "") =>
+  String(description || "")
+    .replace(/\n?\s*Reference Number:\s*.+$/im, "")
+    .trim();
 
 const InventoryAdd = () => {
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [archivedItems, setArchivedItems] = useState([]);
   const [proofFiles, setProofFiles] = useState([]);
@@ -43,11 +83,17 @@ const InventoryAdd = () => {
   const [donationType, setDonationType] = useState("goods");
   const [editingItemId, setEditingItemId] = useState("");
   const fileInputRef = useRef(null);
+  const importFileInputRef = useRef(null);
   const toastTimersRef = useRef({});
   const [confirmationDialog, setConfirmationDialog] = useState(null);
-
-  const [categoryOptions, setCategoryOptions] = useState([]);
-  const [categoryLoading, setCategoryLoading] = useState(false);
+  const [importingFile, setImportingFile] = useState(false);
+  const [importInfo, setImportInfo] = useState({
+    hasImported: false,
+    fileName: "",
+    importedCount: 0,
+    skippedCount: 0,
+    issues: [],
+  });
 
   const [toasts, setToasts] = useState([]);
 
@@ -86,10 +132,14 @@ const InventoryAdd = () => {
     name: "",
     category: "",
     customCategory: "",
+    requiresExpiration: "required",
     quantity: "",
     unit: "",
     amount: "",
+    referenceNumber: "",
     expirationDate: "",
+    condition: "brand_new",
+    usageDuration: "",
     description: "",
     sourceType: "external",
     sourceName: ""
@@ -152,16 +202,18 @@ const InventoryAdd = () => {
     return String(value || "").trim().toLowerCase();
   }, []);
 
-  const isFoodRelatedCategory = useCallback((category) => {
-  const value = normalizeCategoryValue(category);
-  if (!value) return false;
+  const isGoodsCategoryExpiryRequired = useCallback(
+    (category, explicitRule) => {
+      const value = normalizeCategoryValue(category);
+      if (!value) return false;
 
-  const isApplianceLike = APPLIANCE_EXPIRY_EXEMPT_KEYWORDS.some((keyword) =>
-    value.includes(keyword)
+      if (explicitRule === "required") return true;
+      if (explicitRule === "not_required") return false;
+
+      return !DEFAULT_NON_EXPIRING_GOODS_CATEGORIES.includes(value);
+    },
+    [normalizeCategoryValue]
   );
-
-  return !isApplianceLike;
-}, [normalizeCategoryValue]);
 
   const getExpiryStatus = (item) => {
     if (!item?.expirationDate) return "none";
@@ -212,24 +264,6 @@ const InventoryAdd = () => {
     }
   }, [pushToast]);
 
-  const fetchInventoryCategories = useCallback(async () => {
-    try {
-      setCategoryLoading(true);
-      const res = await axios.get(`${BASE_URL}/api/inventory/categories`, {
-        withCredentials: true
-      });
-
-      const data = Array.isArray(res.data) ? res.data : [];
-      setCategoryOptions(data);
-    } catch (err) {
-      console.error("Error fetching inventory categories:", err);
-      setCategoryOptions([]);
-      pushToast("Failed to fetch inventory categories.", "error");
-    } finally {
-      setCategoryLoading(false);
-    }
-  }, [pushToast]);
-
   const fetchArchivedInventory = useCallback(async () => {
     try {
       const res = await axios.get(`${BASE_URL}/api/inventory/archived`, {
@@ -245,8 +279,7 @@ const InventoryAdd = () => {
 
   useEffect(() => {
     fetchInventory();
-    fetchInventoryCategories();
-  }, [fetchInventory, fetchInventoryCategories]);
+  }, [fetchInventory]);
 
   useEffect(() => {
     if (showArchived) {
@@ -260,10 +293,14 @@ const InventoryAdd = () => {
       name: "",
       category: "",
       customCategory: "",
+      requiresExpiration: "required",
       quantity: "",
       unit: "",
       amount: "",
+      referenceNumber: "",
       expirationDate: "",
+      condition: "brand_new",
+      usageDuration: "",
       description: "",
       sourceType: "external",
       sourceName: ""
@@ -271,8 +308,18 @@ const InventoryAdd = () => {
     setProofFiles([]);
     setFormErrors({});
     setEditingItemId("");
+    setImportInfo({
+      hasImported: false,
+      fileName: "",
+      importedCount: 0,
+      skippedCount: 0,
+      issues: [],
+    });
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
+    }
+    if (importFileInputRef.current) {
+      importFileInputRef.current.value = "";
     }
   };
 
@@ -284,24 +331,35 @@ const InventoryAdd = () => {
       name: "",
       category: "",
       customCategory: "",
+      requiresExpiration: "required",
       quantity: "",
       unit: "",
       amount: "",
+      referenceNumber: "",
       expirationDate: "",
+      condition: "brand_new",
+      usageDuration: "",
       description: "",
       sourceType: "external",
       sourceName: ""
     });
     setProofFiles([]);
     setFormErrors({});
+    setImportInfo({
+      hasImported: false,
+      fileName: "",
+      importedCount: 0,
+      skippedCount: 0,
+      issues: [],
+    });
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-
-    if (donationType === "goods") {
-      fetchInventoryCategories();
+    if (importFileInputRef.current) {
+      importFileInputRef.current.value = "";
     }
-  }, [donationType, editingItemId, fetchInventoryCategories]);
+
+    }, [donationType, editingItemId]);
 
   const formatDate = (date) => {
     if (!date) return "-";
@@ -336,36 +394,135 @@ const InventoryAdd = () => {
 
   const getFormTitle = () => {
     if (editingItemId) {
-      return donationType === "goods"
-        ? "Edit Goods Donation"
-        : "Edit Monetary Donation";
+      if (donationType === "goods") return "Edit Goods Donation";
+      if (donationType === "appliance") return "Edit Appliance Donation";
+      return "Edit Monetary Donation";
     }
 
-    return donationType === "goods"
-      ? "Add Goods Donation"
-      : "Add Monetary Donation";
+    if (donationType === "goods") return "Add Goods Donation";
+    if (donationType === "appliance") return "Add Appliance Donation";
+    return "Add Monetary Donation";
   };
 
   const getPrimaryFieldLabel = () => {
-    return donationType === "goods" ? "Item Name" : "Donor / Source Name";
+    if (donationType === "goods") return "Item Name";
+    if (donationType === "appliance") return "Appliance Name";
+    return "Donor Name";
   };
 
   const getPrimaryFieldPlaceholder = () => {
-    return donationType === "goods"
-      ? "e.g. Rice, Canned Goods, Hygiene Kit"
-      : "e.g. Juan Dela Cruz, ABC Foundation";
+    if (donationType === "goods") {
+      return "e.g. Rice, Canned Goods, Hygiene Kit";
+    }
+    if (donationType === "appliance") {
+      return "e.g. Electric Fan, Generator, Radio";
+    }
+    return "e.g. Juan Dela Cruz, ABC Foundation";
   };
 
   const getSourceNamePlaceholder = () => {
-    return donationType === "goods"
-      ? "e.g. NGO, Barangay Office, Private Donor"
-      : "e.g. Municipal Office, Foundation, Private Sponsor";
+    if (donationType === "goods" || donationType === "appliance") {
+      return "e.g. NGO, Barangay Office, Private Donor";
+    }
+    return "e.g. Municipal Office, Foundation, Private Sponsor";
   };
 
   const getProofLabel = () => {
-    return donationType === "goods"
-      ? "Upload receipts, delivery photos, acknowledgement slips, or intake proof."
-      : "Upload receipts, deposit slips, acknowledgement forms, or proof of transaction.";
+    if (donationType === "monetary") {
+      return "Upload receipts, deposit slips, acknowledgement forms, or proof of transaction.";
+    }
+    if (donationType === "appliance") {
+      return "Upload receipts, turnover forms, condition photos, or appliance intake proof.";
+    }
+    return "Upload receipts, delivery photos, acknowledgement slips, or intake proof.";
+  };
+
+  const getImportButtonLabel = () => {
+    if (donationType === "monetary") return "Import Monetary Excel / CSV";
+    if (donationType === "appliance") return "Import Appliance Excel / CSV";
+    return "Import Goods Excel / CSV";
+  };
+
+  const buildInventoryImportSummaryText = (summary) => {
+    if (!summary?.hasImported) return "";
+    return `${summary.importedCount} row${summary.importedCount === 1 ? "" : "s"} imported - ${summary.skippedCount} skipped`;
+  };
+
+  const appendInventoryFormData = (formData, type, payload) => {
+    formData.append("type", type);
+    formData.append("name", String(payload.name || "").trim());
+    formData.append("description", String(payload.description || "").trim());
+    formData.append("sourceType", payload.sourceType || "external");
+    formData.append("sourceName", String(payload.sourceName || "").trim());
+
+    if (type === "goods") {
+      formData.append("category", String(payload.category || "").trim().toLowerCase());
+      formData.append("requiresExpiration", payload.requiresExpiration ? "true" : "false");
+      formData.append("quantity", String(payload.quantity || ""));
+      formData.append("unit", String(payload.unit || "").trim());
+      formData.append("expirationDate", payload.expirationDate || "");
+      return;
+    }
+
+    if (type === "appliance") {
+      formData.append("category", String(payload.category || "").trim().toLowerCase());
+      formData.append("quantity", String(payload.quantity || ""));
+      formData.append("condition", payload.condition || "brand_new");
+      formData.append("usageDuration", String(payload.usageDuration || "").trim());
+      return;
+    }
+
+    formData.append("amount", String(payload.amount || ""));
+    formData.append("referenceNumber", String(payload.referenceNumber || "").trim());
+    formData.set(
+      "description",
+      [
+        String(payload.description || "").trim(),
+        payload.referenceNumber
+          ? `Reference Number: ${String(payload.referenceNumber || "").trim()}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    );
+  };
+
+  const buildInventoryImportPayload = (mappedRow, mode) => {
+    if (mode === "monetary") {
+      return {
+        name: String(mappedRow.itemName || "").trim(),
+        amount: parseSafeNumber(mappedRow.amount),
+        referenceNumber: String(mappedRow.referenceNumber || "").trim(),
+        description: String(mappedRow.description || "").trim(),
+        sourceType: String(mappedRow.sourceType || "external").trim().toLowerCase() || "external",
+        sourceName: String(mappedRow.itemName || "").trim(),
+      };
+    }
+
+    if (mode === "appliance") {
+      return {
+        name: String(mappedRow.itemName || "").trim(),
+        category: String(mappedRow.category || mappedRow.customCategory || "").trim(),
+        quantity: parseSafeNumber(mappedRow.quantity),
+        condition: String(mappedRow.condition || "brand_new").trim().toLowerCase() || "brand_new",
+        usageDuration: String(mappedRow.usageDuration || "").trim(),
+        description: String(mappedRow.description || "").trim(),
+        sourceType: String(mappedRow.sourceType || "external").trim().toLowerCase() || "external",
+        sourceName: String(mappedRow.sourceName || "").trim(),
+      };
+    }
+
+    return {
+      name: String(mappedRow.itemName || "").trim(),
+      category: String(mappedRow.category || mappedRow.customCategory || "").trim(),
+      quantity: parseSafeNumber(mappedRow.quantity),
+      unit: String(mappedRow.unit || "").trim(),
+      expirationDate: String(mappedRow.expirationDate || "").trim(),
+      requiresExpiration: Boolean(String(mappedRow.expirationDate || "").trim()),
+      description: String(mappedRow.description || "").trim(),
+      sourceType: String(mappedRow.sourceType || "external").trim().toLowerCase() || "external",
+      sourceName: String(mappedRow.sourceName || "").trim(),
+    };
   };
 
   const getNumberInputValue = (value) => {
@@ -381,8 +538,11 @@ const InventoryAdd = () => {
 
   const isExpiryRequired = useMemo(() => {
     if (donationType !== "goods") return false;
-    return isFoodRelatedCategory(getFinalGoodsCategory());
-  }, [donationType, getFinalGoodsCategory, isFoodRelatedCategory]);
+    return isGoodsCategoryExpiryRequired(
+      getFinalGoodsCategory(),
+      form.category === CUSTOM_CATEGORY_VALUE ? form.requiresExpiration : undefined
+    );
+  }, [donationType, getFinalGoodsCategory, isGoodsCategoryExpiryRequired, form.category, form.requiresExpiration]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -400,7 +560,16 @@ const InventoryAdd = () => {
       setForm((prev) => ({
         ...prev,
         category: value,
-        customCategory: value === CUSTOM_CATEGORY_VALUE ? prev.customCategory : ""
+        customCategory: value === CUSTOM_CATEGORY_VALUE ? prev.customCategory : "",
+        requiresExpiration:
+          value === CUSTOM_CATEGORY_VALUE ? prev.requiresExpiration : "required",
+        expirationDate: value === CUSTOM_CATEGORY_VALUE ? prev.expirationDate : ""
+      }));
+    } else if (name === "condition") {
+      setForm((prev) => ({
+        ...prev,
+        condition: value,
+        usageDuration: value === "used_item" ? prev.usageDuration : ""
       }));
     } else {
       setForm((prev) => ({ ...prev, [name]: value }));
@@ -411,13 +580,101 @@ const InventoryAdd = () => {
       [name]: "",
       category: "",
       customCategory: "",
-      expirationDate: ""
+      expirationDate: "",
+      usageDuration: "",
+      condition: ""
     }));
   };
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || []);
     setProofFiles(files);
+  };
+
+  const handleImportFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file || editingItemId) return;
+
+    setImportingFile(true);
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: "array" });
+      const firstSheetName = workbook.SheetNames?.[0];
+
+      if (!firstSheetName) {
+        throw new Error("The selected file does not contain a worksheet.");
+      }
+
+      const sheet = workbook.Sheets[firstSheetName];
+      const rawRows = XLSX.utils.sheet_to_json(sheet, {
+        defval: "",
+        raw: false,
+      });
+
+      if (!Array.isArray(rawRows) || rawRows.length === 0) {
+        throw new Error("The selected file does not contain any data rows.");
+      }
+
+      const config = getInventoryImportModeConfig(donationType);
+      const validPayloads = [];
+      const issues = [];
+
+      rawRows.forEach((rawRow, index) => {
+        const mappedRow = mapSpreadsheetRow(rawRow, INVENTORY_IMPORT_HEADER_ALIASES);
+        const validation = validateInventoryImportRow(mappedRow, config);
+
+        if (!validation.isValid) {
+          issues.push(`Row ${index + 2}: ${validation.issue}`);
+          return;
+        }
+
+        validPayloads.push(buildInventoryImportPayload(mappedRow, config.mode));
+      });
+
+      if (!validPayloads.length) {
+        throw new Error("No valid rows matched the active import tab.");
+      }
+
+      for (const payload of validPayloads) {
+        const formData = new FormData();
+        appendInventoryFormData(formData, config.mode, payload);
+        await axios.post(`${BASE_URL}/api/inventory`, formData, {
+          withCredentials: true,
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+      }
+
+      const nextImportInfo = {
+        hasImported: true,
+        fileName: file.name,
+        importedCount: validPayloads.length,
+        skippedCount: issues.length,
+        issues,
+      };
+
+      setImportInfo(nextImportInfo);
+      pushToast(
+        `${validPayloads.length} ${config.mode} row${validPayloads.length === 1 ? "" : "s"} imported successfully.`,
+        "success"
+      );
+      fetchInventory();
+    } catch (err) {
+      console.error("Error importing inventory file:", err);
+      setImportInfo({
+        hasImported: false,
+        fileName: "",
+        importedCount: 0,
+        skippedCount: 0,
+        issues: [],
+      });
+      pushToast(err?.message || "Failed to import inventory file.", "error");
+    } finally {
+      setImportingFile(false);
+      if (event.target) {
+        event.target.value = "";
+      }
+    }
   };
 
   const validateForm = () => {
@@ -427,6 +684,8 @@ const InventoryAdd = () => {
       errors.name =
         donationType === "goods"
           ? "Item name is required."
+          : donationType === "appliance"
+          ? "Appliance name is required."
           : "Donor name is required.";
     }
 
@@ -459,15 +718,46 @@ const InventoryAdd = () => {
         }
       }
 
-      if (isFoodRelatedCategory(finalCategory) && !form.expirationDate) {
+      if (isExpiryRequired && !form.expirationDate) {
         errors.expirationDate =
-          "Expiration date is required for food-related goods.";
+          "Expiration date is required for this goods category.";
+      }
+    }
+
+    if (donationType === "appliance") {
+      const finalCategory = getFinalGoodsCategory();
+
+      if (!finalCategory) {
+        errors.category = "Category is required.";
+      }
+
+      if (
+        form.category === CUSTOM_CATEGORY_VALUE &&
+        !normalizeCategoryValue(form.customCategory)
+      ) {
+        errors.customCategory = "Please enter a custom category.";
+      }
+
+      if (form.quantity === "" || Number(form.quantity) <= 0) {
+        errors.quantity = "Quantity must be greater than 0.";
+      }
+
+      if (!form.condition) {
+        errors.condition = "Condition is required.";
+      }
+
+      if (form.condition === "used_item" && !form.usageDuration.trim()) {
+        errors.usageDuration = "Usage duration is required for used appliances.";
       }
     }
 
     if (donationType === "monetary") {
       if (form.amount === "" || Number(form.amount) <= 0) {
         errors.amount = "Amount must be greater than 0.";
+      }
+
+      if (!form.referenceNumber.trim()) {
+        errors.referenceNumber = "Reference number is required.";
       }
     }
 
@@ -491,10 +781,18 @@ const InventoryAdd = () => {
     setForm({
       type: itemType,
       name: item.name || "",
-      category: itemType === "goods" ? item.category || "" : "",
+      category:
+        itemType === "goods" || itemType === "appliance"
+          ? item.category || ""
+          : "",
       customCategory: "",
+      requiresExpiration:
+        itemType === "goods" && item.requiresExpiration === false
+          ? "not_required"
+          : "required",
       quantity:
-        itemType === "goods" && item.quantity !== undefined
+        (itemType === "goods" || itemType === "appliance") &&
+        item.quantity !== undefined
           ? String(item.quantity)
           : "",
       unit: itemType === "goods" ? item.unit || "" : "",
@@ -502,11 +800,21 @@ const InventoryAdd = () => {
         itemType === "monetary" && item.amount !== undefined
           ? String(item.amount)
           : "",
+      referenceNumber:
+        itemType === "monetary"
+          ? item.referenceNumber || extractReferenceFromDescription(item.description)
+          : "",
       expirationDate:
         itemType === "goods" && item.expirationDate
           ? new Date(item.expirationDate).toISOString().slice(0, 10)
           : "",
-      description: item.description || "",
+      condition: itemType === "appliance" ? item.condition || "brand_new" : "brand_new",
+      usageDuration:
+        itemType === "appliance" ? item.usageDuration || "" : "",
+      description:
+        itemType === "monetary"
+          ? stripReferenceFromDescription(item.description)
+          : item.description || "",
       sourceType: item.sourceType || "external",
       sourceName: item.sourceName || ""
     });
@@ -537,15 +845,38 @@ const InventoryAdd = () => {
 
       if (donationType === "goods") {
         formData.append("category", getFinalGoodsCategory());
+        formData.append(
+          "requiresExpiration",
+          isExpiryRequired ? "true" : "false"
+        );
         if (form.quantity !== "") {
           formData.append("quantity", form.quantity);
         }
         formData.append("unit", form.unit.trim());
         formData.append("expirationDate", form.expirationDate || "");
+      } else if (donationType === "appliance") {
+        formData.append("category", getFinalGoodsCategory());
+        if (form.quantity !== "") {
+          formData.append("quantity", form.quantity);
+        }
+        formData.append("condition", form.condition);
+        formData.append("usageDuration", form.condition === "used_item" ? form.usageDuration.trim() : "");
       } else {
         if (form.amount !== "") {
           formData.append("amount", form.amount);
         }
+        formData.append("referenceNumber", form.referenceNumber.trim());
+        formData.set(
+          "description",
+          [
+            stripReferenceFromDescription(form.description),
+            form.referenceNumber.trim()
+              ? `Reference Number: ${form.referenceNumber.trim()}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n")
+        );
       }
 
       for (let i = 0; i < proofFiles.length; i++) {
@@ -568,15 +899,16 @@ const InventoryAdd = () => {
         pushToast(
           donationType === "goods"
             ? "Goods donation added successfully."
+            : donationType === "appliance"
+            ? "Appliance donation added successfully."
             : "Monetary donation added successfully.",
           "success"
         );
       }
 
       resetForm();
-      setShowForm(false);
-      fetchInventory();
-      fetchInventoryCategories();
+        setShowForm(false);
+        fetchInventory();
     } catch (err) {
       console.error("Error saving inventory:", err);
       pushToast(
@@ -601,9 +933,8 @@ const InventoryAdd = () => {
             withCredentials: true
           });
 
-          pushToast("Inventory item archived successfully.", "success");
-          fetchInventory();
-          fetchInventoryCategories();
+            pushToast("Inventory item archived successfully.", "success");
+            fetchInventory();
         } catch (err) {
           console.error("Error archiving item:", err);
           pushToast(
@@ -631,9 +962,8 @@ const InventoryAdd = () => {
           );
 
           pushToast("Inventory item unarchived successfully.", "success");
-          fetchArchivedInventory();
-          fetchInventory();
-          fetchInventoryCategories();
+            fetchArchivedInventory();
+            fetchInventory();
         } catch (err) {
           console.error("Error unarchiving item:", err);
           pushToast(
@@ -658,9 +988,8 @@ const InventoryAdd = () => {
             withCredentials: true
           });
 
-          pushToast("Inventory item deleted permanently.", "success");
-          fetchArchivedInventory();
-          fetchInventoryCategories();
+            pushToast("Inventory item deleted permanently.", "success");
+            fetchArchivedInventory();
         } catch (err) {
           console.error("Error deleting archived item:", err);
           pushToast(
@@ -713,6 +1042,8 @@ const InventoryAdd = () => {
         reportType = "archived";
       } else if (donationType === "monetary") {
         reportType = "monetary_donations";
+      } else if (donationType === "appliance") {
+        reportType = "appliance_donations";
       } else {
         reportType = "goods_donations";
       }
@@ -736,23 +1067,36 @@ const InventoryAdd = () => {
     [items]
   );
 
+  const applianceItems = useMemo(
+    () => items.filter((item) => normalizeType(item.type) === "appliance"),
+    [items]
+  );
+
   const currentTypeItems = useMemo(() => {
     const sourceItems = showArchived ? archivedItems : items;
     return sourceItems.filter((item) => normalizeType(item.type) === donationType);
   }, [items, archivedItems, donationType, showArchived]);
 
+  const allTypeItems = useMemo(() => {
+    return [...items, ...archivedItems].filter(
+      (item) => normalizeType(item.type) === donationType
+    );
+  }, [items, archivedItems, donationType]);
+
   const categories = useMemo(() => {
-    if (donationType !== "goods") return [];
-    const unique = [
-      ...new Set(currentTypeItems.map((item) => item.category).filter(Boolean))
-    ];
+    if (donationType === "monetary") return [];
+    const unique = [...new Set(allTypeItems.map((item) => item.category).filter(Boolean))];
     return unique.sort((a, b) => a.localeCompare(b));
-  }, [currentTypeItems, donationType]);
+  }, [allTypeItems, donationType]);
 
   const selectableCategoryOptions = useMemo(() => {
-    const merged = [...new Set([...categoryOptions, ...categories].filter(Boolean))];
+    const defaults =
+      donationType === "appliance"
+        ? DEFAULT_APPLIANCE_CATEGORIES
+        : DEFAULT_NON_EXPIRING_GOODS_CATEGORIES;
+    const merged = [...new Set([...defaults, ...categories].filter(Boolean))];
     return merged.sort((a, b) => a.localeCompare(b));
-  }, [categoryOptions, categories]);
+  }, [categories, donationType]);
 
   const addedByOptions = useMemo(() => {
     const unique = [
@@ -765,6 +1109,7 @@ const InventoryAdd = () => {
     const totalItems = items.length;
     const totalGoodsEntries = goodsItems.length;
     const totalMonetaryEntries = monetaryItems.length;
+    const totalApplianceEntries = applianceItems.length;
 
     const totalGoodsQuantity = goodsItems.reduce((sum, item) => {
       const qty = Number(item.quantity);
@@ -776,6 +1121,11 @@ const InventoryAdd = () => {
       return sum + (Number.isNaN(amount) ? 0 : amount);
     }, 0);
 
+    const totalApplianceQuantity = applianceItems.reduce((sum, item) => {
+      const qty = Number(item.quantity);
+      return sum + (Number.isNaN(qty) ? 0 : qty);
+    }, 0);
+
     const recentDonationsCount = items.filter((item) =>
       isRecentDonation(item.createdAt)
     ).length;
@@ -784,11 +1134,13 @@ const InventoryAdd = () => {
       totalItems,
       totalGoodsEntries,
       totalMonetaryEntries,
+      totalApplianceEntries,
       totalGoodsQuantity,
       totalMonetaryAmount,
+      totalApplianceQuantity,
       recentDonationsCount
     };
-  }, [items, goodsItems, monetaryItems]);
+  }, [items, goodsItems, monetaryItems, applianceItems]);
 
   const filteredItems = useMemo(() => {
     let filtered = [...currentTypeItems];
@@ -812,7 +1164,7 @@ const InventoryAdd = () => {
       );
     }
 
-    if (donationType === "goods" && filters.category) {
+    if ((donationType === "goods" || donationType === "appliance") && filters.category) {
       filtered = filtered.filter(
         (item) =>
           (item.category || "").toLowerCase() === filters.category.toLowerCase()
@@ -910,7 +1262,8 @@ const InventoryAdd = () => {
     return sortConfig.direction === "asc" ? "Asc" : "Desc";
   };
 
-  const tableColSpan = donationType === "goods" ? 11 : 8;
+  const tableColSpan =
+    donationType === "goods" ? 11 : donationType === "appliance" ? 10 : 8;
 
   return (
     <DashboardShell>
@@ -1035,7 +1388,13 @@ const InventoryAdd = () => {
                   }}
                 >
                   <FaPlus className="btn-icon" />
-                  Add {donationType === "goods" ? "Goods" : "Monetary"} Donation
+                  Add{" "}
+                  {donationType === "goods"
+                    ? "Goods"
+                    : donationType === "appliance"
+                    ? "Appliance"
+                    : "Monetary"}{" "}
+                  Donation
                 </button>
               </div>
             )}
@@ -1073,6 +1432,17 @@ const InventoryAdd = () => {
                   </span>
                 </div>
 
+                <div className="summary-card warning">
+                  <div className="summary-card-top">
+                    <p className="summary-label">Appliance Donations</p>
+                    <span className="summary-icon"><FaBlender /></span>
+                  </div>
+                  <h3 className="summary-value">{summary.totalApplianceEntries}</h3>
+                  <span className="summary-note">
+                    Total quantity: {summary.totalApplianceQuantity}
+                  </span>
+                </div>
+
                 <div className="summary-card accent">
                   <div className="summary-card-top">
                     <p className="summary-label">Recent Donations</p>
@@ -1093,24 +1463,69 @@ const InventoryAdd = () => {
                     <h2 className="section-title">{getFormTitle()}</h2>
                     <div className="donation-form-meta">
                       <span>
-                        {donationType === "goods" ? "Goods intake" : "Financial intake"}
+                        {donationType === "goods"
+                          ? "Goods intake"
+                          : donationType === "appliance"
+                          ? "Appliance intake"
+                          : "Financial intake"}
                       </span>
                       <span>{editingItemId ? "Editing record" : "New record"}</span>
                     </div>
                   </div>
-
-                  <button
-                    type="button"
-                    className="btn btn-secondary modal-back-btn"
-                    onClick={() => {
-                      setShowForm(false);
-                      resetForm();
-                    }}
-                  >
-                    <FaUndo className="btn-icon" />
-                    Back
-                  </button>
+                  <div className="donation-modal-actions-head">
+                    {!editingItemId ? (
+                      <>
+                        <input
+                          ref={importFileInputRef}
+                          type="file"
+                          accept=".xlsx,.xls,.csv"
+                          onChange={handleImportFile}
+                          style={{ display: "none" }}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => importFileInputRef.current?.click()}
+                          disabled={importingFile}
+                        >
+                          <FaUpload className="btn-icon" />
+                          {importingFile ? "Importing..." : getImportButtonLabel()}
+                        </button>
+                      </>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => navigate("/drrmo/donations/queue")}
+                    >
+                      <FaClipboardCheck className="btn-icon" />
+                      Review Mobile Donations
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary modal-back-btn"
+                      onClick={() => {
+                        setShowForm(false);
+                        resetForm();
+                      }}
+                    >
+                      <FaUndo className="btn-icon" />
+                      Back
+                    </button>
+                  </div>
                 </div>
+
+                {importInfo.hasImported ? (
+                  <div className="donation-import-strip">
+                    <div className="donation-import-strip-main">
+                      <strong>{importInfo.fileName || "Imported file"}</strong>
+                      <span>{buildInventoryImportSummaryText(importInfo)}</span>
+                    </div>
+                    {importInfo.issues?.length ? (
+                      <small>{importInfo.issues.length} issue(s) skipped</small>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {!editingItemId && (
                   <div className="donation-type-tabs">
@@ -1123,6 +1538,16 @@ const InventoryAdd = () => {
                     >
                       <FaBoxes className="btn-icon" />
                       Goods
+                    </button>
+                    <button
+                      type="button"
+                      className={`donation-type-tab ${
+                        donationType === "appliance" ? "active" : ""
+                      }`}
+                      onClick={() => setDonationType("appliance")}
+                    >
+                      <FaBlender className="btn-icon" />
+                      Appliances
                     </button>
                     <button
                       type="button"
@@ -1141,7 +1566,13 @@ const InventoryAdd = () => {
                   <div className="donation-form-section">
                     <div className="donation-section-heading">
                       <span className="donation-section-icon">
-                        {donationType === "goods" ? <FaBoxes /> : <FaMoneyBillWave />}
+                        {donationType === "goods" ? (
+                          <FaBoxes />
+                        ) : donationType === "appliance" ? (
+                          <FaBlender />
+                        ) : (
+                          <FaMoneyBillWave />
+                        )}
                       </span>
                       <h3>Donation Details</h3>
                       <p>Main information for this donation record.</p>
@@ -1150,7 +1581,7 @@ const InventoryAdd = () => {
                     <div className="donation-form-grid">
                       <div
                         className={`donation-form-group ${
-                          donationType === "goods" ? "span-2" : ""
+                          donationType !== "monetary" ? "span-2" : ""
                         }`}
                       >
                         <label htmlFor="name">
@@ -1170,27 +1601,22 @@ const InventoryAdd = () => {
                         )}
                       </div>
 
-                      {donationType === "goods" && (
+                      {(donationType === "goods" || donationType === "appliance") && (
                         <>
                           <div className="donation-form-group">
                             <label htmlFor="category">
                               Category <span>*</span>
                             </label>
-                            <select
-                              id="category"
-                              name="category"
-                              value={form.category}
-                              onChange={handleChange}
-                              className={`input ${
-                                formErrors.category ? "input-error" : ""
-                              }`}
-                              disabled={categoryLoading}
-                            >
-                              <option value="">
-                                {categoryLoading
-                                  ? "Loading categories..."
-                                  : "Select category"}
-                              </option>
+                              <select
+                                id="category"
+                                name="category"
+                                value={form.category}
+                                onChange={handleChange}
+                                className={`input ${
+                                  formErrors.category ? "input-error" : ""
+                                }`}
+                              >
+                                <option value="">Select category</option>
 
                               {selectableCategoryOptions.map((category) => (
                                 <option key={category} value={category}>
@@ -1231,6 +1657,29 @@ const InventoryAdd = () => {
                             </div>
                           )}
 
+                          {donationType === "goods" &&
+                          form.category === CUSTOM_CATEGORY_VALUE ? (
+                            <div className="donation-form-group">
+                              <label htmlFor="requiresExpiration">
+                                Expiry Rule <span>*</span>
+                              </label>
+                              <select
+                                id="requiresExpiration"
+                                name="requiresExpiration"
+                                value={form.requiresExpiration}
+                                onChange={handleChange}
+                                className="input"
+                              >
+                                <option value="required">
+                                  Requires expiration date
+                                </option>
+                                <option value="not_required">
+                                  Does not require expiration date
+                                </option>
+                              </select>
+                            </div>
+                          ) : null}
+
                           <div className="donation-form-group">
                             <label htmlFor="quantity">
                               Quantity <span>*</span>
@@ -1255,69 +1704,149 @@ const InventoryAdd = () => {
                             )}
                           </div>
 
-                          <div className="donation-form-group">
-                            <label htmlFor="unit">
-                              Unit <span>*</span>
-                            </label>
-                            <input
-                              id="unit"
-                              type="text"
-                              name="unit"
-                              placeholder="e.g. sacks, boxes, packs, pcs"
-                              value={form.unit}
-                              onChange={handleChange}
-                              className={`input ${formErrors.unit ? "input-error" : ""}`}
-                            />
-                            {formErrors.unit && (
-                              <span className="error-text">{formErrors.unit}</span>
-                            )}
-                          </div>
+                          {donationType === "goods" ? (
+                            <>
+                              <div className="donation-form-group">
+                                <label htmlFor="unit">
+                                  Unit <span>*</span>
+                                </label>
+                                <input
+                                  id="unit"
+                                  type="text"
+                                  name="unit"
+                                  placeholder="e.g. sacks, boxes, packs, pcs"
+                                  value={form.unit}
+                                  onChange={handleChange}
+                                  className={`input ${
+                                    formErrors.unit ? "input-error" : ""
+                                  }`}
+                                />
+                                {formErrors.unit && (
+                                  <span className="error-text">{formErrors.unit}</span>
+                                )}
+                              </div>
 
-                          <div className="donation-form-group">
-                            <label htmlFor="expirationDate">
-                              Expiration Date {isExpiryRequired ? <span>*</span> : null}
-                            </label>
-                            <input
-                              id="expirationDate"
-                              type="date"
-                              name="expirationDate"
-                              value={form.expirationDate}
-                              onChange={handleChange}
-                              className={`input ${
-                                formErrors.expirationDate ? "input-error" : ""
-                              }`}
-                            />
-                            {formErrors.expirationDate && (
-                              <span className="error-text">
-                                {formErrors.expirationDate}
-                              </span>
-                            )}
-                          </div>
+                              <div className="donation-form-group">
+                                <label htmlFor="expirationDate">
+                                  Expiration Date{" "}
+                                  {isExpiryRequired ? <span>*</span> : null}
+                                </label>
+                                <input
+                                  id="expirationDate"
+                                  type="date"
+                                  name="expirationDate"
+                                  value={form.expirationDate}
+                                  onChange={handleChange}
+                                  className={`input ${
+                                    formErrors.expirationDate ? "input-error" : ""
+                                  }`}
+                                />
+                                {formErrors.expirationDate && (
+                                  <span className="error-text">
+                                    {formErrors.expirationDate}
+                                  </span>
+                                )}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="donation-form-group">
+                                <label htmlFor="condition">
+                                  Condition <span>*</span>
+                                </label>
+                                <select
+                                  id="condition"
+                                  name="condition"
+                                  value={form.condition}
+                                  onChange={handleChange}
+                                  className={`input ${
+                                    formErrors.condition ? "input-error" : ""
+                                  }`}
+                                >
+                                  <option value="brand_new">Brand New</option>
+                                  <option value="used_item">Used Item</option>
+                                </select>
+                                {formErrors.condition && (
+                                  <span className="error-text">
+                                    {formErrors.condition}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="donation-form-group">
+                                <label htmlFor="usageDuration">
+                                  Usage Duration{" "}
+                                  {form.condition === "used_item" ? <span>*</span> : null}
+                                </label>
+                                <input
+                                  id="usageDuration"
+                                  type="text"
+                                  name="usageDuration"
+                                  placeholder="e.g. 6 months, 1 year"
+                                  value={form.usageDuration}
+                                  onChange={handleChange}
+                                  disabled={form.condition !== "used_item"}
+                                  className={`input ${
+                                    formErrors.usageDuration ? "input-error" : ""
+                                  }`}
+                                />
+                                {formErrors.usageDuration && (
+                                  <span className="error-text">
+                                    {formErrors.usageDuration}
+                                  </span>
+                                )}
+                              </div>
+                            </>
+                          )}
                         </>
                       )}
 
                       {donationType === "monetary" && (
-                        <div className="donation-form-group">
-                          <label htmlFor="amount">
-                            Amount <span>*</span>
-                          </label>
-                          <input
-                            id="amount"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            name="amount"
-                            placeholder="e.g. 10000"
-                            value={getNumberInputValue(form.amount)}
-                            onChange={handleChange}
-                            className={`input ${
-                              formErrors.amount ? "input-error" : ""
-                            }`}
-                          />
-                          {formErrors.amount && (
-                            <span className="error-text">{formErrors.amount}</span>
-                          )}
-                        </div>
+                        <>
+                          <div className="donation-form-group">
+                            <label htmlFor="amount">
+                              Amount <span>*</span>
+                            </label>
+                            <input
+                              id="amount"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              name="amount"
+                              placeholder="e.g. 10000"
+                              value={getNumberInputValue(form.amount)}
+                              onChange={handleChange}
+                              className={`input ${
+                                formErrors.amount ? "input-error" : ""
+                              }`}
+                            />
+                            {formErrors.amount && (
+                              <span className="error-text">{formErrors.amount}</span>
+                            )}
+                          </div>
+
+                          <div className="donation-form-group">
+                            <label htmlFor="referenceNumber">
+                              Reference Number <span>*</span>
+                            </label>
+                            <input
+                              id="referenceNumber"
+                              type="text"
+                              name="referenceNumber"
+                              placeholder="e.g. GCash ref, bank transfer ref"
+                              value={form.referenceNumber}
+                              onChange={handleChange}
+                              className={`input ${
+                                formErrors.referenceNumber ? "input-error" : ""
+                              }`}
+                            />
+                            {formErrors.referenceNumber && (
+                              <span className="error-text">
+                                {formErrors.referenceNumber}
+                              </span>
+                            )}
+                          </div>
+                        </>
                       )}
                     </div>
                   </div>
@@ -1356,7 +1885,7 @@ const InventoryAdd = () => {
                         )}
                       </div>
 
-                      {donationType === "goods" && (
+                      {(donationType === "goods" || donationType === "appliance") && (
                         <div className="donation-form-group">
                           <label htmlFor="sourceName">Source Name</label>
                           <input
@@ -1389,6 +1918,8 @@ const InventoryAdd = () => {
                           placeholder={
                             donationType === "goods"
                               ? "Add notes about packaging, expiry, condition, delivery details, or stock intake remarks..."
+                              : donationType === "appliance"
+                              ? "Add notes about appliance condition, turnover details, or intake remarks..."
                               : "Add notes about transaction reference, intended use, receipt details, or supporting remarks..."
                           }
                           value={form.description}
@@ -1449,18 +1980,6 @@ const InventoryAdd = () => {
                   <div className="donation-form-actions">
                     <button
                       type="button"
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        setShowForm(false);
-                        resetForm();
-                      }}
-                    >
-                      <FaTimes className="btn-icon" />
-                      Cancel
-                    </button>
-
-                    <button
-                      type="button"
                       className="btn btn-outline"
                       onClick={resetForm}
                       disabled={loading}
@@ -1477,6 +1996,8 @@ const InventoryAdd = () => {
                         ? "Update Record"
                         : donationType === "goods"
                         ? "Save Goods"
+                        : donationType === "appliance"
+                        ? "Save Appliance"
                         : "Save Monetary"}
                     </button>
                   </div>
@@ -1511,6 +2032,19 @@ const InventoryAdd = () => {
                     <FaMoneyBillWave className="btn-icon" />
                     Monetary Donations
                   </button>
+                  <button
+                    className={`type-tab ${
+                      donationType === "appliance" ? "active" : ""
+                    }`}
+                    onClick={() => {
+                      setDonationType("appliance");
+                      setCurrentPage(1);
+                      clearFilters();
+                    }}
+                  >
+                    <FaBlender className="btn-icon" />
+                    Appliance Donations
+                  </button>
                 </div>
               </div>
 
@@ -1521,9 +2055,13 @@ const InventoryAdd = () => {
                       {showArchived
                         ? donationType === "goods"
                           ? "Archived Goods Donations"
+                          : donationType === "appliance"
+                          ? "Archived Appliance Donations"
                           : "Archived Monetary Donations"
                         : donationType === "goods"
                         ? "Goods Donations"
+                        : donationType === "appliance"
+                        ? "Appliance Donations"
                         : "Monetary Donations"}
                     </h2>
                   </div>
@@ -1538,6 +2076,8 @@ const InventoryAdd = () => {
                       placeholder={
                         donationType === "goods"
                           ? "Search item name, category, notes, source..."
+                          : donationType === "appliance"
+                          ? "Search appliance name, category, notes, source..."
                           : "Search donor, notes, source..."
                       }
                       value={filters.search}
@@ -1546,7 +2086,7 @@ const InventoryAdd = () => {
                     />
                   </div>
 
-                  {donationType === "goods" && (
+                  {(donationType === "goods" || donationType === "appliance") && (
                     <div className="filter-group">
                       <label>Category</label>
                       <select
@@ -1650,11 +2190,15 @@ const InventoryAdd = () => {
                     <thead>
                       <tr>
                         <th onClick={() => handleSort("name")} className="sortable">
-                          {donationType === "goods" ? "Item Name" : "Name / Donor"}{" "}
+                          {donationType === "goods"
+                            ? "Item Name"
+                            : donationType === "appliance"
+                            ? "Appliance Name"
+                            : "Name / Donor"}{" "}
                           <span>{sortArrow("name")}</span>
                         </th>
 
-                        {donationType === "goods" && (
+                        {(donationType === "goods" || donationType === "appliance") && (
                           <th
                             onClick={() => handleSort("category")}
                             className="sortable"
@@ -1664,11 +2208,13 @@ const InventoryAdd = () => {
                         )}
 
                         <th onClick={() => handleSort("quantity")} className="sortable">
-                          {donationType === "goods" ? "Quantity" : "Amount"}{" "}
+                          {donationType === "monetary" ? "Amount" : "Quantity"}{" "}
                           <span>{sortArrow("quantity")}</span>
                         </th>
 
                         {donationType === "goods" && <th>Unit</th>}
+                        {donationType === "appliance" && <th>Condition</th>}
+                        {donationType === "appliance" && <th>Usage Duration</th>}
 
                         {donationType === "goods" && (
                           <th
@@ -1730,7 +2276,7 @@ const InventoryAdd = () => {
                               <div className="cell-main">{item.name || "-"}</div>
                             </td>
 
-                            {donationType === "goods" && (
+                            {(donationType === "goods" || donationType === "appliance") && (
                               <td>
                                 <span className="badge badge-category">
                                   {formatCategory(item.category)}
@@ -1745,6 +2291,12 @@ const InventoryAdd = () => {
                             </td>
 
                             {donationType === "goods" && <td>{item.unit || "-"}</td>}
+                            {donationType === "appliance" && (
+                              <td>{formatCategory(String(item.condition || "").replace(/_/g, " "))}</td>
+                            )}
+                            {donationType === "appliance" && (
+                              <td>{item.usageDuration || "-"}</td>
+                            )}
 
                             {donationType === "goods" && (
                               <td>
@@ -1762,7 +2314,7 @@ const InventoryAdd = () => {
                             <td>
                               <div className="source-cell">
                                 <strong>{item.sourceType || "-"}</strong>
-                                {donationType === "goods" ? (
+                                {donationType !== "monetary" ? (
                                   <small>{item.sourceName || "No source name"}</small>
                                 ) : null}
                               </div>

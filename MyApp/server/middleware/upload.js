@@ -86,6 +86,12 @@ const uploadGuideline = multer({
   fileFilter: imageOnlyFilter,
 });
 
+const uploadAnnouncement = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: imageOnlyFilter,
+});
+
 // Local proof uploader
 const uploadProof = multer({
   storage: proofStorage,
@@ -112,12 +118,30 @@ const uploadIncidentImage = multer({
   fileFilter: imageOnlyFilter,
 });
 
+const uploadPublicSiteImage = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: imageOnlyFilter,
+});
+
+const uploadDonationPhotos = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 12 * 1024 * 1024, files: 4 },
+  fileFilter: imageOnlyFilter,
+});
+
 // =======================
 // 🛠 Debug helpers
 // =======================
 uploadGuideline.debugMiddleware = (req, res, next) => {
   console.log("Request files (guideline):", req.files || req.file);
   console.log("Request body (guideline):", req.body);
+  next();
+};
+
+uploadAnnouncement.debugMiddleware = (req, res, next) => {
+  console.log("Request files (announcement):", req.files || req.file);
+  console.log("Request body (announcement):", req.body);
   next();
 };
 
@@ -145,13 +169,28 @@ uploadIncidentImage.debugMiddleware = (req, res, next) => {
   next();
 };
 
+uploadPublicSiteImage.debugMiddleware = (req, res, next) => {
+  console.log("Request files (public site image):", req.files || req.file);
+  console.log("Request body (public site image):", req.body);
+  next();
+};
+
+uploadDonationPhotos.debugMiddleware = (req, res, next) => {
+  console.log("Request files (donation photos):", req.files || req.file);
+  console.log("Request body (donation photos):", req.body);
+  next();
+};
+
 // =======================
 // ✅ Export
 // =======================
 module.exports = {
   uploadGuideline,
+  uploadAnnouncement,
   uploadProof,
   upload,
   uploadAvatar,
   uploadIncidentImage,
+  uploadPublicSiteImage,
+  uploadDonationPhotos,
 };

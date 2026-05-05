@@ -17,6 +17,7 @@ router.get("/analytics/health", inventoryController.getInventoryHealth);
 router.get("/analytics/top-donors", inventoryController.getTopDonors);
 router.get("/analytics/donation-activity", inventoryController.getDonationActivity);
 router.get("/analytics/ai-insights", inventoryController.getInventoryAiInsights);
+router.get("/analytics/donation-ai-insights", inventoryController.getDonationAiInsights);
 
 // =========================
 // EXPORT

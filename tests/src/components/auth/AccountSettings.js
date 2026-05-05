@@ -18,6 +18,24 @@ export default function AccountSettings() {
 
   const BASE_URL = process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
 
+  const sanitizeText = value =>
+    String(value ?? "")
+      .replace(/[<>`]/g, "")
+      .replace(/[\u0000-\u001F\u007F]/g, "");
+
+  const sanitizeUsername = value =>
+    sanitizeText(value).replace(/[^a-zA-Z0-9 _.-]/g, "");
+
+  const sanitizePhone = value =>
+    String(value ?? "")
+      .replace(/\D/g, "")
+      .slice(0, 11);
+
+  const sanitizeHotline = value =>
+    sanitizeText(value).replace(/[^0-9+\-() extEXT]/g, "");
+
+  const sanitizeAddress = value => sanitizeText(value);
+
   useEffect(() => {
     fetch(`${BASE_URL}/api/barangays/me`, {
       credentials: 'include'
@@ -127,26 +145,26 @@ export default function AccountSettings() {
         <label style={label}>Username</label>
         <input
           value={form.username}
-          onChange={e => setForm({ ...form, username: e.target.value })}
+          onChange={e => setForm({ ...form, username: sanitizeUsername(e.target.value) })}
         />
 
         <label style={label}>Phone Number</label>
         <input
           value={form.phoneNumber}
-          onChange={e => setForm({ ...form, phoneNumber: e.target.value })}
+          onChange={e => setForm({ ...form, phoneNumber: sanitizePhone(e.target.value) })}
           placeholder="09XXXXXXXXX"
         />
 
         <label style={label}>Hotline(Optional)</label>
         <input
           value={form.hotline}
-          onChange={e => setForm({ ...form, hotline: e.target.value })}
+          onChange={e => setForm({ ...form, hotline: sanitizeHotline(e.target.value) })}
         />
 
         <label style={label}>Address</label>
         <input
           value={form.address}
-          onChange={e => setForm({ ...form, address: e.target.value })}
+          onChange={e => setForm({ ...form, address: sanitizeAddress(e.target.value) })}
         />
 
         <label style={label}>New Password</label>

@@ -5,6 +5,7 @@ const { uploadIncidentImage } = require("../middleware/upload");
 
 // ✅ Get all incidents
 router.get("/getIncidents", incidentController.getIncidents);
+router.get("/history", incidentController.getIncidentHistory);
 router.get("/stats", incidentController.getIncidentStats);
 router.get("/typeStats", incidentController.getIncidentTypeStats);
 router.get("/trend", incidentController.getTrend);

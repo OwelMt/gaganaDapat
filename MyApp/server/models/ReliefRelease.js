@@ -1,12 +1,18 @@
 const mongoose = require("mongoose");
-const VALID_REQUEST_TYPES = ["foodpacks", "monetary", "both"];
-const normalizeRequestType = (value) => {
-  const normalized = String(value || "foodpacks").trim().toLowerCase();
-  return VALID_REQUEST_TYPES.includes(normalized) ? normalized : "foodpacks";
-};
+const {
+  SUPPORT_TYPE_FOODPACKS,
+  VALID_REQUEST_TYPES,
+  normalizeRequestType,
+} = require("../utils/reliefSupportTypes");
 
 const releaseItemSchema = new mongoose.Schema(
   {
+    itemType: {
+      type: String,
+      enum: ["goods", "appliance"],
+      default: "goods",
+      trim: true,
+    },
     inventoryItemId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "InventoryItem",
@@ -26,6 +32,12 @@ const releaseItemSchema = new mongoose.Schema(
     },
 
     quantityReleased: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    quantityReceived: {
       type: Number,
       default: 0,
       min: 0,
@@ -76,7 +88,7 @@ const reliefReleaseSchema = new mongoose.Schema(
     requestType: {
       type: String,
       enum: VALID_REQUEST_TYPES,
-      default: "foodpacks",
+      default: SUPPORT_TYPE_FOODPACKS,
       trim: true,
       set: normalizeRequestType,
     },
@@ -194,6 +206,11 @@ reliefReleaseSchema.pre("validate", function () {
 
   this.items = items.map((item) => {
     const normalizedItem = { ...(item.toObject?.() ? item.toObject() : item) };
+
+    normalizedItem.itemType =
+      String(normalizedItem.itemType || "goods").trim().toLowerCase() === "appliance"
+        ? "appliance"
+        : "goods";
 
     if (normalizedItem.category) {
       normalizedItem.category = String(normalizedItem.category).toLowerCase().trim();

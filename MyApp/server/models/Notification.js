@@ -18,7 +18,7 @@ const NotificationSchema = new mongoose.Schema(
 
     recipientUserModel: {
       type: String,
-      enum: ["UserStaff", "Barangay", null],
+      enum: ["User", "UserStaff", "Barangay", null],
       default: null,
     },
 
@@ -58,6 +58,7 @@ const NotificationSchema = new mongoose.Schema(
         "relief",
         "inventory",
         "donation",
+        "announcement",
         "incident",
         "evacuation",
         "guidelines",

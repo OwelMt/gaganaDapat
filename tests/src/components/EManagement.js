@@ -172,6 +172,10 @@ function MapLegend() {
           <span className="map-legend-dot full" />
           <span>Full</span>
         </div>
+        <div className="map-legend-item">
+          <span className="map-legend-dot archived" />
+          <span>Archived</span>
+        </div>
       </div>
     </div>
   );
@@ -199,6 +203,7 @@ export default function EManagement() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [barangayFilter, setBarangayFilter] = useState("all");
   const [sortBy, setSortBy] = useState("capacity");
+  const [placeView, setPlaceView] = useState("active");
 
   const [selectedBarangayName, setSelectedBarangayName] = useState("");
   const [selectedId, setSelectedId] = useState(null);
@@ -374,7 +379,7 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
 
   const fetchPlaces = useCallback(async (overrideParams = null) => {
     try {
-      const params = overrideParams || {};
+      const params = { archived: "all", ...(overrideParams || {}) };
       const res = await axios.get(`${BASE_URL}/evacs`, {
         withCredentials: true,
         params,
@@ -394,6 +399,7 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     try {
       const res = await axios.get(`${BASE_URL}/evacs`, {
         withCredentials: true,
+        params: { archived: "all" },
       });
 
       const payload = Array.isArray(res.data) ? res.data : [];
@@ -620,6 +626,31 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     return null;
   }, [barangays, localUserId, localBarangayName]);
 
+  const barangayNameById = useMemo(() => {
+    const map = new Map();
+    barangays.forEach((item) => {
+      if (item?._id && item?.name) {
+        map.set(String(item._id), item.name);
+      }
+    });
+    return map;
+  }, [barangays]);
+
+  const resolvePlaceBarangayName = useCallback(
+    (place) => {
+      const directName = sanitizeText(place?.barangayName);
+      if (directName) return directName;
+
+      const placeBarangayId = place?.barangayId ? String(place.barangayId) : "";
+      if (placeBarangayId && barangayNameById.has(placeBarangayId)) {
+        return barangayNameById.get(placeBarangayId) || "";
+      }
+
+      return "";
+    },
+    [barangayNameById]
+  );
+
   const visiblePlacesBase = useMemo(() => {
     const sourceList =
       Array.isArray(allPlaces) && allPlaces.length
@@ -631,21 +662,30 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     if (!isBarangayRole) return sourceList;
 
     return sourceList.filter((place) => {
+      const resolvedBarangayName = resolvePlaceBarangayName(place);
       const sameBarangayId =
         localUserId && String(place?.barangayId) === String(localUserId);
 
       const sameBarangayName =
         localBarangayName &&
-        normalizeBarangayKey(place?.barangayName) ===
+        normalizeBarangayKey(resolvedBarangayName) ===
           normalizeBarangayKey(localBarangayName);
 
       return sameBarangayId || sameBarangayName;
     });
-  }, [allPlaces, places, isBarangayRole, localUserId, localBarangayName]);
+  }, [
+    allPlaces,
+    places,
+    isBarangayRole,
+    localUserId,
+    localBarangayName,
+    resolvePlaceBarangayName,
+  ]);
 
   const computedPlaces = useMemo(() => {
     return visiblePlacesBase.map((place) => ({
       ...place,
+      barangayName: resolvePlaceBarangayName(place),
       totalCapacity:
         Number(place?.capacityIndividual || 0) +
         Number(place?.capacityFamily || 0) +
@@ -658,21 +698,32 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
         place?.nonPotableWater,
       ].filter(Boolean).length,
     }));
-  }, [visiblePlacesBase]);
+  }, [visiblePlacesBase, resolvePlaceBarangayName]);
+
+  const activePlaces = useMemo(
+    () => computedPlaces.filter((place) => !place?.isArchived),
+    [computedPlaces]
+  );
+
+  const archivedPlaces = useMemo(
+    () => computedPlaces.filter((place) => Boolean(place?.isArchived)),
+    [computedPlaces]
+  );
 
   const barangayCards = useMemo(() => {
     if (isBarangayRole) return [];
 
-    const sourceList = Array.isArray(allPlaces) ? allPlaces : [];
+    const sourceList = Array.isArray(computedPlaces) ? computedPlaces : [];
     const map = new Map();
 
     sourceList.forEach((place) => {
-      const key = place?.barangayName || "Unknown Barangay";
+      const key = resolvePlaceBarangayName(place) || "Unknown Barangay";
 
       if (!map.has(key)) {
         map.set(key, {
           barangayName: key,
           placesCount: 0,
+          archivedCount: 0,
           availableCount: 0,
           limitedCount: 0,
           fullCount: 0,
@@ -680,6 +731,11 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       }
 
       const entry = map.get(key);
+      if (place?.isArchived) {
+        entry.archivedCount += 1;
+        return;
+      }
+
       entry.placesCount += 1;
 
       if (safeLower(place?.capacityStatus) === "available") {
@@ -703,7 +759,7 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     return cards.filter((item) =>
       safeLower(item.barangayName).includes(term)
     );
-  }, [allPlaces, isBarangayRole, search]);
+  }, [computedPlaces, isBarangayRole, resolvePlaceBarangayName, search]);
 
     useEffect(() => {
     if (isBarangayRole) {
@@ -738,7 +794,8 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
   ]);
 
   const filteredPlaces = useMemo(() => {
-    let list = [...computedPlaces];
+    const sourceList = placeView === "archived" ? archivedPlaces : activePlaces;
+    let list = [...sourceList];
     const term = safeLower(search);
 
     if (term) {
@@ -790,12 +847,14 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
 
     return list;
   }, [
-    computedPlaces,
+    activePlaces,
+    archivedPlaces,
     search,
     statusFilter,
     barangayFilter,
     isBarangayRole,
     sortBy,
+    placeView,
   ]);
 
   useEffect(() => {
@@ -838,14 +897,14 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
   }, [history, selectedPlace]);
 
   const overallSummary = useMemo(() => {
-    const totalPlaces = allPlaces.length;
-    const availableCount = allPlaces.filter(
+    const totalPlaces = activePlaces.length;
+    const availableCount = activePlaces.filter(
       (item) => safeLower(item.capacityStatus) === "available"
     ).length;
-    const limitedCount = allPlaces.filter(
+    const limitedCount = activePlaces.filter(
       (item) => safeLower(item.capacityStatus) === "limited"
     ).length;
-    const fullCount = allPlaces.filter(
+    const fullCount = activePlaces.filter(
       (item) => safeLower(item.capacityStatus) === "full"
     ).length;
 
@@ -854,18 +913,34 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       availableCount,
       limitedCount,
       fullCount,
+      archivedCount: archivedPlaces.length,
     };
-  }, [allPlaces]);
+  }, [activePlaces, archivedPlaces.length]);
 
   const summary = useMemo(() => {
+    const sourceList = placeView === "archived" ? archivedPlaces : activePlaces;
     const baseList =
       !isBarangayRole && barangayFilter !== "all"
-        ? computedPlaces.filter(
+        ? sourceList.filter(
             (item) =>
               normalizeBarangayKey(item.barangayName) ===
               normalizeBarangayKey(barangayFilter)
           )
-        : computedPlaces;
+        : sourceList;
+    const archivedBaseList =
+      !isBarangayRole && barangayFilter !== "all"
+        ? archivedPlaces.filter(
+            (item) =>
+              normalizeBarangayKey(item.barangayName) ===
+              normalizeBarangayKey(barangayFilter)
+          )
+        : isBarangayRole
+        ? archivedPlaces.filter(
+            (item) =>
+              normalizeBarangayKey(item.barangayName) ===
+              normalizeBarangayKey(localBarangayName)
+          )
+        : archivedPlaces;
 
     const totalPlaces = baseList.length;
     const availableCount = baseList.filter(
@@ -896,11 +971,19 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       availableCount,
       limitedCount,
       fullCount,
+      archivedCount: archivedBaseList.length,
       totalIndividualCapacity,
       totalFamilyCapacity,
       totalBedCapacity,
     };
-  }, [computedPlaces, isBarangayRole, barangayFilter]);
+  }, [
+    activePlaces,
+    archivedPlaces,
+    placeView,
+    isBarangayRole,
+    barangayFilter,
+    localBarangayName,
+  ]);
 
   const effectiveAnalytics = useMemo(() => {
     void analytics;
@@ -1436,6 +1519,34 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     }
   }, [selectedPlace, refreshDataAfterMutation, pushNotification]);
 
+  const handleUnarchivePlace = useCallback(async () => {
+    if (!selectedPlace?._id) {
+      pushNotification("No evacuation area selected.", "error");
+      return;
+    }
+
+    setLoadingSave(true);
+    try {
+      await axios.put(
+        `${BASE_URL}/evacs/${selectedPlace._id}/unarchive`,
+        {},
+        { withCredentials: true }
+      );
+
+      await refreshDataAfterMutation();
+      setPlaceView("active");
+      pushNotification("Evacuation area unarchived successfully.", "success");
+    } catch (error) {
+      console.error("Unarchive evac area error:", error);
+      pushNotification(
+        error?.response?.data?.message || "Failed to unarchive evacuation area.",
+        "error"
+      );
+    } finally {
+      setLoadingSave(false);
+    }
+  }, [selectedPlace, refreshDataAfterMutation, pushNotification]);
+
   const getOccupancyNumbers = useCallback((place) => {
   const currentOccupants = Number(place?.currentOccupants || 0);
   const capacityIndividual = Number(place?.capacityIndividual || 0);
@@ -1751,7 +1862,7 @@ const handleSaveOccupancy = useCallback(async () => {
 
     setBulkLandingLoading(true);
     try {
-      const targets = allPlaces.filter((item) => item.showOnLanding === false);
+      const targets = activePlaces.filter((item) => item.showOnLanding === false);
 
       await Promise.all(
         targets.map((item) =>
@@ -1777,7 +1888,7 @@ const handleSaveOccupancy = useCallback(async () => {
   }, [
     bulkLandingLoading,
     isPrivilegedOps,
-    allPlaces,
+    activePlaces,
     refreshDataAfterMutation,
     pushNotification,
   ]);
@@ -1787,7 +1898,7 @@ const handleSaveOccupancy = useCallback(async () => {
 
     setBulkLandingLoading(true);
     try {
-      const targets = allPlaces.filter((item) => item.showOnLanding !== false);
+      const targets = activePlaces.filter((item) => item.showOnLanding !== false);
 
       await Promise.all(
         targets.map((item) =>
@@ -1813,7 +1924,7 @@ const handleSaveOccupancy = useCallback(async () => {
   }, [
     bulkLandingLoading,
     isPrivilegedOps,
-    allPlaces,
+    activePlaces,
     refreshDataAfterMutation,
     pushNotification,
   ]);
@@ -2238,8 +2349,8 @@ const handleSaveOccupancy = useCallback(async () => {
 
     const isShow = bulkPublicAction === "show";
     const affectedCount = isShow
-      ? allPlaces.filter((item) => item.showOnLanding === false).length
-      : allPlaces.filter((item) => item.showOnLanding !== false).length;
+      ? activePlaces.filter((item) => item.showOnLanding === false).length
+      : activePlaces.filter((item) => item.showOnLanding !== false).length;
 
     return createPortal(
       <div
@@ -2346,7 +2457,7 @@ const handleSaveOccupancy = useCallback(async () => {
                 type="button"
                 className="ghost-btn public-toggle-header-btn bulk-public-btn"
                 onClick={() => setBulkPublicAction("show")}
-                disabled={bulkLandingLoading || !isPrivilegedOps || !allPlaces.length}
+                disabled={bulkLandingLoading || !isPrivilegedOps || !activePlaces.length}
                 title="Show all evacuation areas on public landing page"
               >
                 <FaEye aria-hidden="true" />
@@ -2359,7 +2470,7 @@ const handleSaveOccupancy = useCallback(async () => {
                 type="button"
                 className="ghost-btn public-toggle-header-btn bulk-public-btn"
                 onClick={() => setBulkPublicAction("hide")}
-                disabled={bulkLandingLoading || !isPrivilegedOps || !allPlaces.length}
+                disabled={bulkLandingLoading || !isPrivilegedOps || !activePlaces.length}
                 title="Hide all evacuation areas from public landing page"
               >
                 <FaEyeSlash aria-hidden="true" />
@@ -2431,19 +2542,19 @@ const handleSaveOccupancy = useCallback(async () => {
           />
 
           <SummaryCard
+            tone="neutral"
+            icon={<FaArchive />}
+            label="Archived"
+            value={formatNumber(effectiveAnalytics.archivedCount || 0)}
+            sub="Not shown in active view"
+          />
+
+          <SummaryCard
             tone="muted"
             icon={<FaUser />}
             label="Individual Capacity"
             value={formatNumber(effectiveAnalytics.totalIndividualCapacity)}
             sub="People supported"
-          />
-
-          <SummaryCard
-            tone="muted"
-            icon={<FaUserFriends />}
-            label="Family Capacity"
-            value={formatNumber(effectiveAnalytics.totalFamilyCapacity)}
-            sub="Families supported"
           />
         </section>
 
@@ -2543,14 +2654,33 @@ const handleSaveOccupancy = useCallback(async () => {
                   </div>
 
                   <div className="barangay-card-statuses barangay-card-statuses-compact">
-                    <span className="mini-status available">
-                      {formatNumber(overallSummary.availableCount)} available
+                    <span
+                      className="mini-status available"
+                      title="Available"
+                      aria-label={`${formatNumber(overallSummary.availableCount)} available`}
+                    >
+                      {formatNumber(overallSummary.availableCount)}
                     </span>
-                    <span className="mini-status limited">
-                      {formatNumber(overallSummary.limitedCount)} limited
+                    <span
+                      className="mini-status limited"
+                      title="Limited"
+                      aria-label={`${formatNumber(overallSummary.limitedCount)} limited`}
+                    >
+                      {formatNumber(overallSummary.limitedCount)}
                     </span>
-                    <span className="mini-status full">
-                      {formatNumber(overallSummary.fullCount)} full
+                    <span
+                      className="mini-status full"
+                      title="Full"
+                      aria-label={`${formatNumber(overallSummary.fullCount)} full`}
+                    >
+                      {formatNumber(overallSummary.fullCount)}
+                    </span>
+                    <span
+                      className="mini-status archived"
+                      title="Archived"
+                      aria-label={`${formatNumber(overallSummary.archivedCount)} archived`}
+                    >
+                      {formatNumber(overallSummary.archivedCount)}
                     </span>
                   </div>
                 </button>
@@ -2573,14 +2703,33 @@ const handleSaveOccupancy = useCallback(async () => {
                     </div>
 
                     <div className="barangay-card-statuses barangay-card-statuses-compact">
-                      <span className="mini-status available">
-                        {formatNumber(item.availableCount)} available
+                      <span
+                        className="mini-status available"
+                        title="Available"
+                        aria-label={`${formatNumber(item.availableCount)} available`}
+                      >
+                        {formatNumber(item.availableCount)}
                       </span>
-                      <span className="mini-status limited">
-                        {formatNumber(item.limitedCount)} limited
+                      <span
+                        className="mini-status limited"
+                        title="Limited"
+                        aria-label={`${formatNumber(item.limitedCount)} limited`}
+                      >
+                        {formatNumber(item.limitedCount)}
                       </span>
-                      <span className="mini-status full">
-                        {formatNumber(item.fullCount)} full
+                      <span
+                        className="mini-status full"
+                        title="Full"
+                        aria-label={`${formatNumber(item.fullCount)} full`}
+                      >
+                        {formatNumber(item.fullCount)}
+                      </span>
+                      <span
+                        className="mini-status archived"
+                        title="Archived"
+                        aria-label={`${formatNumber(item.archivedCount)} archived`}
+                      >
+                        {formatNumber(item.archivedCount)}
                       </span>
                     </div>
                   </button>
@@ -2704,8 +2853,9 @@ const handleSaveOccupancy = useCallback(async () => {
             <div className="side-panel-tabs">
   <button
     type="button"
-    className={`tab-btn ${panelView === "areas" ? "active" : ""}`}
+    className={`tab-btn ${panelView === "areas" && placeView === "active" ? "active" : ""}`}
     onClick={() => {
+      setPlaceView("active");
       setPanelView("areas");
       setMobileTaskPanelOpen(true);
     }}
@@ -2715,8 +2865,21 @@ const handleSaveOccupancy = useCallback(async () => {
   </button>
   <button
     type="button"
+    className={`tab-btn ${panelView === "areas" && placeView === "archived" ? "active" : ""}`}
+    onClick={() => {
+      setPlaceView("archived");
+      setPanelView("areas");
+      setMobileTaskPanelOpen(true);
+    }}
+  >
+    <FaArchive aria-hidden="true" />
+    Archived
+  </button>
+  <button
+    type="button"
     className={`tab-btn ${panelView === "details" ? "active" : ""}`}
     onClick={() => {
+      setPlaceView("active");
       setPanelView("details");
       setMobileTaskPanelOpen(true);
     }}
@@ -2729,6 +2892,7 @@ const handleSaveOccupancy = useCallback(async () => {
     type="button"
     className={`tab-btn ${panelView === "history" ? "active" : ""}`}
     onClick={() => {
+      setPlaceView("active");
       setPanelView("history");
       setMobileTaskPanelOpen(true);
     }}
@@ -2758,6 +2922,8 @@ const handleSaveOccupancy = useCallback(async () => {
                 ? "selected"
                 : ""
             } ${
+              place?.isArchived ? "archived" : ""
+            } ${
               recentStatusUpdate?.id &&
               String(recentStatusUpdate.id) === String(place._id)
                 ? `status-just-updated ${getStatusClass(
@@ -2780,6 +2946,9 @@ const handleSaveOccupancy = useCallback(async () => {
               </div>
 
               <div className="place-badge-stack">
+                {place?.isArchived && (
+                  <span className="archived-badge">Archived</span>
+                )}
                 <span
                   className={`status-pill status-${getStatusClass(
                     place.capacityStatus
@@ -2814,7 +2983,11 @@ const handleSaveOccupancy = useCallback(async () => {
           <span className="empty-state-icon" aria-hidden="true">
             <FaSearch />
           </span>
-          <strong>No evacuation areas found</strong>
+          <strong>
+            {placeView === "archived"
+              ? "No archived evacuation areas found"
+              : "No evacuation areas found"}
+          </strong>
           <span>Try clearing the search, status, or barangay filters.</span>
           <button type="button" className="ghost-btn" onClick={clearFilters}>
             <FaTimes aria-hidden="true" />
@@ -2855,23 +3028,32 @@ const handleSaveOccupancy = useCallback(async () => {
                       </div>
 
                       <div className="details-hero-badges">
-                        <span
-                          className={`status-pill status-${getStatusClass(
-                            selectedPlace.capacityStatus
-                          )}`}
-                        >
-                          {selectedPlace.capacityStatus || "full"}
-                        </span>
+                        {selectedPlace?.isArchived ? (
+                          <span className="archived-badge details-archived-badge">
+                            Archived
+                          </span>
+                        ) : (
+                          <span
+                            className={`status-pill status-${getStatusClass(
+                              selectedPlace.capacityStatus
+                            )}`}
+                          >
+                            {selectedPlace.capacityStatus || "full"}
+                          </span>
+                        )}
 
                         <span
                           className={`landing-visibility-badge ${
+                            selectedPlace.isArchived ||
                             selectedPlace.showOnLanding === false
                               ? "hidden"
                               : "visible"
                           }`}
                         >
                           <FaGlobeAsia aria-hidden="true" />
-                          {selectedPlace.showOnLanding === false
+                          {selectedPlace.isArchived
+                            ? "Archived from Public"
+                            : selectedPlace.showOnLanding === false
                             ? "Hidden from Public"
                             : "Visible on Public"}
                         </span>
@@ -3010,13 +3192,6 @@ const handleSaveOccupancy = useCallback(async () => {
             </span>
           </div>
 
-          <span
-            className={`occupancy-status-badge status-${getStatusClass(
-              selectedPlace.capacityStatus
-            )}`}
-          >
-            {selectedPlace.capacityStatus || "available"}
-          </span>
         </div>
 
         <div className="occupancy-progress-track">
@@ -3222,6 +3397,7 @@ const handleSaveOccupancy = useCallback(async () => {
                         type="button"
                         className="ghost-btn"
                         onClick={openEditModal}
+                        disabled={Boolean(selectedPlace?.isArchived)}
                       >
                         <FaEdit aria-hidden="true" />
                         Edit Details
@@ -3229,14 +3405,25 @@ const handleSaveOccupancy = useCallback(async () => {
                     )}
 
                     {(isPrivilegedOps || isBarangayRole) && (
-                      <button
-                        type="button"
-                        className="danger-btn"
-                        onClick={() => setShowArchiveConfirm(true)}
-                      >
-                        <FaArchive aria-hidden="true" />
-                        Archive Area
-                      </button>
+                      selectedPlace?.isArchived ? (
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          onClick={handleUnarchivePlace}
+                        >
+                          <FaArchive aria-hidden="true" />
+                          Unarchive Area
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="danger-btn"
+                          onClick={() => setShowArchiveConfirm(true)}
+                        >
+                          <FaArchive aria-hidden="true" />
+                          Archive Area
+                        </button>
+                      )
                     )}
                   </div>
 

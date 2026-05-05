@@ -1,6 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../css/Register.css';
+import {
+  sanitizeAddress,
+  sanitizeEmail,
+  sanitizeHotline,
+  sanitizePassword,
+  sanitizePhoneNumber,
+  sanitizeUsername
+} from './inputSanitizers';
 
 const OFFICIAL_BARANGAYS = [
   "Calabasa",
@@ -425,7 +433,7 @@ export default function Register() {
                     placeholder="Enter username"
                     value={username}
                     onChange={(e) => {
-                      setUsername(e.target.value);
+                      setUsername(sanitizeUsername(e.target.value));
                       setTouched((prev) => ({ ...prev, username: true }));
                       setSubmitError('');
                     }}
@@ -442,7 +450,7 @@ export default function Register() {
                     placeholder="name@example.com"
                     value={email}
                     onChange={(e) => {
-                      setEmail(e.target.value);
+                      setEmail(sanitizeEmail(e.target.value));
                       setTouched((prev) => ({ ...prev, email: true }));
                       setSubmitError('');
                     }}
@@ -459,7 +467,7 @@ export default function Register() {
                     placeholder="09XXXXXXXXX"
                     value={phoneNumber}
                     onChange={(e) => {
-                      setPhoneNumber(e.target.value);
+                      setPhoneNumber(sanitizePhoneNumber(e.target.value));
                       setTouched((prev) => ({ ...prev, phoneNumber: true }));
                       setSubmitError('');
                     }}
@@ -476,7 +484,7 @@ export default function Register() {
                     placeholder="Optional"
                     value={hotline}
                     onChange={(e) => {
-                      setHotline(e.target.value);
+                      setHotline(sanitizeHotline(e.target.value));
                       setSubmitError('');
                     }}
                   />
@@ -492,7 +500,7 @@ export default function Register() {
                     placeholder="Enter full address"
                     value={address}
                     onChange={(e) => {
-                      setAddress(e.target.value);
+                      setAddress(sanitizeAddress(e.target.value));
                       setTouched((prev) => ({ ...prev, address: true }));
                       setSubmitError('');
                     }}
@@ -510,7 +518,7 @@ export default function Register() {
                     placeholder="Create password"
                     value={password}
                     onChange={(e) => {
-                      setPassword(e.target.value);
+                      setPassword(sanitizePassword(e.target.value));
                       setTouched((prev) => ({ ...prev, password: true }));
                       setSubmitError('');
                     }}
@@ -535,7 +543,7 @@ export default function Register() {
                     placeholder="Re-enter password"
                     value={confirmPassword}
                     onChange={(e) => {
-                      setConfirmPassword(e.target.value);
+                      setConfirmPassword(sanitizePassword(e.target.value));
                       setTouched((prev) => ({ ...prev, confirmPassword: true }));
                       setSubmitError('');
                     }}

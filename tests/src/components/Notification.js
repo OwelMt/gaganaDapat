@@ -6,6 +6,7 @@ import {
   FaBell,
   FaBookOpen,
   FaBoxOpen,
+  FaBullhorn,
   FaCheckCircle,
   FaClipboardList,
   FaDonate,
@@ -29,6 +30,7 @@ const moduleLabels = {
   relief: "Relief",
   inventory: "Inventory",
   donation: "Donation",
+  announcement: "Announcement",
   incident: "Incident",
   evacuation: "Evacuation",
   guidelines: "Guidelines",
@@ -90,6 +92,7 @@ function getModuleIcon(moduleName) {
   if (moduleName === "relief") return <FaClipboardList />;
   if (moduleName === "inventory") return <FaBoxOpen />;
   if (moduleName === "donation") return <FaDonate />;
+  if (moduleName === "announcement") return <FaBullhorn />;
   if (moduleName === "incident") return <FaExclamationTriangle />;
   if (moduleName === "evacuation") return <FaHospital />;
   if (moduleName === "guidelines") return <FaBookOpen />;
@@ -103,6 +106,10 @@ function getEmptyCopy(selectedModule) {
 
   if (selectedModule === "donation") {
     return "New goods and monetary donation notifications will appear here.";
+  }
+
+  if (selectedModule === "announcement") {
+    return "Published announcement updates and announcement delivery notices will appear here.";
   }
 
   if (selectedModule === "relief") {
@@ -153,6 +160,7 @@ export default function Notification() {
       "relief",
       "inventory",
       "donation",
+      "announcement",
       "evacuation",
       "incident",
       "guidelines",
@@ -492,13 +500,38 @@ export default function Notification() {
     setMutedModules({});
   };
 
+  const resolveNotificationLink = (notification) => {
+    const rawLink = String(notification?.link || "").trim();
+    const moduleName = String(notification?.module || "").trim().toLowerCase();
+    const typeName = String(notification?.type || "").trim().toLowerCase();
+
+    if (
+      rawLink === "/announcements" ||
+      moduleName === "announcement" ||
+      typeName === "announcement_published"
+    ) {
+      if (role === "admin") return "/admin/announcements";
+      if (role === "drrmo") return "/drrmo/announcements";
+      return "/";
+    }
+
+    if (rawLink === "/donations") {
+      if (role === "drrmo") return "/drrmo/donations/queue";
+      if (role === "admin") return "/admin/inventory/add";
+      return "/";
+    }
+
+    return rawLink;
+  };
+
   const handleOpenNotification = async (notification) => {
     if (!notification?.isRead) {
       await markAsRead(notification._id);
     }
 
-    if (notification?.link) {
-      navigate(notification.link);
+    const targetLink = resolveNotificationLink(notification);
+    if (targetLink) {
+      navigate(targetLink);
     }
   };
 

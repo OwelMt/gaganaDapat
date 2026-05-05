@@ -1,16 +1,37 @@
 const PDFDocument = require("pdfkit");
+const Donation = require("../models/Donation");
 const InventoryItem = require("../models/InventoryItem");
 const InventoryLog = require("../models/InventoryLog");
 const Notification = require("../models/Notification");
 const createNotification = require("../utils/createNotification");
+const { callAiAnalyticsProvider } = require("../utils/aiAnalyticsProvider");
 
-const VALID_TYPES = ["goods", "monetary"];
+const VALID_TYPES = ["goods", "monetary", "appliance"];
 const VALID_SOURCE_TYPES = ["external", "government", "internal"];
 const LOW_STOCK_THRESHOLD = 20;
+const NON_EXPIRING_GOODS_CATEGORIES = new Set([
+  "clothes",
+  "clothing",
+  "shoes",
+  "shoe",
+  "footwear",
+  "blankets",
+  "blanket",
+  "mats",
+  "mat",
+  "towels",
+  "towel",
+  "bedding",
+  "mosquito nets",
+  "mosquito net",
+]);
+const VALID_APPLIANCE_CONDITIONS = ["brand_new", "used_item"];
 
 let aiCache = null;
 let aiCacheTime = 0;
-const AI_CACHE_MS = 6 * 60 * 60 * 1000;
+let donationAiCache = null;
+let donationAiCacheTime = 0;
+const AI_CACHE_MS = Number(process.env.AI_CACHE_MS || 2 * 60 * 60 * 1000);
 
 const VALID_REPORT_TYPES = [
   "masterlist",
@@ -23,6 +44,7 @@ const VALID_REPORT_TYPES = [
   "donations",
   "goods_donations",
   "monetary_donations",
+  "appliance_donations",
 ];
 
 const normalizeString = (value) => {
@@ -39,6 +61,26 @@ const toNumber = (value) => {
   if (value === undefined || value === null || value === "") return undefined;
   const parsed = Number(value);
   return Number.isNaN(parsed) ? undefined : parsed;
+};
+
+const toBoolean = (value) => {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value === "boolean") return value;
+
+  const normalized = String(value).trim().toLowerCase();
+  if (["true", "1", "yes", "required", "requires", "require"].includes(normalized)) {
+    return true;
+  }
+
+  if (
+    ["false", "0", "no", "optional", "not_required", "does_not_require"].includes(
+      normalized
+    )
+  ) {
+    return false;
+  }
+
+  return undefined;
 };
 
 const parseDate = (value) => {
@@ -75,6 +117,12 @@ const startOfWeek = (date) => {
 const startOfMonth = (date) => {
   const d = startOfDay(date);
   d.setDate(1);
+  return d;
+};
+
+const startOfYear = (date) => {
+  const d = startOfDay(date);
+  d.setMonth(0, 1);
   return d;
 };
 
@@ -131,14 +179,29 @@ const attachExpiryMeta = (item) => {
   };
 };
 
+const requiresExpirationForGoods = (category, explicitRule) => {
+  const normalizedCategory = normalizeString(category).toLowerCase();
+
+  if (explicitRule !== undefined) {
+    return Boolean(explicitRule);
+  }
+
+  if (!normalizedCategory) return false;
+  return !NON_EXPIRING_GOODS_CATEGORIES.has(normalizedCategory);
+};
+
 const isLowStockItem = (item) => {
   const qty = Number(item.quantity || 0);
-  return item.type === "goods" && qty > 0 && qty < LOW_STOCK_THRESHOLD;
+  return (
+    (item.type === "goods" || item.type === "appliance") &&
+    qty > 0 &&
+    qty < LOW_STOCK_THRESHOLD
+  );
 };
 
 const isOutOfStockItem = (item) => {
   const qty = Number(item.quantity || 0);
-  return item.type === "goods" && qty <= 0;
+  return (item.type === "goods" || item.type === "appliance") && qty <= 0;
 };
 
 const getSourceFallbackLabel = (sourceType) => {
@@ -167,9 +230,10 @@ const getDonorKey = (item) => {
   return `${sourceType}:__confidential__`;
 };
 
-const validateInventoryData = (body, isUpdate = false, currentType = null) => {
+const validateInventoryData = (body, isUpdate = false, currentItem = null) => {
   const errors = [];
 
+  const currentType = currentItem?.type || null;
   const type = normalizeLower(body.type, currentType || "goods");
   const name = body.name !== undefined ? normalizeString(body.name) : undefined;
   const category =
@@ -177,8 +241,20 @@ const validateInventoryData = (body, isUpdate = false, currentType = null) => {
   const quantity = body.quantity !== undefined ? toNumber(body.quantity) : undefined;
   const unit = body.unit !== undefined ? normalizeString(body.unit) : undefined;
   const amount = body.amount !== undefined ? toNumber(body.amount) : undefined;
+  const referenceNumber =
+    body.referenceNumber !== undefined ? normalizeString(body.referenceNumber) : undefined;
   const expirationDate =
     body.expirationDate !== undefined ? parseDate(body.expirationDate) : undefined;
+  const requiresExpiration =
+    body.requiresExpiration !== undefined
+      ? toBoolean(body.requiresExpiration)
+      : body.expiryRequired !== undefined
+      ? toBoolean(body.expiryRequired)
+      : undefined;
+  const condition =
+    body.condition !== undefined ? normalizeLower(body.condition) : undefined;
+  const usageDuration =
+    body.usageDuration !== undefined ? normalizeString(body.usageDuration) : undefined;
   const description =
     body.description !== undefined ? normalizeString(body.description) : undefined;
   const sourceType =
@@ -187,7 +263,7 @@ const validateInventoryData = (body, isUpdate = false, currentType = null) => {
     body.sourceName !== undefined ? normalizeString(body.sourceName) : undefined;
 
   if (!VALID_TYPES.includes(type)) {
-    errors.push("Invalid type. Must be goods or monetary.");
+    errors.push("Invalid type. Must be goods, monetary, or appliance.");
   }
 
   if (!isUpdate || body.name !== undefined) {
@@ -203,32 +279,78 @@ const validateInventoryData = (body, isUpdate = false, currentType = null) => {
   }
 
   if (type === "goods") {
-    if (!isUpdate || body.category !== undefined) {
-      if (!category) errors.push("Category is required for goods.");
+    if (!category) errors.push("Category is required for goods.");
+
+    if (quantity === undefined || quantity < 0) {
+      errors.push("Quantity is required for goods and must be 0 or higher.");
     }
 
-    if (!isUpdate || body.quantity !== undefined) {
-      if (quantity === undefined || quantity < 0) {
-        errors.push("Quantity is required for goods and must be 0 or higher.");
-      }
+    if (!unit) errors.push("Unit is required for goods.");
+
+    const needsExpiry = requiresExpirationForGoods(category, requiresExpiration);
+    if (needsExpiry && !expirationDate) {
+      errors.push("Expiration date is required for this goods category.");
+    }
+  }
+
+  if (type === "appliance") {
+    if (!category) errors.push("Category is required for appliances.");
+
+    if (quantity === undefined || quantity <= 0) {
+      errors.push("Quantity is required for appliances and must be greater than 0.");
     }
 
-    if (!isUpdate || body.unit !== undefined) {
-      if (!unit) errors.push("Unit is required for goods.");
+    if (!condition || !VALID_APPLIANCE_CONDITIONS.includes(condition)) {
+      errors.push("Condition is required for appliances.");
+    }
+
+    if (condition === "used_item" && !usageDuration) {
+      errors.push("Usage duration is required for used appliances.");
+    }
+
+    if (body.expirationDate !== undefined && body.expirationDate !== "") {
+      errors.push("Expiration date is not allowed for appliances.");
     }
   }
 
   if (type === "monetary") {
-    if (!isUpdate || body.amount !== undefined) {
-      if (amount === undefined || amount < 0) {
-        errors.push("Amount is required for monetary and must be 0 or higher.");
-      }
+    if (amount === undefined || amount < 0) {
+      errors.push("Amount is required for monetary and must be 0 or higher.");
+    }
+
+    if (!referenceNumber) {
+      errors.push("Reference number is required for monetary donations.");
     }
 
     if (body.expirationDate !== undefined && body.expirationDate !== "") {
       errors.push("Expiration date is only allowed for goods.");
     }
   }
+
+  if (type !== "goods" && unit) {
+    if (type === "appliance") {
+      errors.push("Unit is not allowed for appliances.");
+    }
+  }
+
+  if (type !== "monetary" && amount !== undefined) {
+    if (type === "goods" || type === "appliance") {
+      errors.push("Amount is only allowed for monetary donations.");
+    }
+  }
+
+  if (type !== "appliance") {
+    if (condition) {
+      errors.push("Condition is only allowed for appliances.");
+    }
+
+    if (usageDuration) {
+      errors.push("Usage duration is only allowed for appliances.");
+    }
+  }
+
+  const normalizedUsageDuration =
+    type === "appliance" && condition === "used_item" ? usageDuration : undefined;
 
   return {
     errors,
@@ -239,7 +361,14 @@ const validateInventoryData = (body, isUpdate = false, currentType = null) => {
       quantity,
       unit,
       amount,
+      referenceNumber,
       expirationDate,
+      requiresExpiration:
+        type === "goods"
+          ? requiresExpirationForGoods(category, requiresExpiration)
+          : undefined,
+      condition: type === "appliance" ? condition : undefined,
+      usageDuration: normalizedUsageDuration,
       description,
       sourceType,
       sourceName,
@@ -253,8 +382,12 @@ const createLog = async (item, action, username, remarks = "") => {
     itemName: item.name,
     itemType: item.type,
     action,
-    quantity: item.type === "goods" ? item.quantity : undefined,
+    quantity:
+      item.type === "goods" || item.type === "appliance"
+        ? item.quantity
+        : undefined,
     amount: item.type === "monetary" ? item.amount : undefined,
+    referenceNumber: item.type === "monetary" ? item.referenceNumber : undefined,
     performedBy: username || "",
     remarks,
   });
@@ -312,6 +445,7 @@ const createInventoryNotificationOnce = async ({
         quantity: item.quantity || 0,
         unit: item.unit || "",
         amount: item.amount || 0,
+        referenceNumber: item.referenceNumber || "",
         sourceType: item.sourceType || "",
         sourceName: item.sourceName || "",
         expirationDate: item.expirationDate || null,
@@ -365,6 +499,26 @@ const notifyDonationCreated = async (item, username = "") => {
           donationType: "monetary",
         },
       });
+      return;
+    }
+
+    if (item.type === "appliance") {
+      await createInventoryNotificationOnce({
+        type: "appliance_donation_added",
+        module: "donation",
+        priority: "normal",
+        title: "Appliance donation added",
+        message: `${item.name} was added to appliance inventory with ${Number(
+          item.quantity || 0
+        ).toLocaleString()} item(s).`,
+        item,
+        senderName: username,
+        metadata: {
+          donationType: "appliance",
+          condition: item.condition || "",
+          usageDuration: item.usageDuration || "",
+        },
+      });
     }
   } catch (err) {
     console.error("Notify Donation Created Error:", err);
@@ -373,10 +527,11 @@ const notifyDonationCreated = async (item, username = "") => {
 
 const notifyInventoryRiskState = async (item, username = "") => {
   try {
-    if (!item?._id || item.type !== "goods" || item.isArchive) return;
+    if (!item?._id || item.isArchive) return;
 
     const quantity = Number(item.quantity || 0);
-    const expiryMeta = getExpiryMeta(item.expirationDate);
+    const expiryMeta =
+      item.type === "goods" ? getExpiryMeta(item.expirationDate) : null;
 
     if (quantity <= 0) {
       await createInventoryNotificationOnce({
@@ -399,7 +554,7 @@ const notifyInventoryRiskState = async (item, username = "") => {
         priority: "high",
         title: "Inventory item is low on stock",
         message: `${item.name} is low on stock with only ${quantity} ${
-          item.unit || "unit(s)"
+          item.type === "goods" ? item.unit || "unit(s)" : "item(s)"
         } remaining.`,
         item,
         senderName: username,
@@ -410,7 +565,7 @@ const notifyInventoryRiskState = async (item, username = "") => {
       });
     }
 
-    if (expiryMeta.expiryStatus === "expired") {
+    if (item.type === "goods" && expiryMeta?.expiryStatus === "expired") {
       await createInventoryNotificationOnce({
         type: "inventory_expired",
         module: "inventory",
@@ -427,7 +582,7 @@ const notifyInventoryRiskState = async (item, username = "") => {
       });
     }
 
-    if (expiryMeta.expiryStatus === "expiring_soon") {
+    if (item.type === "goods" && expiryMeta?.expiryStatus === "expiring_soon") {
       await createInventoryNotificationOnce({
         type: "inventory_expiring_soon",
         module: "inventory",
@@ -482,6 +637,14 @@ const formatTypeLabel = (value) => {
   if (!normalized) return "-";
 
   return normalized.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const getAiSourceLabel = (ai) => {
+  const source = normalizeLower(ai?.source);
+  if (!ai?.aiAvailable || source === "rule_based_fallback") return "Rule-based Fallback";
+  if (source === "bedrock") return "AWS Bedrock";
+  if (source === "gemini") return "Gemini AI";
+  return `${formatTypeLabel(source || "AI")} AI`;
 };
 
 const formatExpiryStatusLabel = (value) => {
@@ -626,6 +789,12 @@ const getInventoryReportMeta = (reportType) => {
         filename: "monetary-donations",
       };
 
+    case "appliance_donations":
+      return {
+        title: "Appliance Donations Report",
+        filename: "appliance-donations",
+      };
+
     case "masterlist":
     default:
       return {
@@ -660,7 +829,10 @@ const getInventoryItemsForReport = async (reportType) => {
 
     case "donations":
       return enrichedItems.filter(
-        (item) => item.type === "goods" || item.type === "monetary"
+        item =>
+          item.type === "goods" ||
+          item.type === "monetary" ||
+          item.type === "appliance"
       );
 
     case "goods_donations":
@@ -668,6 +840,9 @@ const getInventoryItemsForReport = async (reportType) => {
 
     case "monetary_donations":
       return enrichedItems.filter((item) => item.type === "monetary");
+
+    case "appliance_donations":
+      return enrichedItems.filter((item) => item.type === "appliance");
 
     case "archived":
       return enrichedItems;
@@ -692,6 +867,13 @@ const buildInventorySummary = (items = []) => {
         if (isLowStockItem(item)) acc.lowStockGoods += 1;
       }
 
+      if (item.type === "appliance") {
+        acc.applianceEntries += 1;
+        acc.totalApplianceQuantity += Number(item.quantity || 0);
+
+        if (isLowStockItem(item)) acc.lowStockAppliances += 1;
+      }
+
       if (item.type === "monetary") {
         acc.monetaryEntries += 1;
         acc.totalMonetaryAmount += Number(item.amount || 0);
@@ -702,12 +884,15 @@ const buildInventorySummary = (items = []) => {
     {
       totalEntries: 0,
       goodsEntries: 0,
+      applianceEntries: 0,
       monetaryEntries: 0,
       totalGoodsQuantity: 0,
+      totalApplianceQuantity: 0,
       totalMonetaryAmount: 0,
       expiredGoods: 0,
       expiringSoonGoods: 0,
       lowStockGoods: 0,
+      lowStockAppliances: 0,
     }
   );
 };
@@ -754,6 +939,45 @@ const summarizeDonationPeriod = (items = [], startDate, endDate) => {
   );
 };
 
+const summarizeDonationQueuePeriod = (donations = [], startDate, endDate) => {
+  return donations.reduce(
+    (acc, donation) => {
+      const createdAt = donation.createdAt ? new Date(donation.createdAt) : null;
+      if (!createdAt || Number.isNaN(createdAt.getTime())) return acc;
+      if (createdAt < startDate || createdAt > endDate) return acc;
+
+      acc.totalRecords += 1;
+
+      const inventoryType = normalizeLower(donation.inventoryType, "goods");
+      if (inventoryType === "monetary") {
+        acc.monetaryRecords += 1;
+        acc.monetaryAmount += Number(donation.amount || 0);
+      } else if (inventoryType === "appliance") {
+        acc.applianceRecords += 1;
+        acc.applianceQuantity += Number(donation.quantity || 0);
+      } else {
+        acc.goodsRecords += 1;
+        acc.goodsQuantity += Number(donation.quantity || 0);
+      }
+
+      const status = normalizeLower(donation.status, "pending");
+      acc.statusBreakdown[status] = Number(acc.statusBreakdown[status] || 0) + 1;
+
+      return acc;
+    },
+    {
+      totalRecords: 0,
+      goodsRecords: 0,
+      goodsQuantity: 0,
+      monetaryRecords: 0,
+      monetaryAmount: 0,
+      applianceRecords: 0,
+      applianceQuantity: 0,
+      statusBreakdown: {},
+    }
+  );
+};
+
 const sortByNumberDesc = (list, field) => {
   return [...list].sort((a, b) => Number(b[field] || 0) - Number(a[field] || 0));
 };
@@ -763,10 +987,11 @@ const buildAnalyticsSnapshot = async () => {
   const archivedItems = await InventoryItem.countDocuments({ isArchive: true });
 
   const goodsItems = activeItems.filter((item) => item.type === "goods");
+  const applianceItems = activeItems.filter((item) => item.type === "appliance");
   const monetaryItems = activeItems.filter((item) => item.type === "monetary");
 
   const categoryStats = {};
-  goodsItems.forEach((item) => {
+  [...goodsItems, ...applianceItems].forEach((item) => {
     const category = normalizeString(item.category).toLowerCase() || "uncategorized";
     categoryStats[category] =
       Number(categoryStats[category] || 0) + Number(item.quantity || 0);
@@ -804,6 +1029,15 @@ const buildAnalyticsSnapshot = async () => {
         if (expiryMeta.expiryStatus === "ok") acc.safeExpiryGoods += 1;
       }
 
+      if (item.type === "appliance") {
+        acc.applianceEntries += 1;
+        acc.activeAppliances += 1;
+        acc.totalApplianceQuantity += Number(item.quantity || 0);
+
+        if (isLowStockItem(item)) acc.lowStockAppliances += 1;
+        if (isOutOfStockItem(item)) acc.outOfStockAppliances += 1;
+      }
+
       if (item.type === "monetary") {
         acc.monetaryEntries += 1;
         acc.activeMonetary += 1;
@@ -815,13 +1049,18 @@ const buildAnalyticsSnapshot = async () => {
     {
       totalEntries: 0,
       goodsEntries: 0,
+      applianceEntries: 0,
       monetaryEntries: 0,
       activeGoods: 0,
+      activeAppliances: 0,
       activeMonetary: 0,
       totalGoodsQuantity: 0,
+      totalApplianceQuantity: 0,
       totalMonetaryAmount: 0,
       lowStockGoods: 0,
+      lowStockAppliances: 0,
       outOfStockGoods: 0,
+      outOfStockAppliances: 0,
       expiredGoods: 0,
       expiringSoonGoods: 0,
       noExpiryGoods: 0,
@@ -832,7 +1071,9 @@ const buildAnalyticsSnapshot = async () => {
 
   summary.needsAttention =
     summary.lowStockGoods +
+    summary.lowStockAppliances +
     summary.outOfStockGoods +
+    summary.outOfStockAppliances +
     summary.expiredGoods +
     summary.expiringSoonGoods;
 
@@ -853,6 +1094,7 @@ const buildAnalyticsSnapshot = async () => {
     donationActivity,
     ai: aiCache || null,
     goodsItems,
+    applianceItems,
     monetaryItems,
   };
 };
@@ -864,7 +1106,7 @@ const drawAnalyticsSnapshotPdf = (doc, snapshot, reportType) => {
   drawPdfLabelValue(doc, "Generated At", formatDateValue(snapshot.generatedAt));
 
   if (ai) {
-    drawPdfLabelValue(doc, "AI Source", ai.aiAvailable ? "Gemini AI" : "Rule-based Fallback");
+    drawPdfLabelValue(doc, "AI Source", getAiSourceLabel(ai));
     drawPdfLabelValue(doc, "Overall Severity", formatTypeLabel(ai.overallSeverity));
     drawPdfLabelValue(doc, "Executive Summary", ai.executiveSummary || "-");
   } else {
@@ -883,6 +1125,12 @@ const drawAnalyticsSnapshotPdf = (doc, snapshot, reportType) => {
     drawPdfLabelValue(doc, "Total Monetary Amount", formatPeso(summary.totalMonetaryAmount));
     drawPdfLabelValue(doc, "Goods Donation Entries", String(summary.goodsEntries));
     drawPdfLabelValue(doc, "Total Goods Quantity", String(summary.totalGoodsQuantity));
+    drawPdfLabelValue(doc, "Appliance Entries", String(summary.applianceEntries));
+    drawPdfLabelValue(
+      doc,
+      "Total Appliance Quantity",
+      String(summary.totalApplianceQuantity)
+    );
     drawPdfLabelValue(doc, "Donations Today", String(donationActivity.today.totalDonations));
     drawPdfLabelValue(
       doc,
@@ -906,10 +1154,26 @@ const drawAnalyticsSnapshotPdf = (doc, snapshot, reportType) => {
     );
   } else {
     drawPdfLabelValue(doc, "Active Goods", String(summary.activeGoods));
+    drawPdfLabelValue(doc, "Active Appliances", String(summary.activeAppliances));
     drawPdfLabelValue(doc, "Total Goods Quantity", String(summary.totalGoodsQuantity));
+    drawPdfLabelValue(
+      doc,
+      "Total Appliance Quantity",
+      String(summary.totalApplianceQuantity)
+    );
     drawPdfLabelValue(doc, "Needs Attention", String(summary.needsAttention));
     drawPdfLabelValue(doc, "Low Stock Goods", String(summary.lowStockGoods));
+    drawPdfLabelValue(
+      doc,
+      "Low Stock Appliances",
+      String(summary.lowStockAppliances)
+    );
     drawPdfLabelValue(doc, "Out of Stock Goods", String(summary.outOfStockGoods));
+    drawPdfLabelValue(
+      doc,
+      "Out of Stock Appliances",
+      String(summary.outOfStockAppliances)
+    );
     drawPdfLabelValue(doc, "Expired Goods", String(summary.expiredGoods));
     drawPdfLabelValue(doc, "Expiring Soon Goods", String(summary.expiringSoonGoods));
     drawPdfLabelValue(doc, "No Expiry Goods", String(summary.noExpiryGoods));
@@ -985,13 +1249,20 @@ const getInventorySummary = async (req, res) => {
 
         if (item.type === "goods") {
           acc.goodsEntries += 1;
-                    acc.totalGoodsQuantity += Number(item.quantity || 0);
+          acc.totalGoodsQuantity += Number(item.quantity || 0);
 
           const expiryMeta = getExpiryMeta(item.expirationDate);
           if (expiryMeta.expiryStatus === "expired") acc.expiredGoods += 1;
           if (expiryMeta.expiryStatus === "expiring_soon") acc.expiringSoonGoods += 1;
           if (isLowStockItem(item)) acc.lowStockGoods += 1;
           if (isOutOfStockItem(item)) acc.outOfStockGoods += 1;
+        }
+
+        if (item.type === "appliance") {
+          acc.applianceEntries += 1;
+          acc.totalApplianceQuantity += Number(item.quantity || 0);
+          if (isLowStockItem(item)) acc.lowStockAppliances += 1;
+          if (isOutOfStockItem(item)) acc.outOfStockAppliances += 1;
         }
 
         if (item.type === "monetary") {
@@ -1008,14 +1279,18 @@ const getInventorySummary = async (req, res) => {
       {
         totalEntries: 0,
         goodsEntries: 0,
+        applianceEntries: 0,
         monetaryEntries: 0,
         totalGoodsQuantity: 0,
+        totalApplianceQuantity: 0,
         totalMonetaryAmount: 0,
         recentDonations: 0,
         expiredGoods: 0,
         expiringSoonGoods: 0,
         lowStockGoods: 0,
         outOfStockGoods: 0,
+        lowStockAppliances: 0,
+        outOfStockAppliances: 0,
       }
     );
 
@@ -1137,6 +1412,12 @@ const getInventoryHealth = async (req, res) => {
           if (expiryMeta.expiryStatus === "ok") acc.safeExpiryGoods += 1;
         }
 
+        if (item.type === "appliance") {
+          acc.activeAppliances += 1;
+          if (isLowStockItem(item)) acc.lowStockAppliances += 1;
+          if (isOutOfStockItem(item)) acc.outOfStockAppliances += 1;
+        }
+
         if (item.type === "monetary") {
           acc.activeMonetary += 1;
         }
@@ -1146,9 +1427,12 @@ const getInventoryHealth = async (req, res) => {
       {
         activeItems: 0,
         activeGoods: 0,
+        activeAppliances: 0,
         activeMonetary: 0,
         lowStockGoods: 0,
+        lowStockAppliances: 0,
         outOfStockGoods: 0,
+        outOfStockAppliances: 0,
         expiredGoods: 0,
         expiringSoonGoods: 0,
         noExpiryGoods: 0,
@@ -1160,7 +1444,9 @@ const getInventoryHealth = async (req, res) => {
     result.archivedItems = archivedItems;
     result.needsAttention =
       result.lowStockGoods +
+      result.lowStockAppliances +
       result.outOfStockGoods +
+      result.outOfStockAppliances +
       result.expiredGoods +
       result.expiringSoonGoods;
 
@@ -1268,16 +1554,24 @@ const getTopDonors = async (req, res) => {
 const getDonationActivity = async (req, res) => {
   try {
     const items = await InventoryItem.find({ isArchive: false }).lean();
+    const queueDonations = await Donation.find({}).lean();
 
     const now = new Date();
     const todayStart = startOfDay(now);
     const todayEnd = endOfDay(now);
     const weekStart = startOfWeek(now);
     const monthStart = startOfMonth(now);
+    const yearStart = startOfYear(now);
 
     const today = summarizeDonationPeriod(items, todayStart, todayEnd);
     const thisWeek = summarizeDonationPeriod(items, weekStart, todayEnd);
     const thisMonth = summarizeDonationPeriod(items, monthStart, todayEnd);
+    const thisYear = summarizeDonationPeriod(items, yearStart, todayEnd);
+
+    const queueToday = summarizeDonationQueuePeriod(queueDonations, todayStart, todayEnd);
+    const queueThisWeek = summarizeDonationQueuePeriod(queueDonations, weekStart, todayEnd);
+    const queueThisMonth = summarizeDonationQueuePeriod(queueDonations, monthStart, todayEnd);
+    const queueThisYear = summarizeDonationQueuePeriod(queueDonations, yearStart, todayEnd);
 
     const sourceBreakdown = {
       external: { totalDonations: 0, goodsQuantity: 0, monetaryAmount: 0 },
@@ -1326,18 +1620,32 @@ const getDonationActivity = async (req, res) => {
       today,
       thisWeek,
       thisMonth,
+      thisYear,
 
       donationsToday: today.totalDonations,
       donationsThisWeek: thisWeek.totalDonations,
       donationsThisMonth: thisMonth.totalDonations,
+      donationsThisYear: thisYear.totalDonations,
 
       monetaryToday: today.monetaryAmount,
       monetaryThisWeek: thisWeek.monetaryAmount,
       monetaryThisMonth: thisMonth.monetaryAmount,
+      monetaryThisYear: thisYear.monetaryAmount,
 
       goodsQuantityToday: today.goodsQuantity,
       goodsQuantityThisWeek: thisWeek.goodsQuantity,
       goodsQuantityThisMonth: thisMonth.goodsQuantity,
+      goodsQuantityThisYear: thisYear.goodsQuantity,
+
+      queueToday,
+      queueThisWeek,
+      queueThisMonth,
+      queueThisYear,
+
+      queueRecordsToday: queueToday.totalRecords,
+      queueRecordsThisWeek: queueThisWeek.totalRecords,
+      queueRecordsThisMonth: queueThisMonth.totalRecords,
+      queueRecordsThisYear: queueThisYear.totalRecords,
 
       sourceBreakdown,
       topDonatedCategories,
@@ -1355,32 +1663,6 @@ const getInventoryAiInsights = async (req, res) => {
       cacheHit: true,
       cacheAgeMs: Date.now() - aiCacheTime,
     });
-  }
-
-  function parseGeminiJson(rawText = "") {
-    try {
-      if (!rawText) return null;
-
-      let cleaned = String(rawText)
-        .trim()
-        .replace(/```json/g, "")
-        .replace(/```/g, "")
-        .trim();
-
-      const start = cleaned.indexOf("{");
-      const end = cleaned.lastIndexOf("}");
-
-      if (start >= 0 && end > start) {
-        cleaned = cleaned.slice(start, end + 1);
-      }
-
-      cleaned = cleaned.replace(/,\s*([}\]])/g, "$1");
-
-      return JSON.parse(cleaned);
-    } catch (err) {
-      console.error("Gemini JSON parse error:", err);
-      return null;
-    }
   }
 
   const buildRuleBasedFallback = ({
@@ -1569,104 +1851,6 @@ const getInventoryAiInsights = async (req, res) => {
     };
   };
 
-  const callGeminiForInsights = async (facts) => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return null;
-
-    const { GoogleGenerativeAI } = require("@google/generative-ai");
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const modelName = process.env.GEMINI_MODEL || "gemini-1.5-flash";
-
-    const model = genAI.getGenerativeModel({
-      model: modelName,
-      generationConfig: {
-        temperature: 0.15,
-        topP: 0.8,
-        maxOutputTokens: 900,
-      },
-    });
-
-    const prompt = `
-Return ONLY valid minified JSON. No markdown. No explanation. No code fences.
-
-You are an AI analytics assistant for a DRRMO disaster relief management system.
-Analyze only the provided inventory facts. Do not invent records.
-
-JSON shape:
-{"overallSeverity":"success|info|notice|warning|critical","executiveSummary":"1 to 3 short sentences","priorityActions":["action 1","action 2","action 3"],"insights":[{"type":"short_snake_case","severity":"success|info|notice|warning|critical","title":"short title","message":"short data-based explanation","action":"specific recommended action"}]}
-
-Rules:
-- Make 3 to 5 insights only.
-- Keep messages short.
-- Mention low stock, expired goods, expiring goods, missing expiry, donation slowdown, or stock readiness only when supported by facts.
-- Do not mention barangays or relief requests.
-
-Facts:
-${JSON.stringify(facts)}
-`;
-
-    const result = await model.generateContent(prompt);
-    const text = result?.response?.text?.() || "";
-    const parsed = parseGeminiJson(text);
-
-    if (!parsed || !Array.isArray(parsed.insights)) return null;
-
-    const allowedSeverities = ["success", "info", "notice", "warning", "critical"];
-
-    const safeInsights = parsed.insights
-      .filter((item) => item && typeof item === "object")
-      .slice(0, 5)
-      .map((item, index) => {
-        const severity = allowedSeverities.includes(item.severity) ? item.severity : "info";
-
-        return {
-          type: normalizeString(item.type) || `ai_insight_${index + 1}`,
-          severity,
-          title: normalizeString(item.title) || "AI insight",
-          message:
-            normalizeString(item.message) ||
-            "The AI found an operational pattern in current inventory records.",
-          action:
-            normalizeString(item.action) ||
-            "Review this area before making operational decisions.",
-        };
-      });
-
-    if (!safeInsights.length) return null;
-
-    const severityRank = {
-      critical: 4,
-      warning: 3,
-      notice: 2,
-      info: 1,
-      success: 0,
-    };
-
-    const overallSeverity = allowedSeverities.includes(parsed.overallSeverity)
-      ? parsed.overallSeverity
-      : safeInsights.reduce((highest, insight) => {
-          return severityRank[insight.severity] > severityRank[highest]
-            ? insight.severity
-            : highest;
-        }, "success");
-
-    return {
-      source: "gemini",
-      model: modelName,
-      aiAvailable: true,
-      overallSeverity,
-      executiveSummary:
-        normalizeString(parsed.executiveSummary) ||
-        "AI reviewed the current inventory records for operational risks.",
-      priorityActions: Array.isArray(parsed.priorityActions)
-        ? parsed.priorityActions.map((item) => normalizeString(item)).filter(Boolean).slice(0, 5)
-        : safeInsights.slice(0, 4).map((item) => item.action),
-      insights: safeInsights,
-      cacheHit: false,
-    };
-  };
-
   try {
     const items = await InventoryItem.find({ isArchive: false }).lean();
 
@@ -1772,47 +1956,31 @@ ${JSON.stringify(facts)}
       totalMonetaryAmount,
     });
 
-    let aiResult = null;
-    let fallbackReason = "";
+    const prompt = `
+Return ONLY valid minified JSON. No markdown. No explanation. No code fences.
 
-    try {
-      aiResult = await callGeminiForInsights(facts);
-    } catch (geminiError) {
-      console.error("Gemini Inventory AI Error:", geminiError);
+You are an AI analytics assistant for a DRRMO disaster relief management system.
+Analyze only the provided inventory facts. Do not invent records.
 
-      if (geminiError?.status === 429) {
-        fallbackReason =
-          "Gemini free quota was reached. Showing locally generated inventory intelligence instead.";
-      } else {
-        fallbackReason =
-          "Gemini was unavailable. Showing locally generated inventory intelligence instead.";
-      }
-    }
+JSON shape:
+{"overallSeverity":"success|info|notice|warning|critical","executiveSummary":"1 to 3 short sentences","priorityActions":["action 1","action 2","action 3"],"insights":[{"type":"short_snake_case","severity":"success|info|notice|warning|critical","title":"short title","message":"short data-based explanation","action":"specific recommended action"}]}
 
-    const finalPayload = aiResult
-      ? {
-          ...fallback,
-          source: aiResult.source,
-          model: aiResult.model,
-          aiAvailable: true,
-          overallSeverity: aiResult.overallSeverity,
-          executiveSummary: aiResult.executiveSummary,
-          priorityActions: aiResult.priorityActions,
-          insights: aiResult.insights,
-          fallbackReason: "",
-          cacheHit: false,
-        }
-      : {
-          ...fallback,
-          aiAvailable: false,
-          fallbackReason:
-            fallbackReason ||
-            (process.env.GEMINI_API_KEY
-              ? "Gemini did not return a valid response, so rule-based fallback was used."
-              : "GEMINI_API_KEY is missing, so rule-based fallback was used."),
-          executiveSummary: fallbackReason || fallback.executiveSummary,
-          cacheHit: false,
-        };
+Rules:
+- Make 3 to 5 insights only.
+- Keep messages short and dashboard-friendly.
+- Use facts such as total goods, total monetary donations, low stock, expired or expiring goods, category distribution, source type distribution, recent intake trend, archived items if included, and proof completeness only when supported by data.
+- Focus recommendations on stock readiness, expiry risk, donation source balance, category gaps, and items needing attention.
+- Do not invent stock needs, barangays, or relief requests not present in the facts.
+
+Facts:
+${JSON.stringify(facts)}
+`;
+
+    const finalPayload = await callAiAnalyticsProvider({
+      controllerLabel: "Inventory Analytics",
+      prompt,
+      fallback,
+    });
 
     aiCache = finalPayload;
     aiCacheTime = Date.now();
@@ -1834,7 +2002,7 @@ const exportInventoryPdf = async (req, res) => {
     if (!VALID_REPORT_TYPES.includes(reportType)) {
       return res.status(400).json({
         message:
-          "Invalid reportType. Use masterlist, low_stock, expired, expiring_soon, archived, inventory_analytics, donation_analytics, donations, goods_donations, or monetary_donations.",
+          "Invalid reportType. Use masterlist, low_stock, expired, expiring_soon, archived, inventory_analytics, donation_analytics, donations, goods_donations, monetary_donations, or appliance_donations.",
       });
     }
 
@@ -1917,27 +2085,41 @@ const exportInventoryPdf = async (req, res) => {
     drawPdfLabelValue(doc, "Report Type", formatTypeLabel(reportType));
     drawPdfLabelValue(doc, "Total Entries", String(summary.totalEntries));
     drawPdfLabelValue(doc, "Goods Entries", String(summary.goodsEntries));
+    drawPdfLabelValue(doc, "Appliance Entries", String(summary.applianceEntries));
     drawPdfLabelValue(doc, "Monetary Entries", String(summary.monetaryEntries));
     drawPdfLabelValue(doc, "Total Goods Quantity", String(summary.totalGoodsQuantity));
+    drawPdfLabelValue(
+      doc,
+      "Total Appliance Quantity",
+      String(summary.totalApplianceQuantity)
+    );
     drawPdfLabelValue(doc, "Total Monetary Amount", formatPeso(summary.totalMonetaryAmount));
     drawPdfLabelValue(doc, "Low Stock Goods", String(summary.lowStockGoods));
+    drawPdfLabelValue(
+      doc,
+      "Low Stock Appliances",
+      String(summary.lowStockAppliances)
+    );
     drawPdfLabelValue(doc, "Expired Goods", String(summary.expiredGoods));
     drawPdfLabelValue(doc, "Expiring Soon Goods", String(summary.expiringSoonGoods));
 
     drawPdfSectionTitle(doc, "Inventory Items");
 
     const columns = [
-      { label: "Name", key: "name", width: 135 },
-      { label: "Type", key: "type", width: 55 },
-      { label: "Category", key: "category", width: 75 },
-      { label: "Qty", key: "quantity", width: 45, align: "right" },
-      { label: "Unit", key: "unit", width: 45 },
-      { label: "Amount", key: "amount", width: 85, align: "right" },
-      { label: "Expiry", key: "expirationDate", width: 90 },
-      { label: "Expiry Status", key: "expiryStatus", width: 85 },
-      { label: "Source", key: "sourceType", width: 65 },
-      { label: "Source Name", key: "sourceName", width: 95 },
-      { label: "Added By", key: "addedBy", width: 75 },
+      { label: "Name", key: "name", width: 100 },
+      { label: "Type", key: "type", width: 45 },
+      { label: "Category", key: "category", width: 60 },
+      { label: "Qty", key: "quantity", width: 35, align: "right" },
+      { label: "Unit", key: "unit", width: 35 },
+      { label: "Condition", key: "condition", width: 45 },
+      { label: "Usage", key: "usageDuration", width: 55 },
+      { label: "Amount", key: "amount", width: 70, align: "right" },
+      { label: "Reference No.", key: "referenceNumber", width: 65 },
+      { label: "Expiry", key: "expirationDate", width: 65 },
+      { label: "Expiry Status", key: "expiryStatus", width: 55 },
+      { label: "Source", key: "sourceType", width: 45 },
+      { label: "Source Name", key: "sourceName", width: 65 },
+      { label: "Added By", key: "addedBy", width: 55 },
     ];
 
     if (!items.length) {
@@ -1954,10 +2136,26 @@ const exportInventoryPdf = async (req, res) => {
           {
             name: normalizeString(item.name) || "-",
             type: formatTypeLabel(item.type),
-            category: item.type === "goods" ? normalizeString(item.category) || "-" : "-",
-            quantity: item.type === "goods" ? Number(item.quantity || 0) : "-",
+            category:
+              item.type === "goods" || item.type === "appliance"
+                ? normalizeString(item.category) || "-"
+                : "-",
+            quantity:
+              item.type === "goods" || item.type === "appliance"
+                ? Number(item.quantity || 0)
+                : "-",
             unit: item.type === "goods" ? normalizeString(item.unit) || "-" : "-",
+            condition:
+              item.type === "appliance" ? formatTypeLabel(item.condition) : "-",
+            usageDuration:
+              item.type === "appliance"
+                ? normalizeString(item.usageDuration) || "-"
+                : "-",
             amount: amountText,
+            referenceNumber:
+              item.type === "monetary"
+                ? normalizeString(item.referenceNumber) || "-"
+                : "-",
             expirationDate: item.type === "goods" ? formatDateOnly(item.expirationDate) : "-",
             expiryStatus:
               item.type === "goods" ? formatExpiryStatusLabel(item.expiryStatus) : "-",
@@ -2058,6 +2256,14 @@ const addInventory = async (req, res) => {
       itemData.quantity = data.quantity;
       itemData.unit = data.unit;
       itemData.expirationDate = data.expirationDate;
+      itemData.requiresExpiration = data.requiresExpiration;
+    }
+
+    if (data.type === "appliance") {
+      itemData.category = data.category;
+      itemData.quantity = data.quantity;
+      itemData.condition = data.condition;
+      itemData.usageDuration = data.usageDuration;
     }
 
     if (data.type === "monetary") {
@@ -2068,6 +2274,7 @@ const addInventory = async (req, res) => {
       }
 
       itemData.amount = data.amount;
+      itemData.referenceNumber = data.referenceNumber;
     }
 
     console.log("FINAL ITEM DATA:", itemData);
@@ -2115,11 +2322,52 @@ const updateInventory = async (req, res) => {
     const finalType = req.body.type ? normalizeLower(req.body.type, item.type) : item.type;
 
     const mergedBody = {
+      name: item.name,
+      type: finalType,
+      category: item.category,
+      quantity: item.quantity,
+      unit: item.unit,
+      amount: item.amount,
+      referenceNumber: item.referenceNumber,
+      expirationDate: item.expirationDate
+        ? new Date(item.expirationDate).toISOString().slice(0, 10)
+        : "",
+      requiresExpiration: item.requiresExpiration,
+      condition: item.condition,
+      usageDuration: item.usageDuration,
+      description: item.description,
+      sourceType: item.sourceType,
+      sourceName: item.sourceName,
       ...req.body,
       type: finalType,
     };
 
-    const { errors, data } = validateInventoryData(mergedBody, true, item.type);
+    if (finalType === "goods") {
+      mergedBody.amount = undefined;
+      mergedBody.referenceNumber = undefined;
+      mergedBody.condition = undefined;
+      mergedBody.usageDuration = undefined;
+    }
+
+    if (finalType === "monetary") {
+      mergedBody.category = undefined;
+      mergedBody.quantity = undefined;
+      mergedBody.unit = undefined;
+      mergedBody.expirationDate = undefined;
+      mergedBody.requiresExpiration = undefined;
+      mergedBody.condition = undefined;
+      mergedBody.usageDuration = undefined;
+    }
+
+    if (finalType === "appliance") {
+      mergedBody.amount = undefined;
+      mergedBody.referenceNumber = undefined;
+      mergedBody.unit = undefined;
+      mergedBody.expirationDate = undefined;
+      mergedBody.requiresExpiration = undefined;
+    }
+
+    const { errors, data } = validateInventoryData(mergedBody, true, item);
     if (errors.length > 0) {
       return res.status(400).json({ message: errors[0], errors });
     }
@@ -2129,25 +2377,45 @@ const updateInventory = async (req, res) => {
     if (req.body.description !== undefined) item.description = data.description;
     if (req.body.sourceType !== undefined) item.sourceType = data.sourceType;
     if (req.body.sourceName !== undefined) item.sourceName = data.sourceName;
+    if (req.body.referenceNumber !== undefined) item.referenceNumber = data.referenceNumber;
 
     if (item.type === "goods") {
-      if (req.body.category !== undefined) item.category = data.category;
-      if (req.body.quantity !== undefined) item.quantity = data.quantity;
-      if (req.body.unit !== undefined) item.unit = data.unit;
-      if (req.body.expirationDate !== undefined) {
-        item.expirationDate = data.expirationDate;
-      }
+      item.category = data.category;
+      item.quantity = data.quantity;
+      item.unit = data.unit;
+      item.expirationDate = data.expirationDate;
+      item.requiresExpiration = data.requiresExpiration;
 
       item.amount = undefined;
+      item.referenceNumber = undefined;
+      item.condition = undefined;
+      item.usageDuration = undefined;
+    }
+
+    if (item.type === "appliance") {
+      item.category = data.category;
+      item.quantity = data.quantity;
+      item.condition = data.condition;
+      item.usageDuration = data.usageDuration;
+
+      item.unit = undefined;
+      item.amount = undefined;
+      item.referenceNumber = undefined;
+      item.expirationDate = undefined;
+      item.requiresExpiration = undefined;
     }
 
     if (item.type === "monetary") {
-      if (req.body.amount !== undefined) item.amount = data.amount;
+      item.amount = data.amount;
+      item.referenceNumber = data.referenceNumber;
 
       item.category = undefined;
       item.quantity = undefined;
       item.unit = undefined;
       item.expirationDate = undefined;
+      item.requiresExpiration = undefined;
+      item.condition = undefined;
+      item.usageDuration = undefined;
     }
 
     if (req.files && req.files.length > 0) {
@@ -2261,6 +2529,181 @@ const getInventoryCategories = async (req, res) => {
   }
 };
 
+const getDonationAiInsights = async (req, res) => {
+  if (donationAiCache && Date.now() - donationAiCacheTime < AI_CACHE_MS) {
+    return res.json({
+      ...donationAiCache,
+      cacheHit: true,
+      cacheAgeMs: Date.now() - donationAiCacheTime,
+    });
+  }
+
+  try {
+    const items = await InventoryItem.find({ isArchive: false }).lean();
+    const queueDonations = await Donation.find({}).lean();
+
+    const now = new Date();
+    const todayEnd = endOfDay(now);
+    const todayStart = startOfDay(now);
+    const weekStart = startOfWeek(now);
+    const monthStart = startOfMonth(now);
+    const yearStart = startOfYear(now);
+
+    const inventoryToday = summarizeDonationPeriod(items, todayStart, todayEnd);
+    const inventoryWeek = summarizeDonationPeriod(items, weekStart, todayEnd);
+    const inventoryMonth = summarizeDonationPeriod(items, monthStart, todayEnd);
+    const inventoryYear = summarizeDonationPeriod(items, yearStart, todayEnd);
+
+    const queueToday = summarizeDonationQueuePeriod(queueDonations, todayStart, todayEnd);
+    const queueWeek = summarizeDonationQueuePeriod(queueDonations, weekStart, todayEnd);
+    const queueMonth = summarizeDonationQueuePeriod(queueDonations, monthStart, todayEnd);
+    const queueYear = summarizeDonationQueuePeriod(queueDonations, yearStart, todayEnd);
+
+    const namedDonors = items.reduce((acc, item) => {
+      const sourceName =
+        normalizeString(item?.sourceName) ||
+        (normalizeLower(item?.type) === "monetary" ? normalizeString(item?.name) : "");
+      if (!sourceName) return acc;
+      if (!acc.has(sourceName.toLowerCase())) {
+        acc.set(sourceName.toLowerCase(), sourceName);
+      }
+      return acc;
+    }, new Map());
+
+    const statusCounts = queueDonations.reduce((acc, donation) => {
+      const status = normalizeLower(donation?.status, "pending");
+      acc[status] = Number(acc[status] || 0) + 1;
+      return acc;
+    }, {});
+
+    const fallbackInsights = [];
+
+    if (queueWeek.totalRecords > inventoryWeek.totalDonations) {
+      fallbackInsights.push({
+        type: "queue_pending_conversion",
+        severity: "warning",
+        title: "Queue intake is ahead of validated entries",
+        message: `${queueWeek.totalRecords} donation queue record(s) were created this week versus ${inventoryWeek.totalDonations} validated inventory donation entries.`,
+        action: "Review donation queue validation speed so intake is not stuck before encoding.",
+      });
+    }
+
+    if (Number(statusCounts.pending || 0) > 0) {
+      fallbackInsights.push({
+        type: "pending_queue",
+        severity: Number(statusCounts.pending || 0) >= 5 ? "warning" : "notice",
+        title: "Pending donation queue records need review",
+        message: `${Number(statusCounts.pending || 0)} donation queue record(s) are still pending.`,
+        action: "Check the donation queue and process pending submissions before the backlog grows.",
+      });
+    }
+
+    if (queueToday.totalRecords === 0) {
+      fallbackInsights.push({
+        type: "no_queue_today",
+        severity: "info",
+        title: "No donation queue intake today",
+        message: "No new donation queue submissions were recorded today.",
+        action: "Keep monitoring donor channels and verify whether submissions are being encoded.",
+      });
+    }
+
+    if (!fallbackInsights.length) {
+      fallbackInsights.push({
+        type: "stable_donation_queue",
+        severity: "success",
+        title: "Donation queue activity looks stable",
+        message: "Donation queue intake and validated entries are both present in current records.",
+        action: "Continue monitoring queue validation speed, repeat donors, and source balance.",
+      });
+    }
+
+    const fallback = {
+      generatedAt: new Date(),
+      source: "rule_based_fallback",
+      model: "local_rules",
+      aiAvailable: false,
+      overallSeverity: fallbackInsights.some((item) => item.severity === "warning")
+        ? "warning"
+        : fallbackInsights.some((item) => item.severity === "notice")
+        ? "notice"
+        : "success",
+      executiveSummary: fallbackInsights.some((item) => item.severity === "warning")
+        ? "Donation queue activity is visible, but some submissions still need review or conversion into validated inventory records."
+        : "Donation queue intake and validated donation records are available for monitoring.",
+      priorityActions: fallbackInsights.slice(0, 4).map((item) => item.action),
+      insights: fallbackInsights.slice(0, 5),
+      summary: {
+        namedDonors: namedDonors.size,
+        inventoryDonationsThisWeek: inventoryWeek.totalDonations,
+        inventoryDonationsThisMonth: inventoryMonth.totalDonations,
+        inventoryDonationsThisYear: inventoryYear.totalDonations,
+        queueRecordsToday: queueToday.totalRecords,
+        queueRecordsThisWeek: queueWeek.totalRecords,
+        queueRecordsThisMonth: queueMonth.totalRecords,
+        queueRecordsThisYear: queueYear.totalRecords,
+        pendingQueueRecords: Number(statusCounts.pending || 0),
+      },
+      fallbackReason: "",
+      cacheHit: false,
+    };
+
+    const facts = {
+      generatedAt: new Date(),
+      namedDonors: namedDonors.size,
+      inventoryValidated: {
+        today: inventoryToday.totalDonations,
+        thisWeek: inventoryWeek.totalDonations,
+        thisMonth: inventoryMonth.totalDonations,
+        thisYear: inventoryYear.totalDonations,
+        goodsQuantityThisWeek: inventoryWeek.goodsQuantity,
+        monetaryAmountThisWeek: inventoryWeek.monetaryAmount,
+      },
+      donationQueue: {
+        today: queueToday,
+        thisWeek: queueWeek,
+        thisMonth: queueMonth,
+        thisYear: queueYear,
+      },
+      queueStatusBreakdown: statusCounts,
+    };
+
+    const prompt = `
+Return ONLY valid minified JSON. No markdown. No explanation. No code fences.
+
+You are an AI analytics assistant for a DRRMO donation monitoring dashboard.
+Analyze only the provided compact donation facts. Do not invent records.
+
+JSON shape:
+{"overallSeverity":"success|info|notice|warning|critical","executiveSummary":"1 to 3 short sentences","priorityActions":["action 1","action 2","action 3"],"insights":[{"type":"short_snake_case","severity":"success|info|notice|warning|critical","title":"short title","message":"short data-based explanation","action":"specific recommended action"}]}
+
+Rules:
+- Make 3 to 5 insights only.
+- Keep messages short and dashboard-friendly.
+- Use only the provided facts about donation queue intake, validated donation records, named donor visibility, and queue status distribution.
+- Mention backlog, intake pace, or validation gaps only when the facts support it.
+- Do not invent donors, amounts, barangays, or queue statuses.
+
+Facts:
+${JSON.stringify(facts)}
+`;
+
+    const finalPayload = await callAiAnalyticsProvider({
+      controllerLabel: "Donation Analytics",
+      prompt,
+      fallback,
+    });
+
+    donationAiCache = finalPayload;
+    donationAiCacheTime = Date.now();
+
+    return res.json(finalPayload);
+  } catch (err) {
+    console.error("Get Donation AI Insights Error:", err);
+    return res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   addInventory,
   getInventory,
@@ -2278,6 +2721,7 @@ module.exports = {
   getTopDonors,
   getDonationActivity,
   getInventoryAiInsights,
+  getDonationAiInsights,
 
   getInventoryCategories,
   exportInventoryPdf,

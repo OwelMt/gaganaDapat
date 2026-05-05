@@ -704,6 +704,13 @@ body {
   box-shadow: 0 8px 18px rgba(249, 115, 22, 0.24);
 }
 
+.sidebar-badge-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center;
+}
+
 .sidebar-badge-collapsed {
   position: absolute;
   top: 5px;
@@ -712,6 +719,90 @@ body {
   height: 17px;
   padding: 0 5px;
   font-size: 9px;
+}
+
+.sidebar-link-has-update {
+  animation: sidebarLinkPulse 1.35s ease;
+}
+
+.sidebar-link-has-update:not(.active) {
+  background:
+    linear-gradient(90deg, rgba(249, 115, 22, 0.16), transparent 60%),
+    var(--sb-panel);
+  border-color: rgba(249, 115, 22, 0.24);
+  box-shadow: 0 10px 24px rgba(249, 115, 22, 0.14);
+}
+
+.sidebar-badge-pulse {
+  animation:
+    sidebarBadgePop 0.42s ease,
+    sidebarBadgeGlow 1.5s ease 0.1s 2;
+}
+
+.sidebar-badge-count-pulse {
+  animation: sidebarBadgeCountBounce 0.48s ease;
+}
+
+@keyframes sidebarBadgePop {
+  0% {
+    transform: scale(0.84);
+  }
+
+  60% {
+    transform: scale(1.12);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes sidebarBadgeGlow {
+  0%,
+  100% {
+    box-shadow: 0 8px 18px rgba(249, 115, 22, 0.24);
+    filter: saturate(1);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 6px rgba(249, 115, 22, 0.16),
+      0 12px 26px rgba(249, 115, 22, 0.3);
+    filter: saturate(1.12);
+  }
+}
+
+@keyframes sidebarBadgeCountBounce {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+
+  28% {
+    transform: translateY(-1px) scale(1.16);
+  }
+
+  58% {
+    transform: translateY(0) scale(0.96);
+  }
+
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes sidebarLinkPulse {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  35% {
+    transform: translateX(2px);
+  }
+
+  70% {
+    transform: translateX(0);
+  }
 }
 
 /* Fix collapsed icon spacing */

@@ -31,6 +31,36 @@ const HeroSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const HeroImageSchema = new mongoose.Schema(
+  {
+    fileName: {
+      type: String,
+      trim: true,
+      maxlength: 200,
+      default: "",
+    },
+    fileUrl: {
+      type: String,
+      trim: true,
+      maxlength: 1000,
+      required: true,
+    },
+    public_id: {
+      type: String,
+      trim: true,
+      maxlength: 255,
+      default: "",
+    },
+    caption: {
+      type: String,
+      trim: true,
+      maxlength: 80,
+      default: "",
+    },
+  },
+  { _id: true, timestamps: false }
+);
+
 const AlertSchema = new mongoose.Schema(
   {
     enabled: {
@@ -186,6 +216,17 @@ const PublicSiteSchema = new mongoose.Schema(
     hero: {
       type: HeroSchema,
       default: () => ({}),
+    },
+
+    heroImages: {
+      type: [HeroImageSchema],
+      default: [],
+      validate: {
+        validator: function (arr) {
+          return Array.isArray(arr) && arr.length <= 12;
+        },
+        message: "Hero images cannot exceed 12 items.",
+      },
     },
 
     alert: {

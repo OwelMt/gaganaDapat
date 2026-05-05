@@ -11,12 +11,63 @@ import {
   FaSignOutAlt,
   FaSun,
   FaMoon,
+  FaBullhorn,
 } from "react-icons/fa";
 
 import logo from "../../assets/images/sagipbayanlogo.png";
 
 const BASE_URL =
   process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
+const SIDEBAR_COUNT_CACHE_KEY = "sidebar:admin:counts";
+let sidebarCountMemoryCache = {
+  notifications: 0,
+  inventory: 0,
+  evacuation: 0,
+};
+
+const readCachedCounts = () => {
+  const fallback = { ...sidebarCountMemoryCache };
+
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(SIDEBAR_COUNT_CACHE_KEY);
+    if (!raw) {
+      return fallback;
+    }
+
+    const parsed = JSON.parse(raw);
+
+    const next = {
+      notifications: Number(parsed?.notifications || 0),
+      inventory: Number(parsed?.inventory || 0),
+      evacuation: Number(parsed?.evacuation || 0),
+    };
+    sidebarCountMemoryCache = next;
+    return next;
+  } catch {
+    return fallback;
+  }
+};
+
+const writeCachedCounts = (counts) => {
+  sidebarCountMemoryCache = {
+    notifications: Number(counts?.notifications || 0),
+    inventory: Number(counts?.inventory || 0),
+    evacuation: Number(counts?.evacuation || 0),
+  };
+
+  if (typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.setItem(
+      SIDEBAR_COUNT_CACHE_KEY,
+      JSON.stringify(sidebarCountMemoryCache)
+    );
+  } catch {}
+};
 
 const getNotificationCount = async (moduleName) => {
   const res = await fetch(
@@ -49,10 +100,51 @@ export default function Sidebar({
   const navScrollRef = useRef(null);
   const SIDEBAR_SCROLL_KEY = "sidebar:admin:scrollTop";
   const PAGE_SCROLL_KEY = "sidebar:admin:pageScrollY";
+  const cachedCountsRef = useRef(readCachedCounts());
 
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [inventoryUnreadCount, setInventoryUnreadCount] = useState(0);
-  const [evacUnreadCount, setEvacUnreadCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(
+    cachedCountsRef.current.notifications
+  );
+  const [inventoryUnreadCount, setInventoryUnreadCount] = useState(
+    cachedCountsRef.current.inventory
+  );
+  const [evacUnreadCount, setEvacUnreadCount] = useState(
+    cachedCountsRef.current.evacuation
+  );
+  const [badgePulses, setBadgePulses] = useState({});
+  const badgeTimersRef = useRef({});
+  const previousCountsRef = useRef(cachedCountsRef.current);
+  const hasCompletedInitialFetchRef = useRef(false);
+
+  const triggerBadgePulse = useCallback((key) => {
+    if (!key) return;
+
+    setBadgePulses((prev) => ({
+      ...prev,
+      [key]: true,
+    }));
+
+    if (badgeTimersRef.current[key]) {
+      clearTimeout(badgeTimersRef.current[key]);
+    }
+
+    badgeTimersRef.current[key] = window.setTimeout(() => {
+      setBadgePulses((prev) => ({
+        ...prev,
+        [key]: false,
+      }));
+      delete badgeTimersRef.current[key];
+    }, 2200);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      Object.values(badgeTimersRef.current).forEach((timerId) =>
+        clearTimeout(timerId)
+      );
+      badgeTimersRef.current = {};
+    };
+  }, [triggerBadgePulse]);
 
   useEffect(() => {
     let isMounted = true;
@@ -72,20 +164,45 @@ export default function Sidebar({
           const allData = await allRes.json();
 
           if (isMounted) {
-            setUnreadCount(Number(allData.unreadCount || 0));
+            const nextUnreadCount = Number(allData.unreadCount || 0);
+            const nextInventoryCount = Number(inventoryCount || 0);
+            const nextEvacuationCount = Number(evacuationCount || 0);
+            const previousCounts = previousCountsRef.current;
+
+            if (
+              hasCompletedInitialFetchRef.current &&
+              nextUnreadCount > previousCounts.notifications
+            ) {
+              triggerBadgePulse("notifications");
+            }
+            if (
+              hasCompletedInitialFetchRef.current &&
+              nextInventoryCount > previousCounts.inventory
+            ) {
+              triggerBadgePulse("inventory");
+            }
+            if (
+              hasCompletedInitialFetchRef.current &&
+              nextEvacuationCount > previousCounts.evacuation
+            ) {
+              triggerBadgePulse("evacuation");
+            }
+
+            previousCountsRef.current = {
+              notifications: nextUnreadCount,
+              inventory: nextInventoryCount,
+              evacuation: nextEvacuationCount,
+            };
+            writeCachedCounts(previousCountsRef.current);
+            hasCompletedInitialFetchRef.current = true;
+
+            setUnreadCount(nextUnreadCount);
+            setInventoryUnreadCount(nextInventoryCount);
+            setEvacUnreadCount(nextEvacuationCount);
           }
         }
-
-        if (isMounted) {
-          setInventoryUnreadCount(Number(inventoryCount || 0));
-          setEvacUnreadCount(Number(evacuationCount || 0));
-        }
       } catch (err) {
-        if (isMounted) {
-          setUnreadCount(0);
-          setInventoryUnreadCount(0);
-          setEvacUnreadCount(0);
-        }
+        // Keep the last known counts on navigation or transient fetch issues.
       }
     };
 
@@ -104,7 +221,7 @@ export default function Sidebar({
       clearInterval(interval);
       window.removeEventListener("focus", handleFocus);
     };
-  }, []);
+  }, [triggerBadgePulse]);
 
   useEffect(() => {
     const saved = Number(sessionStorage.getItem(SIDEBAR_SCROLL_KEY) || 0);
@@ -164,6 +281,7 @@ export default function Sidebar({
           Icon: FaBed,
           exact: true,
           badge: evacUnreadCount,
+          badgeKey: "evacuation",
         },
       ],
     },
@@ -176,6 +294,7 @@ export default function Sidebar({
           Icon: FaClipboardList,
           exact: true,
           badge: inventoryUnreadCount,
+          badgeKey: "inventory",
         },
       ],
     },
@@ -183,8 +302,22 @@ export default function Sidebar({
       section: "Operations",
       items: [
         {
+          to: "/admin/announcements",
+          label: "Announcements",
+          Icon: FaBullhorn,
+          exact: true,
+          badge: 0,
+        },
+        {
           to: "/admin/time-in-time-out",
           label: "Time In & Time Out",
+          Icon: FaHistory,
+          exact: true,
+          badge: 0,
+        },
+        {
+          to: "/admin/audit-trail",
+          label: "Audit Trail",
           Icon: FaHistory,
           exact: true,
           badge: 0,
@@ -200,13 +333,14 @@ export default function Sidebar({
       Icon: FaBell,
       exact: true,
       badge: unreadCount,
+      badgeKey: "notifications",
     },
   ];
 
   const ThemeIcon = dark ? FaSun : FaMoon;
   const themeLabel = dark ? "Light mode" : "Dark mode";
 
-  const renderBadge = (badge, collapsedMode = false) => {
+  const renderBadge = (badge, collapsedMode = false, badgeKey = "") => {
     const count = Number(badge || 0);
 
     if (count <= 0) return null;
@@ -215,8 +349,12 @@ export default function Sidebar({
       <span
         className={
           collapsedMode
-            ? "sidebar-badge sidebar-badge-collapsed"
-            : "sidebar-badge"
+            ? `sidebar-badge sidebar-badge-collapsed ${
+                badgePulses[badgeKey] ? "sidebar-badge-pulse" : ""
+              }`
+            : `sidebar-badge ${
+                badgePulses[badgeKey] ? "sidebar-badge-pulse" : ""
+              }`
         }
       >
         {count > 99 ? "99+" : count}
@@ -302,11 +440,11 @@ export default function Sidebar({
                     {!collapsed && (
                       <>
                         <span className="sidebar-link-label">{item.label}</span>
-                        {renderBadge(badge)}
+                        {renderBadge(badge, false, item.badgeKey)}
                       </>
                     )}
 
-                    {collapsed && renderBadge(badge, true)}
+                    {collapsed && renderBadge(badge, true, item.badgeKey)}
                   </NavLink>
                 );
               })}
@@ -337,11 +475,11 @@ export default function Sidebar({
                   {!collapsed && (
                     <>
                       <span className="sidebar-link-label">{item.label}</span>
-                      {renderBadge(badge)}
+                      {renderBadge(badge, false, item.badgeKey)}
                     </>
                   )}
 
-                  {collapsed && renderBadge(badge, true)}
+                  {collapsed && renderBadge(badge, true, item.badgeKey)}
                 </NavLink>
               );
             })}

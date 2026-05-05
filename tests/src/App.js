@@ -1,7 +1,9 @@
 import './App.css';
+import './components/css/OverlayFixes.css';
 import './components/css/sidebar.css'; // ← add this
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "./context/AuthContext";
+import { useEffect, useState } from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext"; // ← add this
 import 'leaflet/dist/leaflet.css';
 
@@ -12,7 +14,6 @@ import Login from "./components/auth/Login";
 import Register from "./components/auth/Register";
 import Dashboard from "./components/entry/Dashboard";
 import EditAccount from './components/auth/EditAccount';
-import AccountSettings from './components/auth/AccountSettings';
 import ArchivedAccounts from './components/auth/ArchivedAccounts';
 import BarangayDashboard from "./components/dashboards/BarangayDashboard";
 import DRRMODashboard from "./components/dashboards/DRRMODashboard";
@@ -29,69 +30,227 @@ import EvacuationMap from './components/map/EvacuationMap';
 import AdminAccounts from './components/group/AdminAccounts';
 import AdminAnalytics from './components/group/AdminAnalytics';
 import Notification from './components/Notification';
+import Announcement from './components/Announcement';
+import UnityDigitalTwin from './components/DigitalTwin/UnityDigitalTwin';
+import YoloWaterMonitor from './components/YoloWaterMonitor';
+import UnityDigitalTwin1 from './components/DigitalTwin/UnityDigitalTwin1';
 
 import Inventory from './components/Donations/Inventory';
 import InventoryAdd from './components/Donations/InventoryAdd';
+import DonationValidationQueue from './components/Donations/DonationValidationQueue';
+import SplashScreen from './components/splashscreen/SplashScreen';
+
+const BASE_URL =
+  process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
+
+const ADMIN_ONLY = ["admin"];
+const BARANGAY_ONLY = ["barangay"];
+const DRRMO_ONLY = ["drrmo"];
+const ADMIN_DRRMO = ["admin", "drrmo"];
+const ALL_AUTH = ["admin", "drrmo", "barangay"];
+
+const ROLE_HOME = {
+  admin: "/admin/dashboard",
+  drrmo: "/drrmo/dashboard",
+  barangay: "/barangay/dashboard"
+};
+
+function normalizeRole(role) {
+  return String(role || "").toLowerCase();
+}
+
+function homeForRole(role) {
+  return ROLE_HOME[normalizeRole(role)] || "/Login";
+}
+
+function SessionGate({ allowedRoles = ALL_AUTH, children }) {
+  const navigate = useNavigate();
+  const { setUser } = useAuth();
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const validateSession = async () => {
+      try {
+        const res = await fetch(`${BASE_URL}/api/debug-session`, {
+          credentials: "include"
+        });
+
+        if (!active) return;
+
+        if (!res.ok) {
+          setUser(null);
+          navigate("/Login", { replace: true });
+          return;
+        }
+
+        const data = await res.json();
+        const role = normalizeRole(data?.role || data?.session?.role);
+        const username = data?.username || data?.session?.username || "";
+        const userId = data?.userId || data?.session?.userId || "";
+
+        if (!role || !userId) {
+          setUser(null);
+          navigate("/Login", { replace: true });
+          return;
+        }
+
+        setUser({ role, username, userId });
+
+        if (allowedRoles.length > 0 && !allowedRoles.includes(role)) {
+          navigate(homeForRole(role), { replace: true });
+          return;
+        }
+
+        setReady(true);
+      } catch (err) {
+        if (!active) return;
+        console.error(err);
+        setUser(null);
+        navigate("/Login", { replace: true });
+      }
+    };
+
+    validateSession();
+
+    return () => {
+      active = false;
+    };
+  }, [allowedRoles, navigate, setUser]);
+
+  if (!ready) {
+    return <SplashScreen />;
+  }
+
+  return children;
+}
+
+function sessionElement(element, allowedRoles) {
+  return <SessionGate allowedRoles={allowedRoles}>{element}</SessionGate>;
+}
+
+function LoginGate({ children }) {
+  const navigate = useNavigate();
+  const { setUser } = useAuth();
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const validateSession = async () => {
+      try {
+        const res = await fetch(`${BASE_URL}/api/debug-session`, {
+          credentials: "include"
+        });
+
+        if (!active) return;
+
+        if (!res.ok) {
+          setReady(true);
+          return;
+        }
+
+        const data = await res.json();
+        const role = normalizeRole(data?.role || data?.session?.role);
+        const username = data?.username || data?.session?.username || "";
+        const userId = data?.userId || data?.session?.userId || "";
+
+        if (!role || !userId) {
+          setReady(true);
+          return;
+        }
+
+        setUser({ role, username, userId });
+        navigate(homeForRole(role), { replace: true });
+      } catch (err) {
+        if (!active) return;
+        console.error(err);
+        setReady(true);
+      }
+    };
+
+    validateSession();
+
+    return () => {
+      active = false;
+    };
+  }, [navigate, setUser]);
+
+  if (!ready) {
+    return <SplashScreen />;
+  }
+
+  return children;
+}
+
+const ROUTES = [
+  { path: "/", element: <Dashboard /> },
+  { path: "/Login", element: <Login /> },
+  { path: "/auditTrails", element: <AuditTrails />, roles: ADMIN_ONLY },
+  { path: "/evacuation", element: <EManagement />, roles: ALL_AUTH },
+  { path: "/drrmo/evacuation-centers", element: <EManagement />, roles: ADMIN_DRRMO },
+  { path: "/barangay/dashboard", element: <BarangayDashboard />, roles: BARANGAY_ONLY },
+  { path: "/barangay/relief-request", element: <ReliefRequestForm />, roles: BARANGAY_ONLY },
+  { path: "/barangay/relief-status", element: <ReliefTracking />, roles: BARANGAY_ONLY },
+  { path: "/barangay/evacuation-centers", element: <EManagement />, roles: BARANGAY_ONLY },
+  { path: "/barangay/notifications", element: <Notification />, roles: BARANGAY_ONLY },
+  { path: "/drrmo/dashboard", element: <DRRMODashboard />, roles: DRRMO_ONLY },
+  { path: "/drrmo/relief-lists", element: <ReliefRequestsList />, roles: ADMIN_DRRMO },
+  { path: "/drrmo/relief-status", element: <ReliefTracking />, roles: ADMIN_DRRMO },
+  { path: "/drrmo/audit-trail", element: <AuditTrail />, roles: ADMIN_DRRMO },
+  { path: "/drrmo/guidelines", element: <HomeGuidelines />, roles: ADMIN_DRRMO },
+  { path: "/drrmo/announcements", element: <Announcement />, roles: ADMIN_DRRMO },
+  { path: "/drrmo/inventory", element: <Inventory />, roles: ADMIN_DRRMO },
+  { path: "/drrmo/inventory/add", element: <InventoryAdd />, roles: ADMIN_DRRMO },
+  { path: "/drrmo/donations/queue", element: <DonationValidationQueue />, roles: ADMIN_DRRMO },
+  { path: "/drrmo/incident-report", element: <IncidentReport />, roles: ADMIN_DRRMO },
+  { path: "/drrmo/analytics", element: <AdminAnalytics />, roles: ADMIN_DRRMO },
+  { path: "/drrmo/notifications", element: <Notification />, roles: ADMIN_DRRMO },
+  { path: "/admin/dashboard", element: <AdminDashboard />, roles: ADMIN_ONLY },
+  { path: "/admin/register", element: <Register />, roles: ADMIN_ONLY },
+  { path: "/admin/audit-trail", element: <AuditTrails />, roles: ADMIN_ONLY },
+  { path: "/admin/edit-accounts", element: <EditAccount />, roles: ADMIN_ONLY },
+  { path: "/admin/archived-accounts", element: <ArchivedAccounts />, roles: ADMIN_ONLY },
+  { path: "/admin/inventory", element: <Inventory />, roles: ADMIN_ONLY },
+  { path: "/admin/inventory/add", element: <InventoryAdd />, roles: ADMIN_ONLY },
+  { path: "/admin/time-in-time-out", element: <TimeInOut />, roles: ADMIN_ONLY },
+  { path: "/admin/logs", element: <AdminLogs />, roles: ADMIN_ONLY },
+  { path: "/admin/accounts", element: <AdminAccounts />, roles: ADMIN_ONLY },
+  { path: "/admin/analytics", element: <AdminAnalytics />, roles: ADMIN_ONLY },
+  { path: "/admin/announcements", element: <Announcement />, roles: ADMIN_ONLY },
+  { path: "/admin/notifications", element: <Notification />, roles: ADMIN_ONLY },
+  { path: "/drrmo/digital-twin", element: <UnityDigitalTwin />, roles: ADMIN_DRRMO },
+  { path: "/digital-twin-mobile", element: <UnityDigitalTwin1 />, roles: ALL_AUTH },
+  { path: "/idk", element: <HomeGuidelines />, roles: ALL_AUTH },
+  { path: "/update/:id", element: <UpdateGuideline />, roles: ALL_AUTH },
+  { path: "/map", element: <EvacuationMap />, roles: ALL_AUTH },
+  { path: "/yolo-water-monitor", element: <YoloWaterMonitor />, roles: ALL_AUTH }
+];
+
 
 function App() {
+  const renderRoute = (route) => {
+    if (route.path === "/Login") {
+      return <LoginGate>{route.element}</LoginGate>;
+    }
+
+    return sessionElement(route.element, route.roles || ALL_AUTH);
+  };
+
   return (
     <AuthProvider>
       <ThemeProvider>{/* ← Theme for dark/light + icon switching */}
         <Router>
           <Routes>
-
-            <Route path="/auditTrails" element={<AuditTrails/>} />
-
-            {/* Evacuation Center Management */}
-            {/* Keep existing generic route for backward compatibility */}
-            <Route path="/evacuation" element={<EManagement/>} />
-            {/* Add DRRMO-scoped route so DRRMO sidebar points here safely */}
-            <Route path="/drrmo/evacuation-centers" element={<EManagement />} />
-
-            {/* Public */}
-            <Route path="/" element={<Dashboard/>}/>
-            <Route path="/Login" element={<Login />} />
-
-            {/* Barangay */}
-            <Route path="/barangay/dashboard" element={<BarangayDashboard />} />
-            <Route path="/barangay/relief-request" element={<ReliefRequestForm />} />
-            <Route path="/barangay/relief-status" element={<ReliefTracking />} />
-            <Route path="/barangay/evacuation-centers" element={<EManagement />} />
-            <Route path="/barangay/notifications" element={<Notification />} />
-
-            {/* DRRMO */}
-            <Route path="/drrmo/dashboard" element={<DRRMODashboard />} />
-            <Route path="/drrmo/relief-lists" element={<ReliefRequestsList />} />
-            <Route path="/drrmo/relief-status" element={<ReliefTracking />} />
-            <Route path="/drrmo/audit-trail" element={<AuditTrail />} />
-            <Route path="/drrmo/guidelines" element={<HomeGuidelines />} />
-            <Route path="/drrmo/inventory" element={<Inventory />} />
-            <Route path="/drrmo/inventory/add" element={<InventoryAdd />} />
-            <Route path="/drrmo/incident-report" element={<IncidentReport />} />
-            <Route path="/drrmo/analytics" element={<AdminAnalytics />} />
-            <Route path="/drrmo/notifications" element={<Notification />} />
-
-            {/* Admin */}
-            <Route path="/admin/dashboard" element={<AdminDashboard />} />
-            
-            <Route path="/admin/register" element={<Register />} />
-            <Route path="/admin/audit-trail" element={<AuditTrail />} />
-            <Route path="/admin/edit-accounts" element={<EditAccount/>} />
-            <Route path="/admin/archived-accounts" element={<ArchivedAccounts />} />
-            <Route path="/admin/inventory" element={<Inventory />} /> 
-            <Route path="/admin/inventory/add" element={<InventoryAdd />} />
-            <Route path="/admin/time-in-time-out" element={<TimeInOut />} />
-            <Route path="/admin/logs" element={<AdminLogs />} />
-            <Route path="/admin/accounts" element={<AdminAccounts />} />
-            <Route path="/admin/analytics" element={<AdminAnalytics />} />
-            <Route path="/admin/notifications" element={<Notification />} />
-
-            {/* Fallback */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-
-            <Route path="/idk" element={<HomeGuidelines/>}/>
-            <Route path="/update/:id" element={<UpdateGuideline/>}/>
-            <Route path="/map" element={<EvacuationMap/>}/>
+            {ROUTES.map((route) => (
+              <Route
+                key={route.path}
+                path={route.path}
+                element={renderRoute(route)}
+              />
+            ))}
+            <Route path="*" element={<Navigate to="/Login" replace />} />
           </Routes>
         </Router>
       </ThemeProvider>

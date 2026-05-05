@@ -1,6 +1,6 @@
-import WaterLevel from "../models/WaterLevel.js";
+const WaterLevel = require("../models/WaterLevel");
 
-export const createWaterLevel = async (req, res) => {
+const createWaterLevel = async (req, res) => {
   try {
     const {
       water_level,
@@ -44,7 +44,7 @@ export const createWaterLevel = async (req, res) => {
   }
 };
 
-export const getWaterLevels = async (req, res) => {
+const getWaterLevels = async (req, res) => {
   try {
     const data = await WaterLevel.find().sort({ timestamp: -1 });
     res.json(data);
@@ -53,7 +53,7 @@ export const getWaterLevels = async (req, res) => {
   }
 };
 
-export const getLatestWaterLevel = async (req, res) => {
+const getLatestWaterLevel = async (req, res) => {
   try {
     const { camera_id } = req.params;
 
@@ -87,7 +87,7 @@ export const getLatestWaterLevel = async (req, res) => {
   }
 };
 
-export const getWaterLevelHistoryByCamera = async (req, res) => {
+const getWaterLevelHistoryByCamera = async (req, res) => {
   try {
     const { camera_id } = req.params;
 
@@ -109,4 +109,11 @@ export const getWaterLevelHistoryByCamera = async (req, res) => {
       error: err.message,
     });
   }
+};
+
+module.exports = {
+  createWaterLevel,
+  getWaterLevels,
+  getLatestWaterLevel,
+  getWaterLevelHistoryByCamera,
 };

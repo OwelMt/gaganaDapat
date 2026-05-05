@@ -4,7 +4,7 @@ const inventoryItemSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ['goods', 'monetary'],
+      enum: ['goods', 'monetary', 'appliance'],
       required: true,
       default: 'goods',
       trim: true
@@ -19,7 +19,7 @@ const inventoryItemSchema = new mongoose.Schema(
     category: {
       type: String,
       required: function () {
-        return this.type === 'goods';
+        return this.type === 'goods' || this.type === 'appliance';
       },
       trim: true
     },
@@ -27,7 +27,7 @@ const inventoryItemSchema = new mongoose.Schema(
     quantity: {
       type: Number,
       required: function () {
-        return this.type === 'goods';
+        return this.type === 'goods' || this.type === 'appliance';
       },
       min: 0
     },
@@ -48,8 +48,37 @@ const inventoryItemSchema = new mongoose.Schema(
       min: 0
     },
 
+    referenceNumber: {
+      type: String,
+      trim: true,
+      default: undefined
+    },
+
     expirationDate: {
       type: Date,
+      default: undefined
+    },
+
+    requiresExpiration: {
+      type: Boolean,
+      default: undefined
+    },
+
+    condition: {
+      type: String,
+      enum: ['brand_new', 'used_item'],
+      required: function () {
+        return this.type === 'appliance';
+      },
+      trim: true
+    },
+
+    usageDuration: {
+      type: String,
+      required: function () {
+        return this.type === 'appliance' && this.condition === 'used_item';
+      },
+      trim: true,
       default: undefined
     },
 
@@ -99,6 +128,9 @@ inventoryItemSchema.pre('validate', function () {
 
   if (this.type === 'goods') {
     this.amount = undefined;
+    this.referenceNumber = undefined;
+    this.condition = undefined;
+    this.usageDuration = undefined;
   }
 
   if (this.type === 'monetary') {
@@ -106,6 +138,21 @@ inventoryItemSchema.pre('validate', function () {
     this.quantity = undefined;
     this.unit = undefined;
     this.expirationDate = undefined;
+    this.requiresExpiration = undefined;
+    this.condition = undefined;
+    this.usageDuration = undefined;
+  }
+
+  if (this.type === 'appliance') {
+    this.amount = undefined;
+    this.referenceNumber = undefined;
+    this.unit = undefined;
+    this.expirationDate = undefined;
+    this.requiresExpiration = undefined;
+
+    if (this.condition === 'brand_new') {
+      this.usageDuration = undefined;
+    }
   }
 });
 

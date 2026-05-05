@@ -18,6 +18,8 @@ const normalizeRole = (value) => {
   return normalizeString(value).toLowerCase();
 };
 
+const safeLower = (value) => normalizeString(value).toLowerCase();
+
 const formatDateValue = (value) => {
   if (!value) return "-";
   const date = new Date(value);
@@ -339,6 +341,19 @@ const notifyIncidentEvent = async ({
   }
 };
 
+const buildIncidentHistoryMetadata = (req, incident, extra = {}) => ({
+  incidentId: incident?._id || null,
+  incidentType: normalizeString(incident?.type),
+  incidentLevel: normalizeString(incident?.level),
+  incidentStatus: normalizeString(incident?.status),
+  actorName:
+    normalizeString(req.session?.username) ||
+    normalizeString(req.session?.name) ||
+    "System",
+  actorRole: normalizeRole(req.session?.role) || "system",
+  ...extra,
+});
+
 // ✅ Get all incidents
 const getIncidents = async (req, res) => {
   try {
@@ -414,10 +429,17 @@ const registerIncident = async (req, res) => {
         normalizeString(req.session?.barangayName),
 
       image: imageData,
-      usernames: req.body.usernames || req.session?.username || null,
-      phone: req.body.phone || null,
-      status: "reported",
-      expiresAt: new Date(Date.now() + INCIDENT_TTL_MS),
+
+// ✅ Save who reported this incident.
+// This is needed so the reporter can receive the approval notification later.
+userId: req.body.userId || req.session?.userId || null,
+reporterUserId:
+  req.body.reporterUserId || req.body.userId || req.session?.userId || null,
+
+usernames: req.body.usernames || req.session?.username || null,
+phone: req.body.phone || null,
+status: "reported",
+expiresAt: new Date(Date.now() + INCIDENT_TTL_MS),
       verification: verification
         ? {
             status: verification.status,
@@ -448,6 +470,9 @@ const registerIncident = async (req, res) => {
       action: "ADD",
       placeName: incident.location,
       details: incident.description,
+      metadata: buildIncidentHistoryMetadata(req, incident, {
+        eventType: "created",
+      }),
     });
 
     await notifyIncidentEvent({
@@ -485,6 +510,10 @@ const updateStatus = async (req, res) => {
       action: "STATUS_UPDATE",
       placeName: updatedIncident.location,
       details: `Updated to ${status}`,
+      metadata: buildIncidentHistoryMetadata(req, updatedIncident, {
+        eventType: "status_update",
+        status,
+      }),
     });
 
     await notifyIncidentEvent({
@@ -514,6 +543,9 @@ const deleteIncident = async (req, res) => {
       action: "DELETE",
       placeName: deleted.location,
       details: deleted.description,
+      metadata: buildIncidentHistoryMetadata(req, deleted, {
+        eventType: "deleted",
+      }),
     });
 
     await notifyIncidentEvent({
@@ -614,6 +646,187 @@ const getTrend = async (req, res) => {
   }
 };
 
+const getIncidentHistory = async (req, res) => {
+  try {
+    const filter = safeLower(req.query.filter || "all");
+    const search = safeLower(req.query.search || "");
+
+    const [resolvedIncidents, deletedHistory] = await Promise.all([
+      filter === "deleted"
+        ? Promise.resolve([])
+        : IncidentModel.find({ status: "resolved" }).sort({ updatedAt: -1 }).lean(),
+      filter === "resolved"
+        ? Promise.resolve([])
+        : HistoryModel.find({ action: "DELETE" }).sort({ createdAt: -1 }).lean(),
+    ]);
+
+    let items = [
+      ...resolvedIncidents.map((incident) => ({
+        _id: `resolved-${incident._id}`,
+        eventType: "resolved",
+        incidentId: incident._id || null,
+        type: normalizeString(incident.type) || "Incident",
+        level: normalizeString(incident.level) || "-",
+        location: normalizeString(incident.location) || "Unknown location",
+        description: normalizeString(incident.description) || "No description provided.",
+        status: "resolved",
+        actorName:
+          normalizeString(incident?.verification?.metadata?.reviewedBy) ||
+          "DRRMO",
+        actorRole: "drrmo",
+        createdAt: incident.updatedAt || incident.createdAt || null,
+        source: "incident",
+      })),
+      ...deletedHistory.map((entry) => ({
+        _id: `deleted-${entry._id}`,
+        eventType: "deleted",
+        incidentId: entry?.metadata?.incidentId || null,
+        type: normalizeString(entry?.metadata?.incidentType) || "Incident",
+        level: normalizeString(entry?.metadata?.incidentLevel) || "-",
+        location: normalizeString(entry.placeName) || "Unknown location",
+        description: normalizeString(entry.details) || "Deleted incident record.",
+        status: "deleted",
+        actorName: normalizeString(entry?.metadata?.actorName) || "System",
+        actorRole: normalizeRole(entry?.metadata?.actorRole) || "system",
+        createdAt: entry.createdAt || null,
+        source: "history",
+      })),
+    ];
+
+    if (filter === "resolved") {
+      items = items.filter((item) => item.eventType === "resolved");
+    }
+
+    if (filter === "deleted") {
+      items = items.filter((item) => item.eventType === "deleted");
+    }
+
+    if (search) {
+      items = items.filter((item) =>
+        [
+          item.type,
+          item.level,
+          item.location,
+          item.description,
+          item.status,
+          item.actorName,
+          item.actorRole,
+        ]
+          .map((value) => safeLower(value))
+          .join(" ")
+          .includes(search)
+      );
+    }
+
+    items.sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime;
+    });
+
+    res.json({
+      items,
+      summary: {
+        total: items.length,
+        resolved: items.filter((item) => item.eventType === "resolved").length,
+        deleted: items.filter((item) => item.eventType === "deleted").length,
+      },
+    });
+  } catch (err) {
+    console.error("Get incident history error:", err);
+    res.status(500).json({ message: "Failed to load incident history." });
+  }
+};
+
+
+
+const notifyReporterIncidentApprovedOnce = async ({ req, incident }) => {
+  try {
+    const reporterUserId =
+      incident?.reporterUserId ||
+      incident?.userId ||
+      incident?.reportedBy ||
+      null;
+
+    if (!reporterUserId) {
+      console.log("[reporter approval notification skipped no reporter]", {
+        incidentId: String(incident?._id || ""),
+        reporterUserId: incident?.reporterUserId || null,
+        userId: incident?.userId || null,
+      });
+      return null;
+    }
+
+    const existing = await Notification.findOne({
+      recipientUser: reporterUserId,
+      module: "incident",
+      type: "incident_approved",
+      referenceId: incident._id,
+    }).lean();
+
+    if (existing) {
+      console.log("[reporter approval notification skipped duplicate]", {
+        incidentId: String(incident._id),
+        reporterUserId: String(reporterUserId),
+      });
+      return existing;
+    }
+
+ const notification = await createNotification({
+  recipientRole: "all",
+  recipientUser: reporterUserId,
+  recipientUserModel: null,
+
+  senderUser: req.session?.userId || null,
+  senderRole: normalizeRole(req.session?.role) || "drrmo",
+  senderName:
+    normalizeString(req.session?.username) ||
+    normalizeString(req.session?.name) ||
+    "MDRRMO",
+
+  module: "incident",
+  type: "incident_approved",
+  priority: "normal",
+
+  title: "Incident Report Verified",
+  message:
+    "Your reported incident has been reviewed and verified by the MDRRMO. It has been approved as a valid incident and is now visible on the public map for community awareness.",
+  link: "/notifications",
+
+  referenceId: incident._id,
+  referenceModel: "Incident",
+
+  metadata: {
+    incidentId: incident._id,
+    incidentType: incident.type || "",
+    location: incident.location || "",
+    approvalStatus: "approved",
+  },
+});
+
+    if (!notification) {
+  console.log("[reporter approval notification failed createNotification returned null]", {
+    incidentId: String(incident._id),
+    reporterUserId: String(reporterUserId),
+  });
+  return null;
+}
+
+console.log("[reporter approval notification created]", {
+  notificationId: String(notification._id),
+  incidentId: String(incident._id),
+  reporterUserId: String(reporterUserId),
+});
+
+return notification;
+
+
+  } catch (err) {
+    console.error("Reporter Incident Approval Notification Error:", err);
+    return null;
+  }
+};
+
 const updateVerification = async (req, res) => {
   try {
     const { status } = req.body;
@@ -649,31 +862,76 @@ const updateVerification = async (req, res) => {
     }
 
     incident.verification.status = status;
+
+    if (status === "approved") {
+      incident.set("isPublic", true);
+      incident.set("approvedByMDRRMO", true);
+      incident.set("forceApproved", true);
+      incident.status = "approved";
+    }
+
+    if (status === "rejected") {
+      incident.set("isPublic", false);
+      incident.set("approvedByMDRRMO", false);
+      incident.set("forceApproved", false);
+
+      if (!incident.status || incident.status === "approved") {
+        incident.status = "reported";
+      }
+    }
+
     await incident.save();
 
-    await HistoryModel.create({
-      action: "VERIFICATION_UPDATE",
-      placeName: incident.location,
-      details: `Verification set to ${status}`,
+    console.log("[verification update]", {
+      id: String(incident._id),
+      verificationStatus: incident.verification?.status,
+      status: incident.status,
+      isPublic: incident.get("isPublic"),
+      approvedByMDRRMO: incident.get("approvedByMDRRMO"),
+      forceApproved: incident.get("forceApproved"),
     });
+
+    await HistoryModel.create({
+  action: "VERIFICATION_UPDATE",
+  placeName: incident.location,
+  details:
+    status === "approved"
+      ? "AI approved and incident approved for public mobile map."
+      : `Verification set to ${status}`,
+  metadata: buildIncidentHistoryMetadata(req, incident, {
+    eventType: "verification_update",
+    verificationStatus: status,
+  }),
+});
 
     await notifyIncidentEvent({
-      req,
-      incident,
-      eventType: "verification",
-      status,
-    });
+  req,
+  incident,
+  eventType: "verification",
+  status,
+});
 
-    res.json({
-      message: "Verification updated",
-      incident,
-    });
+// ✅ Notify the original reporter only when the incident is approved.
+if (status === "approved") {
+  await notifyReporterIncidentApprovedOnce({ req, incident });
+}
+
+res.json({
+  message:
+    status === "approved"
+      ? "Incident approved and now visible on mobile map."
+      : "Verification updated",
+  incident,
+});
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to update verification" });
+    console.error("UPDATE VERIFICATION ERROR:", err);
+
+    res.status(500).json({
+      error: "Failed to update verification",
+      message: err.message,
+    });
   }
 };
-
 const reverifyIncident = async (req, res) => {
   try {
     const incident = await IncidentModel.findById(req.params.id);
@@ -737,6 +995,10 @@ const reverifyIncident = async (req, res) => {
         action: "VERIFICATION_UPDATE",
         placeName: incident.location || "unknown",
         details: `Verification set to ${incident.verification.status}`,
+        metadata: buildIncidentHistoryMetadata(req, incident, {
+          eventType: "verification_update",
+          verificationStatus: incident.verification.status,
+        }),
       });
     } catch (e) {
       console.error("History save failed:", e.message);
@@ -933,6 +1195,7 @@ const exportIncidentPdf = async (req, res) => {
 
 module.exports = {
   getIncidents,
+  getIncidentHistory,
   registerIncident,
   updateStatus,
   deleteIncident,

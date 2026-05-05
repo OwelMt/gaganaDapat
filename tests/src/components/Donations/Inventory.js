@@ -6,6 +6,24 @@ import { useAuth } from "../../context/AuthContext";
 import DashboardShell from "../layout/DashboardShell";
 import "../css/Inventory.css";
 import {
+  buildReleasePreviewSummary,
+  buildReleaseRequestPayload,
+} from "./releasePlannerUtils";
+import {
+  buildReleaseJourneySteps,
+  getInitialJourneyStep,
+  getJourneyStepMeta,
+  isJourneyStepComplete,
+} from "./releasePlannerJourneyUtils";
+import {
+  SUPPORT_TYPE_APPLIANCE,
+  SUPPORT_TYPE_FOODPACKS,
+  SUPPORT_TYPE_MONETARY,
+  getSupportTypesFromRequest,
+  getSupportTypeLabel as getReliefSupportTypeLabel,
+  hasSupportType,
+} from "../relief/supportTypes";
+import {
   FaArchive,
   FaBell,
   FaBoxes,
@@ -35,11 +53,23 @@ const ARCHIVE_PAGE_SIZE = 10;
 const TEMPLATE_PAGE_SIZE = 6;
 const TOAST_LIMIT = 3;
 const TOAST_DURATION = 10000;
-const APPLIANCE_EXPIRY_EXEMPT_KEYWORDS = [
-  "appliance",
-  "appliances",
-  "equipment"
-];
+const DEFAULT_NON_EXPIRING_GOODS_CATEGORIES = new Set([
+  "clothes",
+  "clothing",
+  "shoes",
+  "shoe",
+  "shoes/footwear",
+  "footwear",
+  "blankets",
+  "blanket",
+  "mats",
+  "mat",
+  "towels",
+  "towel",
+  "bedding",
+  "mosquito nets",
+  "mosquito net"
+]);
 
 export default function Inventory() {
   const { user } = useAuth();
@@ -70,6 +100,7 @@ export default function Inventory() {
 
   const [mode, setMode] = useState("active");
   const [viewType, setViewType] = useState("goods");
+  const canUseReleasePlanner = canRelease && mode === "active";
 
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -86,10 +117,14 @@ export default function Inventory() {
     type: "goods",
     name: "",
     category: "",
+    requiresExpiration: true,
     quantity: "",
     unit: "",
     amount: "",
+    referenceNumber: "",
     expirationDate: "",
+    condition: "brand_new",
+    usageDuration: "",
     description: "",
     sourceType: "external",
     sourceName: ""
@@ -103,12 +138,14 @@ export default function Inventory() {
   const [plannerOpen, setPlannerOpen] = useState(false);
 
   const [selectedReleaseRequestId, setSelectedReleaseRequestId] = useState("");
-  const [releasePlannerTab, setReleasePlannerTab] = useState("food");
   const [releaseRemarks, setReleaseRemarks] = useState("");
   const [releaseBarangayFilter, setReleaseBarangayFilter] = useState("");
 
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [foodPacksToRelease, setFoodPacksToRelease] = useState("");
+  const [releaseMonetaryAmount, setReleaseMonetaryAmount] = useState("");
+  const [activeJourneyStep, setActiveJourneyStep] = useState("review");
+  const [confirmedJourneySteps, setConfirmedJourneySteps] = useState([]);
 
   const [applianceSearch, setApplianceSearch] = useState("");
   const [applianceSelections, setApplianceSelections] = useState([]);
@@ -133,23 +170,10 @@ export default function Inventory() {
 
   const normalize = useCallback((val) => (val || "").toString().trim().toLowerCase(), []);
 
-  const isApplianceCategory = useCallback((value) => {
-    const v = normalize(value);
-    return APPLIANCE_EXPIRY_EXEMPT_KEYWORDS.some((keyword) =>
-      v.includes(keyword)
-    );
-  }, [normalize]);
-
-  const isFoodEligibleCategory = useCallback((value) => {
-    const v = normalize(value);
-    if (!v) return false;
-    return !isApplianceCategory(v);
-  }, [isApplianceCategory, normalize]);
-
   const isExpiryRequiredCategory = (value) => {
     const v = normalize(value);
     if (!v) return false;
-    return !isApplianceCategory(v);
+    return !DEFAULT_NON_EXPIRING_GOODS_CATEGORIES.has(v);
   };
 
   const getExpiryStatus = (item) => {
@@ -217,17 +241,76 @@ export default function Inventory() {
     return new Date(date).toLocaleDateString();
   };
 
-  const formatMoney = (amount) => `₱${Number(amount || 0).toLocaleString()}`;
+  const formatMoney = (amount) =>
+    `PHP ${Number(amount || 0).toLocaleString("en-PH", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    })}`;
 
-  const getRequestPeopleCount = (request) => {
-    return ["male", "female", "lgbtq", "pwd", "pregnant", "senior"].reduce(
-      (sum, key) => sum + Number(request?.totals?.[key] || 0),
-      0
-    );
-  };
+  const extractReferenceFromDescription = useCallback((description) => {
+    const text = String(description || "");
+    const match = text.match(/Reference Number:\s*(.+)$/im);
+    return match ? String(match[1] || "").trim() : "";
+  }, []);
+
+  const stripReferenceFromDescription = useCallback((description) => {
+    return String(description || "")
+      .replace(/\n?\s*Reference Number:\s*.+$/im, "")
+      .trim();
+  }, []);
+
+  const getReferenceNumber = useCallback(
+    (item) => String(item?.referenceNumber || "").trim() || extractReferenceFromDescription(item?.description),
+    [extractReferenceFromDescription]
+  );
 
   const getRequestedPackCount = (request) =>
     Number(request?.totals?.requestedFoodPacks || 0);
+
+  const getReleasedPackCount = (request) =>
+    Number(request?.fulfillment?.releasedFoodPacks || 0);
+
+  const getRemainingPackCount = (request) =>
+    Math.max(0, getRequestedPackCount(request) - getReleasedPackCount(request));
+
+  const getRequestedMonetaryAmount = (request) =>
+    Number(request?.totals?.requestedMonetaryAmount || 0);
+
+  const getRequestedApplianceQuantity = (request) => {
+    if (request?.totals?.requestedApplianceQuantity !== undefined) {
+      return Number(request?.totals?.requestedApplianceQuantity || 0);
+    }
+
+    return Array.isArray(request?.requestedAppliances)
+      ? request.requestedAppliances.reduce(
+          (sum, item) => sum + Number(item?.quantityRequested || 0),
+          0
+        )
+      : 0;
+  };
+
+  const getRequestSupportTypes = (request) => getSupportTypesFromRequest(request);
+
+  const getReleasedMonetaryAmount = (request) =>
+    Number(request?.fulfillment?.releasedMonetaryAmount || 0);
+
+  const getReleasedApplianceQuantity = (request) =>
+    Number(request?.fulfillment?.releasedApplianceQuantity || 0);
+
+  const getRemainingMonetaryAmount = (request) =>
+    Math.max(
+      0,
+      getRequestedMonetaryAmount(request) - getReleasedMonetaryAmount(request)
+    );
+
+  const getRemainingApplianceQuantity = (request) =>
+    Math.max(
+      0,
+      getRequestedApplianceQuantity(request) - getReleasedApplianceQuantity(request)
+    );
+
+  const getRequestTypeLabel = (request) =>
+    getReliefSupportTypeLabel(getRequestSupportTypes(request));
 
   const getStockBadgeClass = (quantity) => {
     const qty = Number(quantity || 0);
@@ -274,6 +357,8 @@ export default function Inventory() {
         reportType = "archived";
       } else if (viewType === "monetary") {
         reportType = "monetary_donations";
+      } else if (viewType === "appliance") {
+        reportType = "appliance_donations";
       }
 
       const pdfUrl = `${BASE_URL}/api/inventory/export-pdf?reportType=${reportType}`;
@@ -489,6 +574,10 @@ export default function Inventory() {
     return activeItems.filter((item) => normalize(item.type) === "goods");
   }, [activeItems, normalize]);
 
+  const activeAppliances = useMemo(() => {
+    return activeItems.filter((item) => normalize(item.type) === "appliance");
+  }, [activeItems, normalize]);
+
   const activeMonetary = useMemo(() => {
     return activeItems.filter((item) => normalize(item.type) === "monetary");
   }, [activeItems, normalize]);
@@ -546,12 +635,12 @@ export default function Inventory() {
   }, [activeGoods, buildGoodsMergeKey, normalize]);
 
   const activeFoodGoods = useMemo(() => {
-    return mergedActiveGoods.filter((item) => isFoodEligibleCategory(item.category));
-  }, [mergedActiveGoods, isFoodEligibleCategory]);
+    return mergedActiveGoods;
+  }, [mergedActiveGoods]);
 
   const activeApplianceGoods = useMemo(() => {
-    return mergedActiveGoods.filter((item) => isApplianceCategory(item.category));
-  }, [mergedActiveGoods, isApplianceCategory]);
+    return activeAppliances;
+  }, [activeAppliances]);
 
   const archivedGoods = useMemo(() => {
     return archivedItems.filter((item) => normalize(item.type) === "goods");
@@ -559,6 +648,10 @@ export default function Inventory() {
 
   const archivedMonetary = useMemo(() => {
     return archivedItems.filter((item) => normalize(item.type) === "monetary");
+  }, [archivedItems, normalize]);
+
+  const archivedAppliances = useMemo(() => {
+    return archivedItems.filter((item) => normalize(item.type) === "appliance");
   }, [archivedItems, normalize]);
 
   const activeSummary = useMemo(() => {
@@ -569,6 +662,11 @@ export default function Inventory() {
 
     const totalMonetaryAmount = activeMonetary.reduce(
       (sum, item) => sum + Number(item.amount || 0),
+      0
+    );
+
+    const totalApplianceQuantity = activeAppliances.reduce(
+      (sum, item) => sum + Number(item.quantity || 0),
       0
     );
 
@@ -593,24 +691,26 @@ export default function Inventory() {
       totalRecords: activeItems.length,
       goodsCount: mergedActiveGoods.length,
       monetaryCount: activeMonetary.length,
+      applianceCount: activeAppliances.length,
       totalGoodsQuantity,
+      totalApplianceQuantity,
       totalMonetaryAmount,
       lowStockCount,
       outOfStockCount,
-      applianceCount: activeApplianceGoods.length,
       foodEligibleCount: activeFoodGoods.length,
       expiredCount,
       expiringSoonCount
     };
-  }, [activeItems, mergedActiveGoods, activeMonetary, activeApplianceGoods, activeFoodGoods]);
+  }, [activeItems, mergedActiveGoods, activeMonetary, activeAppliances, activeFoodGoods]);
 
   const archivedSummary = useMemo(() => {
     return {
       totalRecords: archivedItems.length,
       goodsCount: archivedGoods.length,
-      monetaryCount: archivedMonetary.length
+      monetaryCount: archivedMonetary.length,
+      applianceCount: archivedAppliances.length
     };
-  }, [archivedItems, archivedGoods, archivedMonetary]);
+  }, [archivedItems, archivedGoods, archivedMonetary, archivedAppliances]);
 
   useEffect(() => {
     if (loadingActive || !canSeeCentralInventory) return;
@@ -632,18 +732,22 @@ export default function Inventory() {
   const activeCategoryOptions = useMemo(() => {
     return [
       ...new Set(
-        mergedActiveGoods.map((item) => normalize(item.category)).filter(Boolean)
+        (viewType === "appliance" ? activeAppliances : mergedActiveGoods)
+          .map((item) => normalize(item.category))
+          .filter(Boolean)
       )
     ].sort((a, b) => a.localeCompare(b));
-  }, [mergedActiveGoods, normalize]);
+  }, [mergedActiveGoods, activeAppliances, normalize, viewType]);
 
   const archivedCategoryOptions = useMemo(() => {
     return [
       ...new Set(
-        archivedGoods.map((item) => normalize(item.category)).filter(Boolean)
+        (viewType === "appliance" ? archivedAppliances : archivedGoods)
+          .map((item) => normalize(item.category))
+          .filter(Boolean)
       )
     ].sort((a, b) => a.localeCompare(b));
-  }, [archivedGoods, normalize]);
+  }, [archivedGoods, archivedAppliances, normalize, viewType]);
 
   const filteredActiveGoods = useMemo(() => {
     let items = [...mergedActiveGoods];
@@ -718,6 +822,7 @@ export default function Inventory() {
         return (
           normalize(item.name).includes(q) ||
           normalize(item.description).includes(q) ||
+          normalize(getReferenceNumber(item)).includes(q) ||
           normalize(item.sourceType).includes(q) ||
           normalize(item.sourceName).includes(q) ||
           normalize(item.addedBy).includes(q)
@@ -746,11 +851,10 @@ export default function Inventory() {
     });
 
     return items;
-  }, [activeMonetary, search, sortBy, sortOrder, normalize]);
+  }, [activeMonetary, search, sortBy, sortOrder, normalize, getReferenceNumber]);
 
-  const archivedRows = useMemo(() => {
-    const sourceData = viewType === "goods" ? archivedGoods : archivedMonetary;
-    let items = [...sourceData];
+  const activeApplianceRows = useMemo(() => {
+    let items = [...activeAppliances];
 
     if (search.trim()) {
       const q = normalize(search);
@@ -762,13 +866,68 @@ export default function Inventory() {
           normalize(item.sourceType).includes(q) ||
           normalize(item.sourceName).includes(q) ||
           normalize(item.addedBy).includes(q) ||
+          normalize(item.condition).includes(q) ||
+          normalize(item.usageDuration).includes(q)
+        );
+      });
+    }
+
+    if (categoryFilter) {
+      items = items.filter(
+        (item) => normalize(item.category) === normalize(categoryFilter)
+      );
+    }
+
+    items.sort((a, b) => {
+      let valA = a[sortBy];
+      let valB = b[sortBy];
+
+      if (sortBy === "quantity") {
+        valA = Number(valA || 0);
+        valB = Number(valB || 0);
+      } else if (sortBy === "createdAt") {
+        valA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        valB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      } else {
+        valA = (valA || "").toString().toLowerCase();
+        valB = (valB || "").toString().toLowerCase();
+      }
+
+      if (valA < valB) return sortOrder === "asc" ? -1 : 1;
+      if (valA > valB) return sortOrder === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return items;
+  }, [activeAppliances, search, categoryFilter, sortBy, sortOrder, normalize]);
+
+  const archivedRows = useMemo(() => {
+    const sourceData =
+      viewType === "goods"
+        ? archivedGoods
+        : viewType === "appliance"
+        ? archivedAppliances
+        : archivedMonetary;
+    let items = [...sourceData];
+
+    if (search.trim()) {
+      const q = normalize(search);
+      items = items.filter((item) => {
+        return (
+          normalize(item.name).includes(q) ||
+          normalize(item.description).includes(q) ||
+          normalize(getReferenceNumber(item)).includes(q) ||
+          normalize(item.category).includes(q) ||
+          normalize(item.sourceType).includes(q) ||
+          normalize(item.sourceName).includes(q) ||
+          normalize(item.addedBy).includes(q) ||
           normalize(item.unit).includes(q) ||
           normalize(item.expirationDate).includes(q)
         );
       });
     }
 
-    if (viewType === "goods" && categoryFilter) {
+    if ((viewType === "goods" || viewType === "appliance") && categoryFilter) {
       items = items.filter(
         (item) => normalize(item.category) === normalize(categoryFilter)
       );
@@ -802,19 +961,23 @@ export default function Inventory() {
   }, [
     archivedGoods,
     archivedMonetary,
+    archivedAppliances,
     viewType,
     search,
     categoryFilter,
     expiryStatusFilter,
     sortBy,
     sortOrder,
-    normalize
+    normalize,
+    getReferenceNumber
   ]);
 
   const tableRows =
     mode === "active"
       ? viewType === "goods"
         ? filteredActiveGoods
+        : viewType === "appliance"
+        ? activeApplianceRows
         : activeMonetaryRows
       : archivedRows;
 
@@ -889,6 +1052,47 @@ export default function Inventory() {
     );
   }, [filteredApprovedRequests, selectedReleaseRequestId]);
 
+  const selectedReleaseSupportTypes = useMemo(
+    () => getRequestSupportTypes(selectedReleaseRequest),
+    [selectedReleaseRequest]
+  );
+  const selectedRequestNeedsFood = hasSupportType(
+    selectedReleaseSupportTypes,
+    SUPPORT_TYPE_FOODPACKS
+  );
+  const selectedRequestNeedsMonetary = hasSupportType(
+    selectedReleaseSupportTypes,
+    SUPPORT_TYPE_MONETARY
+  );
+  const selectedRequestNeedsAppliance = hasSupportType(
+    selectedReleaseSupportTypes,
+    SUPPORT_TYPE_APPLIANCE
+  );
+  const selectedRemainingFoodPacks = getRemainingPackCount(selectedReleaseRequest);
+  const selectedRemainingMonetaryAmount =
+    getRemainingMonetaryAmount(selectedReleaseRequest);
+  const selectedRemainingApplianceQuantity =
+    getRemainingApplianceQuantity(selectedReleaseRequest);
+  const selectedRequestPendingFood =
+    selectedRequestNeedsFood && selectedRemainingFoodPacks > 0;
+  const selectedRequestPendingMonetary =
+    selectedRequestNeedsMonetary && selectedRemainingMonetaryAmount > 0;
+  const selectedRequestPendingAppliance =
+    selectedRequestNeedsAppliance && selectedRemainingApplianceQuantity > 0;
+  const releaseJourneySteps = useMemo(
+    () =>
+      buildReleaseJourneySteps({
+        pendingFood: selectedRequestPendingFood,
+        pendingMonetary: selectedRequestPendingMonetary,
+        pendingAppliance: selectedRequestPendingAppliance,
+      }),
+    [
+      selectedRequestPendingFood,
+      selectedRequestPendingMonetary,
+      selectedRequestPendingAppliance,
+    ]
+  );
+
   useEffect(() => {
     if (!canRelease) return;
 
@@ -905,6 +1109,31 @@ export default function Inventory() {
       setSelectedReleaseRequestId(filteredApprovedRequests[0]._id);
     }
   }, [filteredApprovedRequests, selectedReleaseRequestId, canRelease]);
+
+  useEffect(() => {
+    if (!selectedReleaseRequest?._id) {
+      setReleaseMonetaryAmount("");
+      return;
+    }
+
+    const remainingMonetaryAmount = Math.max(
+      0,
+      Number(selectedReleaseRequest?.totals?.requestedMonetaryAmount || 0) -
+        Number(selectedReleaseRequest?.fulfillment?.releasedMonetaryAmount || 0)
+    );
+
+    if (selectedRequestPendingMonetary) {
+      setReleaseMonetaryAmount(String(remainingMonetaryAmount || ""));
+      return;
+    }
+
+    setReleaseMonetaryAmount("");
+  }, [selectedReleaseRequest, selectedRequestPendingMonetary]);
+
+  useEffect(() => {
+    setActiveJourneyStep(getInitialJourneyStep(releaseJourneySteps));
+    setConfirmedJourneySteps([]);
+  }, [selectedReleaseRequestId, releaseJourneySteps]);
 
   const selectedTemplate = useMemo(() => {
     return (
@@ -937,6 +1166,84 @@ export default function Inventory() {
       quantityPerPack: Number(item.quantityPerPack || 0)
     }));
   }, [selectedTemplate, foodPacksToRelease]);
+  const journeyCompletionState = useMemo(
+    () => ({
+      food: isJourneyStepComplete({
+        step: "food",
+        state: {
+          selectedTemplateId,
+          foodPacksToRelease,
+          requiredFoodPacks: selectedRemainingFoodPacks,
+          computedTemplateItems,
+        },
+      }),
+      monetary: isJourneyStepComplete({
+        step: "monetary",
+        state: {
+          releaseMonetaryAmount,
+          requiredMonetaryAmount: selectedRemainingMonetaryAmount,
+        },
+      }),
+      appliance: isJourneyStepComplete({
+        step: "appliance",
+        state: {
+          requestedApplianceQuantity: selectedRemainingApplianceQuantity,
+          applianceSelections,
+        },
+      }),
+    }),
+    [
+      selectedTemplateId,
+      foodPacksToRelease,
+      selectedRemainingFoodPacks,
+      computedTemplateItems,
+      releaseMonetaryAmount,
+      selectedRemainingMonetaryAmount,
+      selectedRemainingApplianceQuantity,
+      applianceSelections,
+    ]
+  );
+  const completedJourneySteps = useMemo(
+    () =>
+      releaseJourneySteps.filter(
+        (step) =>
+          step !== "review" &&
+          confirmedJourneySteps.includes(step) &&
+          Boolean(journeyCompletionState[step])
+      ),
+    [releaseJourneySteps, confirmedJourneySteps, journeyCompletionState]
+  );
+  const activeJourneyMeta = useMemo(
+    () => getJourneyStepMeta(activeJourneyStep),
+    [activeJourneyStep]
+  );
+  const currentStepIndex = releaseJourneySteps.indexOf(activeJourneyStep);
+  const nextJourneyStep = useMemo(() => {
+    if (currentStepIndex === -1) return null;
+    return releaseJourneySteps[currentStepIndex + 1] || null;
+  }, [releaseJourneySteps, currentStepIndex]);
+  const reviewStepIndex = releaseJourneySteps.indexOf("review");
+  const canOpenReviewStep =
+    reviewStepIndex === -1 ||
+    releaseJourneySteps
+      .slice(0, reviewStepIndex)
+      .every((step) => completedJourneySteps.includes(step));
+  const canSubmitReleasePlan =
+    releaseJourneySteps
+      .filter((step) => step !== "review")
+      .every((step) => completedJourneySteps.includes(step));
+
+  useEffect(() => {
+    if (!releaseJourneySteps.includes(activeJourneyStep)) {
+      setActiveJourneyStep(getInitialJourneyStep(releaseJourneySteps));
+    }
+  }, [activeJourneyStep, releaseJourneySteps]);
+
+  useEffect(() => {
+    if (mode === "archived" && operationsOpen) {
+      setOperationsOpen(false);
+    }
+  }, [mode, operationsOpen]);
 
   const templateCatalog = useMemo(() => {
     let items = activeFoodGoods.filter((item) => Number(item.quantity || 0) > 0);
@@ -979,30 +1286,40 @@ export default function Inventory() {
   }, [activeApplianceGoods, applianceSearch, normalize]);
 
   const releasePreviewSummary = useMemo(() => {
-    if (releasePlannerTab === "food") {
-      return computedTemplateItems.reduce(
-        (acc, item) => {
-          acc.lineItems += 1;
-          acc.totalQuantity += Number(item.quantityReleased || 0);
-          acc.packCount = Number(foodPacksToRelease || 0);
-          return acc;
-        },
-        { lineItems: 0, totalQuantity: 0, packCount: 0 }
-      );
-    }
-
-    return applianceSelections.reduce(
-      (acc, item) => {
-        const qty = Number(item.quantityReleased || 0);
-        if (qty > 0) {
-          acc.lineItems += 1;
-          acc.totalQuantity += qty;
-        }
-        return acc;
-      },
-      { lineItems: 0, totalQuantity: 0, packCount: 0 }
-    );
-  }, [releasePlannerTab, computedTemplateItems, applianceSelections, foodPacksToRelease]);
+    return buildReleasePreviewSummary({
+      needsFood:
+        selectedRequestPendingFood &&
+        (confirmedJourneySteps.includes("food") || activeJourneyStep === "food"),
+      needsMonetary:
+        selectedRequestPendingMonetary &&
+        (confirmedJourneySteps.includes("monetary") || activeJourneyStep === "monetary"),
+      computedTemplateItems:
+        confirmedJourneySteps.includes("food") || activeJourneyStep === "food"
+          ? computedTemplateItems
+          : [],
+      foodPacksToRelease:
+        confirmedJourneySteps.includes("food") || activeJourneyStep === "food"
+          ? foodPacksToRelease
+          : "",
+      releaseMonetaryAmount:
+        confirmedJourneySteps.includes("monetary") || activeJourneyStep === "monetary"
+        ? releaseMonetaryAmount
+        : "",
+      applianceSelections:
+        confirmedJourneySteps.includes("appliance") || activeJourneyStep === "appliance"
+        ? applianceSelections
+        : [],
+    });
+  }, [
+    activeJourneyStep,
+    confirmedJourneySteps,
+    selectedRequestPendingFood,
+    selectedRequestPendingMonetary,
+    computedTemplateItems,
+    foodPacksToRelease,
+    releaseMonetaryAmount,
+    applianceSelections,
+  ]);
 
   const templatePageCount = Math.max(
     1,
@@ -1040,15 +1357,60 @@ export default function Inventory() {
   const clearReleasePlanner = () => {
     setSelectedTemplateId("");
     setFoodPacksToRelease("");
+    setReleaseMonetaryAmount(
+      selectedReleaseRequest ? String(getRemainingMonetaryAmount(selectedReleaseRequest) || "") : ""
+    );
     setApplianceSelections([]);
     setApplianceSearch("");
     setReleaseRemarks("");
+    setActiveJourneyStep(getInitialJourneyStep(releaseJourneySteps));
+    setConfirmedJourneySteps([]);
+  };
+
+  const jumpToJourneyStep = (step) => {
+    const stepIndex = releaseJourneySteps.indexOf(step);
+    if (stepIndex === -1) return;
+
+    const priorSteps = releaseJourneySteps.slice(0, stepIndex);
+    const priorStepsComplete = priorSteps.every(
+      (priorStep) =>
+        priorStep === "review" || completedJourneySteps.includes(priorStep)
+    );
+
+    if (!priorStepsComplete) return;
+    if (step === "review" && !canOpenReviewStep) return;
+
+    setActiveJourneyStep(step);
+  };
+
+  const goToNextJourneyStep = () => {
+    if (
+      !nextJourneyStep ||
+      !activeJourneyStep ||
+      !journeyCompletionState[activeJourneyStep]
+    ) {
+      return;
+    }
+    setConfirmedJourneySteps((prev) =>
+      prev.includes(activeJourneyStep) ? prev : [...prev, activeJourneyStep]
+    );
+    setActiveJourneyStep(nextJourneyStep);
+  };
+
+  const goToPreviousJourneyStep = () => {
+    const currentIndex = releaseJourneySteps.indexOf(activeJourneyStep);
+    if (currentIndex <= 0) return;
+    setActiveJourneyStep(releaseJourneySteps[currentIndex - 1]);
   };
 
   const handleTemplateSelectionChange = (value) => {
     setSelectedTemplateId(value);
     if (value) {
-      setFoodPacksToRelease("1");
+      setFoodPacksToRelease(
+        selectedReleaseRequest && selectedRequestPendingFood
+          ? String(selectedRemainingFoodPacks || 1)
+          : "1"
+      );
     } else {
       setFoodPacksToRelease("");
     }
@@ -1151,8 +1513,8 @@ useEffect(() => {
 
   const addApplianceReleaseItem = (inventoryItem) => {
     const selectionId =
-      inventoryItem._mergeKey ||
       inventoryItem._id ||
+      inventoryItem._mergeKey ||
       buildGoodsMergeKey(inventoryItem);
 
     setApplianceSelections((prev) => {
@@ -1198,16 +1560,26 @@ useEffect(() => {
   };
 
   const openItemEditModal = (item) => {
-    const itemType = normalize(item?.type) === "monetary" ? "monetary" : "goods";
+    const normalizedType = normalize(item?.type);
+    const itemType =
+      normalizedType === "monetary"
+        ? "monetary"
+        : normalizedType === "appliance"
+        ? "appliance"
+        : "goods";
 
     setEditingItemId(item?._id || "");
     setItemFormErrors({});
     setItemForm({
       type: itemType,
       name: item?.name || "",
-      category: itemType === "goods" ? item?.category || "" : "",
+      category:
+        itemType === "goods" || itemType === "appliance"
+          ? item?.category || ""
+          : "",
+      requiresExpiration: itemType === "goods" ? item?.requiresExpiration !== false : true,
       quantity:
-        itemType === "goods" && item?.quantity !== undefined
+        (itemType === "goods" || itemType === "appliance") && item?.quantity !== undefined
           ? String(item.quantity)
           : "",
       unit: itemType === "goods" ? item?.unit || "" : "",
@@ -1215,11 +1587,20 @@ useEffect(() => {
         itemType === "monetary" && item?.amount !== undefined
           ? String(item.amount)
           : "",
+      referenceNumber:
+        itemType === "monetary"
+          ? item?.referenceNumber || extractReferenceFromDescription(item?.description)
+          : "",
       expirationDate:
         itemType === "goods" && item?.expirationDate
           ? new Date(item.expirationDate).toISOString().slice(0, 10)
           : "",
-      description: item?.description || "",
+      condition: itemType === "appliance" ? item?.condition || "brand_new" : "brand_new",
+      usageDuration: itemType === "appliance" ? item?.usageDuration || "" : "",
+      description:
+        itemType === "monetary"
+          ? stripReferenceFromDescription(item?.description)
+          : item?.description || "",
       sourceType: item?.sourceType || "external",
       sourceName: item?.sourceName || ""
     });
@@ -1235,10 +1616,14 @@ useEffect(() => {
       type: "goods",
       name: "",
       category: "",
+      requiresExpiration: true,
       quantity: "",
       unit: "",
       amount: "",
+      referenceNumber: "",
       expirationDate: "",
+      condition: "brand_new",
+      usageDuration: "",
       description: "",
       sourceType: "external",
       sourceName: ""
@@ -1281,9 +1666,34 @@ useEffect(() => {
       }
     }
 
+    if (itemForm.type === "appliance") {
+      if (!itemForm.category.trim()) {
+        errors.category = "Category is required.";
+      }
+
+      if (itemForm.quantity === "" || Number(itemForm.quantity) <= 0) {
+        errors.quantity = "Quantity must be greater than 0.";
+      }
+
+      if (!itemForm.condition) {
+        errors.condition = "Condition is required.";
+      }
+
+      if (
+        itemForm.condition === "used_item" &&
+        !String(itemForm.usageDuration || "").trim()
+      ) {
+        errors.usageDuration = "Usage duration is required.";
+      }
+    }
+
     if (itemForm.type === "monetary") {
       if (itemForm.amount === "" || Number(itemForm.amount) < 0) {
         errors.amount = "Amount must be 0 or higher.";
+      }
+
+      if (!String(itemForm.referenceNumber || "").trim()) {
+        errors.referenceNumber = "Reference number is required.";
       }
     }
 
@@ -1296,12 +1706,16 @@ useEffect(() => {
 
     setItemForm((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
+      usageDuration:
+        name === "condition" && value === "brand_new" ? "" : prev.usageDuration
     }));
 
     setItemFormErrors((prev) => ({
       ...prev,
-      [name]: ""
+      [name]: "",
+      usageDuration: name === "condition" ? "" : prev.usageDuration,
+      condition: name === "condition" ? "" : prev.condition
     }));
   };
 
@@ -1325,8 +1739,23 @@ useEffect(() => {
         formData.append("quantity", itemForm.quantity);
         formData.append("unit", itemForm.unit.trim());
         formData.append("expirationDate", itemForm.expirationDate || "");
+        formData.append(
+          "requiresExpiration",
+          itemForm.requiresExpiration ? "true" : "false"
+        );
+      } else if (itemForm.type === "appliance") {
+        formData.append("category", itemForm.category.trim().toLowerCase());
+        formData.append("quantity", itemForm.quantity);
+        formData.append("condition", itemForm.condition);
+        formData.append(
+          "usageDuration",
+          itemForm.condition === "used_item"
+            ? String(itemForm.usageDuration || "").trim()
+            : ""
+        );
       } else {
         formData.append("amount", itemForm.amount);
+        formData.append("referenceNumber", String(itemForm.referenceNumber || "").trim());
       }
 
       await axios.put(`${BASE_URL}/api/inventory/${editingItemId}`, formData, {
@@ -1647,18 +2076,13 @@ useEffect(() => {
     try {
       setReleaseSubmitting(true);
 
-      let payload = {
-        reliefRequestId: selectedReleaseRequest._id,
-        remarks: releaseRemarks
-      };
-
-      if (releasePlannerTab === "food") {
+      if (selectedRequestPendingFood) {
         if (!selectedTemplateId) {
           throw new Error("Select a food pack template.");
         }
 
         const packCount = Number(foodPacksToRelease || 0);
-        const requiredPackCount = getRequestedPackCount(selectedReleaseRequest);
+        const requiredPackCount = selectedRemainingFoodPacks;
 
         if (packCount <= 0) {
           throw new Error("Food packs to release must be greater than 0.");
@@ -1669,50 +2093,81 @@ useEffect(() => {
             `DRRMO must fully satisfy the approved request. Release exactly ${requiredPackCount} food pack(s).`
           );
         }
+      }
 
-        payload = {
-          ...payload,
-          releaseMode: "template",
-          foodPackTemplateId: selectedTemplateId,
-          foodPacksToRelease: packCount
-        };
-      } else {
-        const preparedItems = applianceSelections
-          .map((item) => ({
-            inventoryItemId:
-              Array.isArray(item.sourceInventoryIds) && item.sourceInventoryIds.length
-                ? item.sourceInventoryIds[0]
-                : item.inventoryItemId,
-            itemName: item.itemName,
-            category: item.category,
-            quantityReleased: Number(item.quantityReleased || 0),
-            unit: item.unit,
-            remarks: item.remarks || ""
-          }))
-          .filter((item) => item.quantityReleased > 0);
+      if (selectedRequestPendingMonetary) {
+        const requiredMonetaryAmount = selectedRemainingMonetaryAmount;
+        const enteredMonetaryAmount = Number(releaseMonetaryAmount || 0);
 
-        if (!preparedItems.length) {
-          throw new Error("Add at least one appliance item.");
+        if (enteredMonetaryAmount <= 0) {
+          throw new Error("Enter the monetary amount to release.");
         }
 
-        const overLimit = applianceSelections.find(
-          (item) =>
-            Number(item.quantityReleased || 0) >
-            Number(item.availableQuantity || 0)
+        if (enteredMonetaryAmount !== requiredMonetaryAmount) {
+          throw new Error(
+            `DRRMO must release the full approved monetary amount in one go. Release exactly ${formatMoney(
+              requiredMonetaryAmount
+            )}.`
+          );
+        }
+      }
+
+      const validApplianceSelections = applianceSelections.filter(
+        (item) => Number(item.quantityReleased || 0) > 0
+      );
+
+      if (selectedRequestPendingAppliance && validApplianceSelections.length > 0) {
+        const totalApplianceQuantity = validApplianceSelections.reduce(
+          (sum, item) => sum + Number(item.quantityReleased || 0),
+          0
         );
 
-        if (overLimit) {
+        if (totalApplianceQuantity > selectedRemainingApplianceQuantity) {
           throw new Error(
-            `Release quantity cannot exceed available stock for "${overLimit.itemName}".`
+            `Appliance release cannot exceed the remaining ${selectedRemainingApplianceQuantity} unit(s).`
           );
         }
 
-        payload = {
-          ...payload,
-          releaseMode: "manual",
-          foodPacksToRelease: 0,
-          items: preparedItems
-        };
+        const invalidAppliance = validApplianceSelections.find(
+          (item) =>
+            Number(item.quantityReleased || 0) > Number(item.availableQuantity || 0)
+        );
+
+        if (invalidAppliance) {
+          throw new Error(
+            `${invalidAppliance.itemName} exceeds available appliance stock.`
+          );
+        }
+      }
+
+      const payload = buildReleaseRequestPayload({
+        reliefRequestId: selectedReleaseRequest._id,
+        remarks: releaseRemarks,
+        needsFood: selectedRequestPendingFood,
+        needsMonetary: selectedRequestPendingMonetary,
+        needsAppliance: selectedRequestPendingAppliance,
+        selectedTemplateId,
+        foodPacksToRelease,
+        releaseMonetaryAmount,
+        applianceSelections,
+      });
+
+      const hasApplianceItems = Array.isArray(payload.items) && payload.items.length > 0;
+      if (
+        !selectedRequestPendingFood &&
+        !selectedRequestPendingMonetary &&
+        !selectedRequestPendingAppliance
+      ) {
+        throw new Error("This request has no remaining support to release.");
+      }
+
+      if (
+        !selectedRequestPendingFood &&
+        !selectedRequestPendingMonetary &&
+        selectedRequestPendingAppliance &&
+        !hasApplianceItems
+      ) {
+        throw new Error("Add at least one appliance item to release.");
       }
 
       const res = await axios.post(`${BASE_URL}/api/relief-releases`, payload, {
@@ -1736,10 +2191,6 @@ useEffect(() => {
       setReleaseSubmitting(false);
     }
   };
-
-  const releaseStatusLabel = selectedReleaseRequest?.status
-    ? selectedReleaseRequest.status.replace(/_/g, " ")
-    : "-";
 
   const loadingCurrent =
     (mode === "active" && loadingActive) ||
@@ -1823,11 +2274,11 @@ useEffect(() => {
             <div className="inventory-hero-head">
               <div className="inventory-title-group">
                 <h1 className="inventory-title">
-                  {canRelease ? "Inventory & Release Preparation" : "Inventory"}
+                  {canUseReleasePlanner ? "Inventory & Release Preparation" : "Inventory"}
                 </h1>
 
                 <div className="inventory-title-meta">
-                  {canRelease && (
+                  {canUseReleasePlanner && (
                     <span className="inventory-top-pill subtle">
                       {approvedRequests.length} approved request(s)
                     </span>
@@ -1851,7 +2302,7 @@ useEffect(() => {
                   Export PDF
                 </button>
 
-                {canRelease && (
+                {canUseReleasePlanner && (
                   <button
                     type="button"
                     className={`btn ${operationsOpen ? "btn-secondary" : "btn-primary"}`}
@@ -1898,7 +2349,9 @@ useEffect(() => {
                   <h3 className="summary-value">
                     {activeSummary.applianceCount.toLocaleString()}
                   </h3>
-                  <span className="summary-note">Separate appliance release</span>
+                  <span className="summary-note">
+                    Total quantity: {activeSummary.totalApplianceQuantity.toLocaleString()}
+                  </span>
                 </div>
 
                 <div className="summary-card danger">
@@ -2034,6 +2487,7 @@ useEffect(() => {
                           onChange={handleItemFormChange}
                         >
                           <option value="goods">Goods</option>
+                          <option value="appliance">Appliance</option>
                           <option value="monetary">Monetary</option>
                         </select>
                       </div>
@@ -2106,22 +2560,106 @@ useEffect(() => {
                             ) : null}
                           </div>
                         </>
+                      ) : itemForm.type === "appliance" ? (
+                        <>
+                          <div className="release-selection-field">
+                            <label>Category</label>
+                            <input
+                              type="text"
+                              name="category"
+                              className="input"
+                              value={itemForm.category}
+                              onChange={handleItemFormChange}
+                            />
+                            {itemFormErrors.category ? (
+                              <span className="error-text">
+                                {itemFormErrors.category}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <div className="release-selection-field">
+                            <label>Quantity</label>
+                            <input
+                              type="number"
+                              min="0"
+                              name="quantity"
+                              className="input"
+                              value={itemForm.quantity}
+                              onChange={handleItemFormChange}
+                            />
+                            {itemFormErrors.quantity ? (
+                              <span className="error-text">
+                                {itemFormErrors.quantity}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <div className="release-selection-field">
+                            <label>Condition</label>
+                            <select
+                              name="condition"
+                              className="input"
+                              value={itemForm.condition}
+                              onChange={handleItemFormChange}
+                            >
+                              <option value="brand_new">Brand New</option>
+                              <option value="used_item">Used Item</option>
+                            </select>
+                            {itemFormErrors.condition ? (
+                              <span className="error-text">{itemFormErrors.condition}</span>
+                            ) : null}
+                          </div>
+
+                          <div className="release-selection-field">
+                            <label>Usage Duration</label>
+                            <input
+                              type="text"
+                              name="usageDuration"
+                              className="input"
+                              value={itemForm.usageDuration}
+                              onChange={handleItemFormChange}
+                              disabled={itemForm.condition !== "used_item"}
+                            />
+                            {itemFormErrors.usageDuration ? (
+                              <span className="error-text">
+                                {itemFormErrors.usageDuration}
+                              </span>
+                            ) : null}
+                          </div>
+                        </>
                       ) : (
-                        <div className="release-selection-field">
-                          <label>Amount</label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            name="amount"
-                            className="input"
-                            value={itemForm.amount}
-                            onChange={handleItemFormChange}
-                          />
-                          {itemFormErrors.amount ? (
-                            <span className="error-text">{itemFormErrors.amount}</span>
-                          ) : null}
-                        </div>
+                        <>
+                          <div className="release-selection-field">
+                            <label>Amount</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              name="amount"
+                              className="input"
+                              value={itemForm.amount}
+                              onChange={handleItemFormChange}
+                            />
+                            {itemFormErrors.amount ? (
+                              <span className="error-text">{itemFormErrors.amount}</span>
+                            ) : null}
+                          </div>
+
+                          <div className="release-selection-field">
+                            <label>Reference Number</label>
+                            <input
+                              type="text"
+                              name="referenceNumber"
+                              className="input"
+                              value={itemForm.referenceNumber}
+                              onChange={handleItemFormChange}
+                            />
+                            {itemFormErrors.referenceNumber ? (
+                              <span className="error-text">{itemFormErrors.referenceNumber}</span>
+                            ) : null}
+                          </div>
+                        </>
                       )}
 
                       <div className="release-selection-field">
@@ -2184,7 +2722,7 @@ useEffect(() => {
                 </div>
               ) : null}
 
-              {canRelease && operationsOpen && (
+              {canUseReleasePlanner && operationsOpen && (
                 <div className="inventory-operations-stack">
                   {canManageTemplates && viewType === "goods" && mode === "active" && (
                     <div className="inventory-card release-shell">
@@ -2346,10 +2884,6 @@ useEffect(() => {
                     <div className="release-shell-head">
                       <div>
                         <h2>Release Preparation</h2>
-                        <p>
-                          Select an approved request, prepare the full required release,
-                          then submit.
-                        </p>
                       </div>
 
                       <button
@@ -2399,6 +2933,19 @@ useEffect(() => {
                               {filteredApprovedRequests.map((request) => {
                                 const isActive =
                                   String(request._id) === String(selectedReleaseRequestId);
+                                const requestSupportTypes = getRequestSupportTypes(request);
+                                const requestNeedsFood = hasSupportType(
+                                  requestSupportTypes,
+                                  SUPPORT_TYPE_FOODPACKS
+                                );
+                                const requestNeedsMonetary = hasSupportType(
+                                  requestSupportTypes,
+                                  SUPPORT_TYPE_MONETARY
+                                );
+                                const requestNeedsAppliance = hasSupportType(
+                                  requestSupportTypes,
+                                  SUPPORT_TYPE_APPLIANCE
+                                );
 
                                 return (
                                   <button
@@ -2413,15 +2960,23 @@ useEffect(() => {
                                     <span>{request.disaster || "-"}</span>
                                     <small>{request.requestNo || "-"}</small>
 
-                                    <div className="release-request-meta">
-                                      <div>
-                                        <label>Required Packs</label>
-                                        <b>{getRequestedPackCount(request)}</b>
-                                      </div>
-                                      <div>
-                                        <label>People</label>
-                                        <b>{getRequestPeopleCount(request)}</b>
-                                      </div>
+                                    <div className="release-request-support">
+                                      {getRequestTypeLabel(request)}
+                                    </div>
+
+                                    <div className="release-request-meta release-request-meta-compact">
+                                      {requestNeedsFood ? (
+                                        <b>{getRequestedPackCount(request)} packs</b>
+                                      ) : null}
+                                      {requestNeedsMonetary ? (
+                                        <b>{formatMoney(getRemainingMonetaryAmount(request))}</b>
+                                      ) : null}
+                                      {requestNeedsAppliance ? (
+                                        <b>
+                                          {getRequestedApplianceQuantity(request)} appliance
+                                          {getRequestedApplianceQuantity(request) === 1 ? "" : "s"}
+                                        </b>
+                                      ) : null}
                                     </div>
                                   </button>
                                 );
@@ -2437,307 +2992,627 @@ useEffect(() => {
                             </div>
                           ) : (
                             <>
-                              <div className="release-summary-bar">
-                                <div className="release-summary-card">
+                              <div className="release-summary-bar release-summary-bar-journey">
+                                <div className="release-summary-card release-summary-card-feature">
                                   <span>Request</span>
                                   <strong>{selectedReleaseRequest.requestNo}</strong>
+                                  <small>
+                                    {selectedReleaseRequest.barangayName} •{" "}
+                                    {getRequestTypeLabel(selectedReleaseRequest)}
+                                  </small>
                                 </div>
                                 <div className="release-summary-card">
-                                  <span>Barangay</span>
-                                  <strong>{selectedReleaseRequest.barangayName}</strong>
-                                </div>
-                                <div className="release-summary-card">
-                                  <span>Status</span>
-                                  <strong className="caps">{releaseStatusLabel}</strong>
+                                  <span>Journey</span>
+                                  <strong>
+                                    Step {Math.max(currentStepIndex + 1, 1)} of{" "}
+                                    {releaseJourneySteps.length}
+                                  </strong>
+                                  <small>{activeJourneyMeta.shortLabel}</small>
                                 </div>
                                 <div className="release-summary-card">
                                   <span>Required Packs</span>
-                                  <strong>{getRequestedPackCount(selectedReleaseRequest)}</strong>
+                                  <strong>
+                                    {selectedRequestNeedsFood
+                                      ? selectedRemainingFoodPacks
+                                      : "-"}
+                                  </strong>
                                 </div>
                                 <div className="release-summary-card">
-                                  <span>People</span>
-                                  <strong>{getRequestPeopleCount(selectedReleaseRequest)}</strong>
+                                  <span>Required Monetary</span>
+                                  <strong>
+                                    {selectedRequestNeedsMonetary
+                                      ? formatMoney(selectedRemainingMonetaryAmount)
+                                      : "-"}
+                                  </strong>
+                                </div>
+                                <div className="release-summary-card">
+                                  <span>Required Appliances</span>
+                                  <strong>
+                                    {selectedRequestNeedsAppliance
+                                      ? selectedRemainingApplianceQuantity
+                                      : "-"}
+                                  </strong>
                                 </div>
                               </div>
 
-                              <div className="release-mode-switch">
-                                <button
-                                  type="button"
-                                  className={releasePlannerTab === "food" ? "active" : ""}
-                                  onClick={() => setReleasePlannerTab("food")}
-                                >
-                                  Release Food Pack
-                                </button>
-                              </div>
-
-                              {releasePlannerTab === "food" ? (
-                                <div className="release-mode-layout single">
-                                  <div className="release-panel">
-                                    <div className="release-panel-head release-panel-head-simple">
-                                      <div>
-                                        <h3>Food Pack Release</h3>
-                                        <span>
-                                          Release must fully match the approved request.
-                                        </span>
-                                      </div>
-                                    </div>
-
-                                    <div className="template-config-grid">
-                                      <div className="release-selection-field">
-                                        <label>Template</label>
-                                        <select
-                                          className="input"
-                                          value={selectedTemplateId}
-                                          onChange={(e) =>
-                                            handleTemplateSelectionChange(e.target.value)
-                                          }
-                                        >
-                                          <option value="">Select template</option>
-                                          {foodPackTemplates.map((template) => (
-                                            <option key={template._id} value={template._id}>
-                                              {template.name}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </div>
-
-                                      <div className="release-selection-field">
-                                        <label>Food Packs to Release</label>
-                                        <input
-                                          type="number"
-                                          min="1"
-                                          className="input"
-                                          value={foodPacksToRelease}
-                                          onChange={(e) =>
-                                            setFoodPacksToRelease(e.target.value)
-                                          }
-                                        />
-                                      </div>
-
-                                      <div className="release-selection-field">
-                                        <label>Required Food Packs</label>
-                                        <div className="release-static-value">
-                                          {getRequestedPackCount(selectedReleaseRequest)}
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    {selectedTemplate ? (
-                                      <div className="template-preview-wrap">
-                                        <div className="template-preview-head">
-                                          <strong>{selectedTemplate.name}</strong>
-                                          <span>
-                                            {selectedTemplate.description ||
-                                              "No description."}
-                                          </span>
-                                        </div>
-
-                                        {computedTemplateItems.length === 0 ? (
-                                          <div className="release-empty">
-                                            Enter the exact required food pack count to
-                                            preview the generated release items.
-                                          </div>
-                                        ) : (
-                                          <div className="table-wrapper">
-                                            <table className="inventory-table release-table">
-                                              <thead>
-                                                <tr>
-                                                  <th>Item</th>
-                                                  <th>Category</th>
-                                                  <th>Per Pack</th>
-                                                  <th>Total Release</th>
-                                                  <th>Unit</th>
-                                                </tr>
-                                              </thead>
-                                              <tbody>
-                                                {computedTemplateItems.map((item, index) => (
-                                                  <tr key={`${item.itemName}-${index}`}>
-                                                    <td>{item.itemName}</td>
-                                                    <td>{getCategoryLabel(item.category)}</td>
-                                                    <td>{item.quantityPerPack}</td>
-                                                    <td>{item.quantityReleased}</td>
-                                                    <td>{item.unit || "-"}</td>
-                                                  </tr>
-                                                ))}
-                                              </tbody>
-                                            </table>
-                                          </div>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <div className="release-empty">
-                                        Select a food pack template to continue.
-                                      </div>
-                                    )}
+                              <div className="release-journey-card">
+                                <div className="release-journey-head">
+                                  <div>
+                                    <h3>Release Journey</h3>
+                                    <p>
+                                      Complete each required support step before moving to the
+                                      next release stage.
+                                    </p>
                                   </div>
                                 </div>
-                              ) : (
-                                <div className="release-mode-layout">
-                                  <div className="release-panel">
-                                    <div className="release-panel-head release-panel-head-simple">
-                                      <div>
-                                        <h3>Available Appliances</h3>
-                                      </div>
-                                      <input
-                                        type="text"
-                                        className="input"
-                                        placeholder="Search appliance, category, source..."
-                                        value={applianceSearch}
-                                        onChange={(e) =>
-                                          setApplianceSearch(e.target.value)
+
+                                <div className="release-journey-steps">
+                                  {releaseJourneySteps.map((step, index) => {
+                                    const meta = getJourneyStepMeta(step);
+                                    const isActive = activeJourneyStep === step;
+                                    const isCompleted = completedJourneySteps.includes(step);
+                                    const priorSteps = releaseJourneySteps.slice(0, index);
+                                    const isUnlocked = priorSteps.every(
+                                      (priorStep) =>
+                                        priorStep === "review" ||
+                                        completedJourneySteps.includes(priorStep)
+                                    );
+
+                                    return (
+                                      <button
+                                        key={step}
+                                        type="button"
+                                        className={[
+                                          "release-journey-step",
+                                          isActive ? "active" : "",
+                                          isCompleted ? "complete" : "",
+                                          !isUnlocked ? "locked" : "",
+                                        ]
+                                          .filter(Boolean)
+                                          .join(" ")}
+                                        onClick={() => jumpToJourneyStep(step)}
+                                        disabled={
+                                          !isUnlocked || (step === "review" && !canOpenReviewStep)
                                         }
+                                      >
+                                        <span className="release-journey-step-index">
+                                          {isCompleted && step !== "review" ? (
+                                            <FaCheck />
+                                          ) : (
+                                            index + 1
+                                          )}
+                                        </span>
+                                        <span className="release-journey-step-copy">
+                                          <strong>{meta.shortLabel}</strong>
+                                          <small>{meta.title}</small>
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {activeJourneyStep === "food" ? (
+                                <div className="release-panel release-journey-panel">
+                                  <div className="release-panel-head release-panel-head-simple">
+                                    <div>
+                                      <h3>{activeJourneyMeta.title}</h3>
+                                      <p className="release-panel-copy">
+                                        {activeJourneyMeta.description}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="template-config-grid">
+                                    <div className="release-selection-field">
+                                      <label>Template</label>
+                                      <select
+                                        className="input"
+                                        value={selectedTemplateId}
+                                        onChange={(e) =>
+                                          handleTemplateSelectionChange(e.target.value)
+                                        }
+                                      >
+                                        <option value="">Select template</option>
+                                        {foodPackTemplates.map((template) => (
+                                          <option key={template._id} value={template._id}>
+                                            {template.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+
+                                    <div className="release-selection-field">
+                                      <label>Food Packs to Release</label>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        className="input"
+                                        value={foodPacksToRelease}
+                                        onChange={(e) => setFoodPacksToRelease(e.target.value)}
                                       />
                                     </div>
 
-                                    {applianceCatalog.length === 0 ? (
-                                      <div className="release-empty">
-                                        No appliance items found.
+                                    <div className="release-selection-field">
+                                      <label>Required Food Packs</label>
+                                      <div className="release-static-value">
+                                        {selectedRemainingFoodPacks}
                                       </div>
-                                    ) : (
-                                      <div className="template-builder-list-wrap appliance-builder-list-wrap">
-                                        <div className="template-builder-list">
-                                          {applianceCatalog.map((item) => {
-                                            const selectionId =
-                                              item._mergeKey ||
-                                              item._id ||
-                                              buildGoodsMergeKey(item);
+                                    </div>
+                                  </div>
 
-                                            const alreadyAdded = applianceSelections.some(
-                                              (selection) =>
-                                                String(selection.inventoryItemId) ===
-                                                String(selectionId)
-                                            );
+                                  {selectedTemplate ? (
+                                    <div className="template-preview-wrap">
+                                      <div className="template-preview-head">
+                                        <strong>{selectedTemplate.name}</strong>
+                                        <span>
+                                          {selectedTemplate.description || "No description."}
+                                        </span>
+                                      </div>
 
-                                            return (
+                                      {computedTemplateItems.length === 0 ? (
+                                        <div className="release-empty">
+                                          Enter the exact required food pack count to preview
+                                          the generated release items.
+                                        </div>
+                                      ) : (
+                                        <div className="table-wrapper">
+                                          <table className="inventory-table release-table">
+                                            <thead>
+                                              <tr>
+                                                <th>Item</th>
+                                                <th>Category</th>
+                                                <th>Per Pack</th>
+                                                <th>Total Release</th>
+                                                <th>Unit</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {computedTemplateItems.map((item, index) => (
+                                                <tr key={`${item.itemName}-${index}`}>
+                                                  <td>{item.itemName}</td>
+                                                  <td>{getCategoryLabel(item.category)}</td>
+                                                  <td>{item.quantityPerPack}</td>
+                                                  <td>{item.quantityReleased}</td>
+                                                  <td>{item.unit || "-"}</td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="release-empty">
+                                      Select a food pack template to continue.
+                                    </div>
+                                  )}
+
+                                  <div className="release-step-actions">
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary"
+                                      onClick={clearReleasePlanner}
+                                      disabled={releaseSubmitting}
+                                    >
+                                      <FaTimes className="btn-icon" />
+                                      Clear
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-primary"
+                                      onClick={goToNextJourneyStep}
+                                      disabled={!journeyCompletionState.food}
+                                    >
+                                      Continue to {getJourneyStepMeta(nextJourneyStep).shortLabel}
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {activeJourneyStep === "monetary" ? (
+                                <div className="release-panel release-journey-panel">
+                                  <div className="release-panel-head release-panel-head-simple">
+                                    <div>
+                                      <h3>{activeJourneyMeta.title}</h3>
+                                      <p className="release-panel-copy">
+                                        {activeJourneyMeta.description}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="template-config-grid">
+                                    <div className="release-selection-field">
+                                      <label>Requested Monetary Amount</label>
+                                      <div className="release-static-value">
+                                        {formatMoney(
+                                          getRequestedMonetaryAmount(selectedReleaseRequest)
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <div className="release-selection-field">
+                                      <label>Remaining Monetary</label>
+                                      <div className="release-static-value">
+                                        {formatMoney(selectedRemainingMonetaryAmount)}
+                                      </div>
+                                    </div>
+
+                                    <div className="release-selection-field">
+                                      <label>Release Monetary Amount</label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        className="input"
+                                        value={releaseMonetaryAmount}
+                                        onChange={(e) => setReleaseMonetaryAmount(e.target.value)}
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="release-empty release-empty-inline">
+                                    The full approved monetary amount must be planned before
+                                    proceeding to the next step.
+                                  </div>
+
+                                  <div className="release-step-actions">
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary"
+                                      onClick={goToPreviousJourneyStep}
+                                    >
+                                      Back
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-primary"
+                                      onClick={goToNextJourneyStep}
+                                      disabled={!journeyCompletionState.monetary}
+                                    >
+                                      Continue to {getJourneyStepMeta(nextJourneyStep).shortLabel}
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {activeJourneyStep === "appliance" ? (
+                                <div className="release-panel release-journey-panel">
+                                  <div className="release-panel-head release-panel-head-simple">
+                                    <div>
+                                      <h3>{activeJourneyMeta.title}</h3>
+                                      <p className="release-panel-copy">
+                                        {activeJourneyMeta.description}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="release-mode-layout release-mode-layout-journey">
+                                    <div className="release-panel release-panel-nested">
+                                      <div className="release-panel-head release-panel-head-simple compact">
+                                        <div>
+                                          <h3>Requested Appliances</h3>
+                                          <span>
+                                            {selectedRemainingApplianceQuantity} unit(s) still
+                                            needed
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      {Array.isArray(selectedReleaseRequest?.requestedAppliances) &&
+                                      selectedReleaseRequest.requestedAppliances.length > 0 ? (
+                                        <div className="release-appliance-request-list release-appliance-request-scroll">
+                                          {selectedReleaseRequest.requestedAppliances.map(
+                                            (item, index) => (
                                               <div
-                                                className="template-source-row"
-                                                key={selectionId}
+                                                className="release-appliance-request-card"
+                                                key={`${item.itemName}-${index}`}
                                               >
-                                                <div className="template-source-main">
-                                                  <strong>{item.name || "-"}</strong>
-                                                  <span>
-                                                    {getCategoryLabel(item.category)}
-                                                  </span>
+                                                <div className="release-appliance-request-main">
+                                                  <strong>{item.itemName || "-"}</strong>
+                                                  <span>{getCategoryLabel(item.category)}</span>
+                                                  <small>{item.remarks || "No remarks"}</small>
                                                 </div>
+                                                <div className="release-appliance-request-meta">
+                                                  <b className="release-appliance-qty-badge">
+                                                    {Number(item.quantityRequested || 0)} unit(s)
+                                                  </b>
+                                                </div>
+                                              </div>
+                                            )
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="release-empty release-empty-compact">
+                                          No requested appliance details available.
+                                        </div>
+                                      )}
 
-                                                <div className="template-source-meta">
-                                                  <span>{Number(item.quantity || 0)}</span>
-                                                  <small>{item.unit || "-"}</small>
+                                      <div className="release-panel-head release-panel-head-simple compact">
+                                        <div>
+                                          <h3>Available Appliances</h3>
+                                        </div>
+                                        <input
+                                          type="text"
+                                          className="input"
+                                          placeholder="Search appliance, category, source..."
+                                          value={applianceSearch}
+                                          onChange={(e) => setApplianceSearch(e.target.value)}
+                                        />
+                                      </div>
+
+                                      {applianceCatalog.length === 0 ? (
+                                        <div className="release-empty">
+                                          No appliance items found.
+                                        </div>
+                                      ) : (
+                                        <div className="template-builder-list-wrap appliance-builder-list-wrap">
+                                          <div className="template-builder-list">
+                                            {applianceCatalog.map((item) => {
+                                              const selectionId =
+                                                item._id ||
+                                                item._mergeKey ||
+                                                buildGoodsMergeKey(item);
+
+                                              const alreadyAdded = applianceSelections.some(
+                                                (selection) =>
+                                                  String(selection.inventoryItemId) ===
+                                                  String(selectionId)
+                                              );
+
+                                              return (
+                                                <div
+                                                  className="template-source-row appliance-source-row"
+                                                  key={selectionId}
+                                                >
+                                                  <div className="template-source-main appliance-source-main">
+                                                    <strong>{item.name || "-"}</strong>
+                                                    <span>
+                                                      {getCategoryLabel(item.category)}
+                                                    </span>
+                                                  </div>
+
+                                                  <div className="template-source-meta appliance-source-meta">
+                                                    <span className="appliance-source-qty-badge">
+                                                      {Number(item.quantity || 0)} {item.unit || "unit(s)"}
+                                                    </span>
+                                                  </div>
+
+                                                  <button
+                                                    type="button"
+                                                    className="btn btn-outline btn-sm template-add-btn"
+                                                    onClick={() => addApplianceReleaseItem(item)}
+                                                    disabled={alreadyAdded}
+                                                  >
+                                                    <FaPlus className="btn-icon" />
+                                                    {alreadyAdded ? "Added" : "Add"}
+                                                  </button>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="release-panel release-panel-nested">
+                                      <div className="release-panel-head release-panel-head-simple compact">
+                                        <div>
+                                          <h3>Appliance Release List</h3>
+                                          <span>
+                                            {applianceSelections.length} item(s) selected
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      {applianceSelections.length === 0 ? (
+                                        <div className="release-empty release-empty-compact">
+                                          Add appliance items that will be included in this
+                                          release.
+                                        </div>
+                                      ) : (
+                                        <div className="release-selection-list template-builder-selection-list appliance-release-selection-list">
+                                          {applianceSelections.map((item) => (
+                                            <div
+                                              className="release-selection-card compact-template-card"
+                                              key={item.inventoryItemId}
+                                            >
+                                              <div className="release-selection-head compact-template-head">
+                                                <div>
+                                                  <strong>{item.itemName}</strong>
+                                                  <span>
+                                                    {getCategoryLabel(item.category)} • {item.unit}
+                                                  </span>
                                                 </div>
 
                                                 <button
                                                   type="button"
-                                                  className="btn btn-outline btn-sm template-add-btn"
+                                                  className="btn btn-danger btn-sm"
                                                   onClick={() =>
-                                                    addApplianceReleaseItem(item)
+                                                    removeApplianceSelection(item.inventoryItemId)
                                                   }
-                                                  disabled={alreadyAdded}
                                                 >
-                                                  <FaPlus className="btn-icon" />
-                                                  {alreadyAdded ? "Added" : "Add"}
+                                                  <FaTimes className="btn-icon" />
+                                                  Remove
                                                 </button>
                                               </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
 
-                                  <div className="release-panel">
-                                    <div className="release-panel-head release-panel-head-simple compact">
-                                      <div>
-                                        <h3>Appliance Release List</h3>
-                                        <span>
-                                          {applianceSelections.length} item(s)
-                                        </span>
-                                      </div>
-                                    </div>
+                                              <div className="release-selection-grid appliance-selection-grid">
+                                                <div className="release-selection-field compact-template-field">
+                                                  <label>Available</label>
+                                                  <div className="release-static-value">
+                                                    {item.availableQuantity}
+                                                  </div>
+                                                </div>
 
-                                    {applianceSelections.length === 0 ? (
-                                      <div className="release-empty release-empty-compact">
-                                        Add appliances from the inventory list.
-                                      </div>
-                                    ) : (
-                                      <div className="release-selection-list template-builder-selection-list">
-                                        {applianceSelections.map((item) => (
-                                          <div
-                                            className="release-selection-card compact-template-card"
-                                            key={item.inventoryItemId}
-                                          >
-                                            <div className="release-selection-head compact-template-head">
-                                              <div>
-                                                <strong>{item.itemName}</strong>
-                                                <span>
-                                                  {getCategoryLabel(item.category)} •{" "}
-                                                  {item.unit}
-                                                </span>
-                                              </div>
+                                                <div className="release-selection-field compact-template-field">
+                                                  <label>Release Qty</label>
+                                                  <input
+                                                    type="number"
+                                                    min="0"
+                                                    className="input"
+                                                    value={item.quantityReleased}
+                                                    onChange={(e) =>
+                                                      updateApplianceSelection(
+                                                        item.inventoryItemId,
+                                                        "quantityReleased",
+                                                        e.target.value
+                                                      )
+                                                    }
+                                                  />
+                                                </div>
 
-                                              <button
-                                                type="button"
-                                                className="btn btn-danger btn-sm"
-                                                onClick={() =>
-                                                  removeApplianceSelection(
-                                                    item.inventoryItemId
-                                                  )
-                                                }
-                                              >
-                                                <FaTimes className="btn-icon" />
-                                                Remove
-                                              </button>
-                                            </div>
-
-                                            <div className="release-selection-grid appliance-selection-grid">
-                                              <div className="release-selection-field compact-template-field">
-                                                <label>Available</label>
-                                                <div className="release-static-value">
-                                                  {item.availableQuantity}
+                                                <div className="release-selection-field appliance-remarks-field">
+                                                  <label>Remarks</label>
+                                                  <input
+                                                    type="text"
+                                                    className="input"
+                                                    value={item.remarks}
+                                                    onChange={(e) =>
+                                                      updateApplianceSelection(
+                                                        item.inventoryItemId,
+                                                        "remarks",
+                                                        e.target.value
+                                                      )
+                                                    }
+                                                  />
                                                 </div>
                                               </div>
-
-                                              <div className="release-selection-field compact-template-field">
-                                                <label>Release Qty</label>
-                                                <input
-                                                  type="number"
-                                                  min="0"
-                                                  className="input"
-                                                  value={item.quantityReleased}
-                                                  onChange={(e) =>
-                                                    updateApplianceSelection(
-                                                      item.inventoryItemId,
-                                                      "quantityReleased",
-                                                      e.target.value
-                                                    )
-                                                  }
-                                                />
-                                              </div>
-
-                                              <div className="release-selection-field appliance-remarks-field">
-                                                <label>Remarks</label>
-                                                <input
-                                                  type="text"
-                                                  className="input"
-                                                  value={item.remarks}
-                                                  onChange={(e) =>
-                                                    updateApplianceSelection(
-                                                      item.inventoryItemId,
-                                                      "remarks",
-                                                      e.target.value
-                                                    )
-                                                  }
-                                                />
-                                              </div>
                                             </div>
-                                          </div>
-                                        ))}
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      <div className="release-appliance-step-total">
+                                        <span>Planned appliance quantity</span>
+                                        <strong>{releasePreviewSummary.applianceUnits}</strong>
+                                        <small>
+                                          Required: {selectedRemainingApplianceQuantity} unit(s)
+                                        </small>
                                       </div>
-                                    )}
+                                    </div>
+                                  </div>
+
+                                  <div className="release-step-actions">
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary"
+                                      onClick={goToPreviousJourneyStep}
+                                    >
+                                      Back
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-primary"
+                                      onClick={goToNextJourneyStep}
+                                      disabled={!journeyCompletionState.appliance}
+                                    >
+                                      Continue to {getJourneyStepMeta(nextJourneyStep).shortLabel}
+                                    </button>
                                   </div>
                                 </div>
-                              )}
+                              ) : null}
+
+                              {activeJourneyStep === "review" ? (
+                                <div className="release-panel release-journey-panel">
+                                  <div className="release-panel-head release-panel-head-simple">
+                                    <div>
+                                      <h3>{activeJourneyMeta.title}</h3>
+                                      <p className="release-panel-copy">
+                                        {activeJourneyMeta.description}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="release-review-grid">
+                                    {releaseJourneySteps
+                                      .filter((step) => step !== "review")
+                                      .map((step) => {
+                                        const meta = getJourneyStepMeta(step);
+                                        return (
+                                          <div
+                                            key={step}
+                                            className={`release-review-card ${
+                                              journeyCompletionState[step]
+                                                ? "complete"
+                                                : "pending"
+                                            }`}
+                                          >
+                                            <span>{meta.shortLabel}</span>
+                                            <strong>
+                                              {journeyCompletionState[step]
+                                                ? "Ready"
+                                                : "Needs attention"}
+                                            </strong>
+                                            <small>{meta.description}</small>
+                                          </div>
+                                        );
+                                      })}
+                                  </div>
+
+                                  <div className="release-remarks-wrap">
+                                    <label>Release Remarks</label>
+                                    <textarea
+                                      className="release-textarea"
+                                      value={releaseRemarks}
+                                      onChange={(e) => setReleaseRemarks(e.target.value)}
+                                      placeholder="Add notes for this release..."
+                                    />
+                                  </div>
+
+                                  <div className="release-submit-row">
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary"
+                                      onClick={clearReleasePlanner}
+                                      disabled={releaseSubmitting}
+                                    >
+                                      <FaTimes className="btn-icon" />
+                                      Clear
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary"
+                                      onClick={goToPreviousJourneyStep}
+                                      disabled={releaseSubmitting}
+                                    >
+                                      Back
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary"
+                                      onClick={() => setPlannerOpen(false)}
+                                      disabled={releaseSubmitting}
+                                    >
+                                      <FaTimes className="btn-icon" />
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-primary release-submit-btn"
+                                      onClick={submitRelease}
+                                      disabled={releaseSubmitting || !canSubmitReleasePlan}
+                                    >
+                                      <FaClipboardCheck className="btn-icon" />
+                                      {releaseSubmitting
+                                        ? "Submitting..."
+                                        : "Submit Release"}
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : null}
 
                               <div className="release-footer-card release-footer-sticky">
+                                <div className="release-footer-head">
+                                  <div>
+                                    <h3>Release Summary</h3>
+                                    <p>
+                                      This summary stays visible while you complete each release
+                                      step.
+                                    </p>
+                                  </div>
+                                </div>
+
                                 <div className="release-footer-grid">
                                   <div className="release-footer-box">
                                     <span>Line Items</span>
@@ -2748,66 +3623,44 @@ useEffect(() => {
                                     <strong>{releasePreviewSummary.totalQuantity}</strong>
                                   </div>
                                   <div className="release-footer-box">
-                                    <span>
-                                      {releasePlannerTab === "food"
-                                        ? "Food Packs"
-                                        : "Appliance Items"}
-                                    </span>
+                                    <span>Food Packs</span>
                                     <strong>
-                                      {releasePlannerTab === "food"
+                                      {selectedRequestPendingFood
                                         ? releasePreviewSummary.packCount
-                                        : releasePreviewSummary.lineItems}
+                                        : "-"}
+                                    </strong>
+                                  </div>
+                                  <div className="release-footer-box">
+                                    <span>Monetary</span>
+                                    <strong>
+                                      {selectedRequestPendingMonetary
+                                        ? formatMoney(releasePreviewSummary.totalMonetary)
+                                        : "-"}
+                                    </strong>
+                                  </div>
+                                  <div className="release-footer-box">
+                                    <span>Appliances</span>
+                                    <strong>
+                              {selectedRequestPendingAppliance
+                                        ? releasePreviewSummary.applianceUnits
+                                        : "-"}
                                     </strong>
                                   </div>
                                 </div>
 
-                                <div className="release-remarks-wrap">
-                                  <label>Release Remarks</label>
-                                  <textarea
-                                    className="release-textarea"
-                                    value={releaseRemarks}
-                                    onChange={(e) => setReleaseRemarks(e.target.value)}
-                                    placeholder="Add notes for this release..."
-                                  />
-                                </div>
-
-                                <div className="release-submit-row">
-                                  <button
-                                    type="button"
-                                    className="btn btn-secondary"
-                                    onClick={clearReleasePlanner}
-                                    disabled={releaseSubmitting}
-                                  >
-                                    <FaTimes className="btn-icon" />
-                                    Clear
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn btn-secondary"
-                                    onClick={() => setPlannerOpen(false)}
-                                    disabled={releaseSubmitting}
-                                  >
-                                    <FaTimes className="btn-icon" />
-                                    Cancel
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn btn-primary release-submit-btn"
-                                    onClick={submitRelease}
-                                    disabled={releaseSubmitting}
-                                  >
-                                    <FaClipboardCheck className="btn-icon" />
-                                    {releaseSubmitting
-                                      ? "Submitting..."
-                                      : "Submit Full Release"}
-                                  </button>
-                                </div>
+                                {!canSubmitReleasePlan ? (
+                                  <div className="release-empty release-empty-inline">
+                                    Complete each required step before reviewing and submitting
+                                    the final release.
+                                  </div>
+                                ) : null}
                               </div>
                             </>
                           )}
                         </section>
                       </div>
                     ) : null}
+
                   </div>
                 </div>
               )}
@@ -2852,8 +3705,15 @@ useEffect(() => {
                           <FaMoneyBillWave className="btn-icon" />
                           Monetary
                         </button>
+                        <button
+                          type="button"
+                          className={viewType === "appliance" ? "active" : ""}
+                          onClick={() => setViewType("appliance")}
+                        >
+                          <FaBoxOpen className="btn-icon" />
+                          Appliances
+                        </button>
                       </div>
-
                     </div>
 
                     <div className="inventory-meta-row">
@@ -2869,9 +3729,7 @@ useEffect(() => {
                           </button>
                           <button
                             type="button"
-                            className={
-                              goodsDisplayMode === "grouped" ? "active" : ""
-                            }
+                            className={goodsDisplayMode === "grouped" ? "active" : ""}
                             onClick={() => setGoodsDisplayMode("grouped")}
                           >
                             <FaFilter className="btn-icon" />
@@ -2889,13 +3747,15 @@ useEffect(() => {
                       placeholder={
                         viewType === "goods"
                           ? "Search item, category, source, notes..."
+                          : viewType === "appliance"
+                          ? "Search appliance, category, source, notes..."
                           : "Search donation, source, description..."
                       }
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                     />
 
-                    {viewType === "goods" ? (
+                    {viewType === "goods" || viewType === "appliance" ? (
                       <select
                         className="input inventory-control-select"
                         value={categoryFilter}
@@ -2941,6 +3801,13 @@ useEffect(() => {
                           <option value="createdAt">Date</option>
                           <option value="quantity">Quantity</option>
                           <option value="expirationDate">Expiration</option>
+                          <option value="name">Name</option>
+                        </>
+                      ) : viewType === "appliance" ? (
+                        <>
+                          <option value="createdAt">Date</option>
+                          <option value="name">Name</option>
+                          <option value="quantity">Quantity</option>
                         </>
                       ) : (
                         <>
@@ -3006,11 +3873,11 @@ useEffect(() => {
                               </span>
                             </div>
                             <span className="inventory-category-toggle">
-                              {isExpanded ? "−" : "+"}
+                              {isExpanded ? "-" : "+"}
                             </span>
                           </button>
 
-                          {isExpanded && (
+                          {isExpanded ? (
                             <div className="table-wrapper">
                               <table className="inventory-table">
                                 <thead>
@@ -3054,9 +3921,7 @@ useEffect(() => {
                                         <div className="expiry-cell-stack">
                                           <span>{formatExpiryDate(item.expirationDate)}</span>
                                           {getExpiryBadgeLabel(item) ? (
-                                            <span
-                                              className={`badge ${getExpiryBadgeClass(item)}`}
-                                            >
+                                            <span className={`badge ${getExpiryBadgeClass(item)}`}>
                                               {getExpiryBadgeLabel(item)}
                                             </span>
                                           ) : null}
@@ -3068,9 +3933,7 @@ useEffect(() => {
                                             {Array.isArray(item._sourceTypes) &&
                                             item._sourceTypes.length > 0
                                               ? item._sourceTypes
-                                                  .map((value) =>
-                                                    getSourceLabel(value)
-                                                  )
+                                                  .map((value) => getSourceLabel(value))
                                                   .join(", ")
                                               : getSourceLabel(item.sourceType)}
                                           </strong>
@@ -3090,7 +3953,7 @@ useEffect(() => {
                                 </tbody>
                               </table>
                             </div>
-                          )}
+                          ) : null}
                         </div>
                       );
                     })}
@@ -3101,13 +3964,14 @@ useEffect(() => {
                       <table className="inventory-table">
                         <thead>
                           <tr>
-                            <th>
-                              {viewType === "goods" ? "Item" : "Donation / Entry"}
-                            </th>
-                            {viewType === "goods" && <th>Category</th>}
-                            <th>{viewType === "goods" ? "Quantity" : "Amount"}</th>
+                            <th>{viewType === "monetary" ? "Donation / Entry" : "Item"}</th>
+                            {(viewType === "goods" || viewType === "appliance") && (
+                              <th>Category</th>
+                            )}
+                            <th>{viewType === "monetary" ? "Amount" : "Quantity"}</th>
                             {viewType === "goods" && <th>Unit</th>}
                             {viewType === "goods" && <th>Expiration</th>}
+                            {viewType === "appliance" && <th>Condition</th>}
                             <th>Source</th>
                             <th>Description</th>
                             <th>Proof</th>
@@ -3130,23 +3994,21 @@ useEffect(() => {
                                 </button>
                               </td>
 
-                              {viewType === "goods" && (
+                              {(viewType === "goods" || viewType === "appliance") && (
                                 <td>{getCategoryLabel(item.category)}</td>
                               )}
 
                               <td>
-                                {viewType === "goods" ? (
-                                  <span
-                                    className={`badge ${getStockBadgeClass(
-                                      item.quantity
-                                    )}`}
-                                  >
-                                    {Number(item.quantity || 0)}
-                                  </span>
-                                ) : (
+                                {viewType === "monetary" ? (
                                   <strong className="money-cell">
                                     {formatMoney(item.amount)}
                                   </strong>
+                                ) : (
+                                  <span
+                                    className={`badge ${getStockBadgeClass(item.quantity)}`}
+                                  >
+                                    {Number(item.quantity || 0)}
+                                  </span>
                                 )}
                               </td>
 
@@ -3161,6 +4023,19 @@ useEffect(() => {
                                         {getExpiryBadgeLabel(item)}
                                       </span>
                                     ) : null}
+                                  </div>
+                                </td>
+                              )}
+
+                              {viewType === "appliance" && (
+                                <td>
+                                  <div className="table-mini-stack">
+                                    <strong>
+                                      {getCategoryLabel(
+                                        String(item.condition || "").replace(/_/g, " ")
+                                      )}
+                                    </strong>
+                                    <span>{item.usageDuration || "-"}</span>
                                   </div>
                                 </td>
                               )}
@@ -3184,7 +4059,11 @@ useEffect(() => {
                                 </div>
                               </td>
 
-                              <td>{item.description || "-"}</td>
+                              <td>
+                                {viewType === "monetary"
+                                  ? stripReferenceFromDescription(item.description) || "-"
+                                  : item.description || "-"}
+                              </td>
                               <td>{renderProofFiles(item.proofFiles)}</td>
                               <td>{renderRowActions(item)}</td>
                             </tr>
@@ -3193,7 +4072,7 @@ useEffect(() => {
                       </table>
                     </div>
 
-                    {tablePageCount > 1 && (
+                    {tablePageCount > 1 ? (
                       <div className="pager">
                         <button
                           type="button"
@@ -3234,7 +4113,7 @@ useEffect(() => {
                           Next
                         </button>
                       </div>
-                    )}
+                    ) : null}
                   </>
                 )}
               </div>
@@ -3295,11 +4174,46 @@ useEffect(() => {
                             </div>
                           ) : null}
                         </>
+                      ) : normalize(selectedItem.type) === "appliance" ? (
+                        <>
+                          <div className="modal-stat">
+                            <span>Category</span>
+                            <strong>{getCategoryLabel(selectedItem.category)}</strong>
+                          </div>
+                          <div className="modal-stat">
+                            <span>Quantity</span>
+                            <strong>{Number(selectedItem.quantity || 0)}</strong>
+                          </div>
+                          <div className="modal-stat">
+                            <span>Condition</span>
+                            <strong>
+                              {getCategoryLabel(
+                                String(selectedItem.condition || "").replace(/_/g, " ")
+                              )}
+                            </strong>
+                          </div>
+                          <div className="modal-stat">
+                            <span>Usage Duration</span>
+                            <strong>{selectedItem.usageDuration || "-"}</strong>
+                          </div>
+                          <div className="modal-stat">
+                            <span>Source Type</span>
+                            <strong>{getSourceLabel(selectedItem.sourceType)}</strong>
+                          </div>
+                          <div className="modal-stat">
+                            <span>Source Name</span>
+                            <strong>{selectedItem.sourceName || "-"}</strong>
+                          </div>
+                        </>
                       ) : (
                         <>
                           <div className="modal-stat">
                             <span>Amount</span>
                             <strong>{formatMoney(selectedItem.amount)}</strong>
+                          </div>
+                          <div className="modal-stat">
+                            <span>Reference Number</span>
+                            <strong>{getReferenceNumber(selectedItem) || "-"}</strong>
                           </div>
                           <div className="modal-stat">
                             <span>Source Type</span>
@@ -3330,7 +4244,12 @@ useEffect(() => {
 
                     <div className="inventory-modal-section">
                       <h4>Description</h4>
-                      <p>{selectedItem.description || "No description provided."}</p>
+                      <p>
+                        {normalize(selectedItem.type) === "monetary"
+                          ? stripReferenceFromDescription(selectedItem.description) ||
+                            "No description provided."
+                          : selectedItem.description || "No description provided."}
+                      </p>
                     </div>
 
                     <div className="inventory-modal-section">

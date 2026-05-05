@@ -13,5 +13,6 @@ router.get("/mine/:id", requireLogin, controller.getMyReliefRequestById);
 router.put("/:id", requireLogin, controller.updateOwnReliefRequest);
 router.put("/:id/cancel", requireLogin, controller.cancelOwnReliefRequest);
 router.put("/:id/received", requireLogin, controller.markReliefRequestReceived);
+router.put("/:id/not-received", requireLogin, controller.reportReliefRequestNotReceived);
 
 module.exports = router;

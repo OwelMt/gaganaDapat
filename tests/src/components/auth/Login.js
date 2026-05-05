@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import SplashScreen from '../splashscreen/SplashScreen';
+import { sanitizeEmail, sanitizePassword } from './inputSanitizers';
 
 import jaenlogo from '../../assets/images/jaenlogo.png';
 import sagipbayanlogo from '../../assets/images/sagipbayanlogo.png';
@@ -97,7 +98,7 @@ export default function Login() {
   };
 
   const handleEmailChange = (value) => {
-    setEmail(value);
+    setEmail(sanitizeEmail(value));
 
     if (eError) {
       setEError(validateEmail(value));
@@ -107,7 +108,7 @@ export default function Login() {
   };
 
   const handlePasswordChange = (value) => {
-    setPassword(value);
+    setPassword(sanitizePassword(value));
 
     if (pError) {
       setPError(validatePassword(value));
@@ -151,7 +152,7 @@ export default function Login() {
 
   const handleLogin = async () => {
     const trimmedEmail = email.trim();
-    const trimmedPassword = password.trim();
+    const trimmedPassword = password;
 
     const emailValidation = validateEmail(trimmedEmail);
     const passwordValidation = validatePassword(trimmedPassword);

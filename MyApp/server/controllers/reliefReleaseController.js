@@ -17,15 +17,15 @@ const {
   drawPdfTable,
   formatPdfDateValue,
 } = require("../utils/pdfTheme");
-
-const REQUEST_TYPE_FOODPACKS = "foodpacks";
-const REQUEST_TYPE_MONETARY = "monetary";
-const REQUEST_TYPE_BOTH = "both";
-const VALID_REQUEST_TYPES = [
-  REQUEST_TYPE_FOODPACKS,
-  REQUEST_TYPE_MONETARY,
-  REQUEST_TYPE_BOTH,
-];
+const {
+  SUPPORT_TYPE_APPLIANCE,
+  SUPPORT_TYPE_FOODPACKS,
+  SUPPORT_TYPE_MONETARY,
+  normalizeSupportTypes,
+  deriveLegacyRequestType,
+  getSupportTypesFromRequest,
+  hasSupportType,
+} = require("../utils/reliefSupportTypes");
 
 const normalizeString = (value) => {
   if (value === undefined || value === null) return "";
@@ -37,12 +37,8 @@ const normalizeLower = (value) => {
   return String(value).trim().toLowerCase();
 };
 
-const normalizeRequestType = (value) => {
-  const normalized = normalizeLower(value);
-  return VALID_REQUEST_TYPES.includes(normalized)
-    ? normalized
-    : REQUEST_TYPE_FOODPACKS;
-};
+const normalizeRequestType = (value, supportTypes = []) =>
+  deriveLegacyRequestType(normalizeSupportTypes(supportTypes, value));
 
 const toNumber = (value) => {
   if (value === undefined || value === null || value === "") return 0;
@@ -56,29 +52,47 @@ const formatMonetaryAmount = (value) =>
     maximumFractionDigits: 2,
   });
 
-const requiresFoodPackFulfillment = (requestType) =>
-  [REQUEST_TYPE_FOODPACKS, REQUEST_TYPE_BOTH].includes(
-    normalizeRequestType(requestType)
-  );
+const requiresFoodPackFulfillment = (request = {}) =>
+  hasSupportType(getSupportTypesFromRequest(request), SUPPORT_TYPE_FOODPACKS);
 
-const requiresMonetaryFulfillment = (requestType) =>
-  [REQUEST_TYPE_MONETARY, REQUEST_TYPE_BOTH].includes(
-    normalizeRequestType(requestType)
-  );
+const requiresMonetaryFulfillment = (request = {}) =>
+  hasSupportType(getSupportTypesFromRequest(request), SUPPORT_TYPE_MONETARY);
+
+const requiresApplianceFulfillment = (request = {}) =>
+  hasSupportType(getSupportTypesFromRequest(request), SUPPORT_TYPE_APPLIANCE);
 
 const getRequestDemandProfile = (request = {}) => {
-  const requestType = normalizeRequestType(request.requestType);
+  const supportTypes = getSupportTypesFromRequest(request);
+  const requestType = normalizeRequestType(request.requestType, supportTypes);
   const totals = request.totals || {};
 
   return {
     requestType,
-    requiresFoodPacks: requiresFoodPackFulfillment(requestType),
-    requiresMonetary: requiresMonetaryFulfillment(requestType),
-    requestedFoodPacks: requiresFoodPackFulfillment(requestType)
+    supportTypes,
+    requiresFoodPacks: requiresFoodPackFulfillment({ supportTypes, requestType }),
+    requiresMonetary: requiresMonetaryFulfillment({ supportTypes, requestType }),
+    requiresAppliance: requiresApplianceFulfillment({ supportTypes, requestType }),
+    requestedFoodPacks: requiresFoodPackFulfillment({ supportTypes, requestType })
       ? toNumber(totals.requestedFoodPacks)
       : 0,
-    requestedMonetaryAmount: requiresMonetaryFulfillment(requestType)
+    requestedMonetaryAmount: requiresMonetaryFulfillment({ supportTypes, requestType })
       ? toNumber(totals.requestedMonetaryAmount)
+      : 0,
+    requestedAppliances: Array.isArray(request.requestedAppliances)
+      ? request.requestedAppliances
+          .map((item) => ({
+            itemName: normalizeString(item.itemName),
+            category: normalizeLower(item.category),
+            quantityRequested: toNumber(item.quantityRequested),
+            remarks: normalizeString(item.remarks),
+          }))
+          .filter((item) => item.itemName && item.category && item.quantityRequested > 0)
+      : [],
+    requestedApplianceQuantity: Array.isArray(request.requestedAppliances)
+      ? request.requestedAppliances.reduce(
+          (sum, item) => sum + toNumber(item.quantityRequested),
+          0
+        )
       : 0,
   };
 };
@@ -162,6 +176,8 @@ const validateReleaseItems = (items) => {
 
   for (const item of items) {
     const itemName = normalizeString(item.itemName);
+    const itemType =
+      normalizeLower(item.itemType) === "appliance" ? "appliance" : "goods";
     const category = normalizeLower(item.category);
     const quantityReleased = toNumber(item.quantityReleased);
     const unit = normalizeString(item.unit);
@@ -178,7 +194,7 @@ const validateReleaseItems = (items) => {
       return `Quantity released must be greater than 0 for item "${itemName}".`;
     }
 
-    if (!unit) {
+    if (itemType !== "appliance" && !unit) {
       return `Unit is required for item "${itemName}".`;
     }
   }
@@ -187,6 +203,7 @@ const validateReleaseItems = (items) => {
 };
 
 const buildInventorySignature = (item = {}) => ({
+  itemType: normalizeLower(item.itemType || "goods"),
   name: normalizeLower(item.itemName || item.name),
   category: normalizeLower(item.category),
   unit: normalizeLower(item.unit),
@@ -218,7 +235,7 @@ const allocateInventoryForReleaseItem = async (item, session) => {
     const byIdDoc = await InventoryItem.findOne({
       _id: item.inventoryItemId,
       isArchive: false,
-      type: "goods",
+      type: normalizedSignature.itemType === "appliance" ? "appliance" : "goods",
     }).session(session);
 
     addCandidate(byIdDoc);
@@ -231,10 +248,17 @@ const allocateInventoryForReleaseItem = async (item, session) => {
   ) {
     const signatureMatches = await InventoryItem.find({
       isArchive: false,
-      type: "goods",
+      type: normalizedSignature.itemType === "appliance" ? "appliance" : "goods",
       name: new RegExp(`^${normalizedSignature.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"),
       category: normalizedSignature.category,
-      unit: new RegExp(`^${normalizedSignature.unit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"),
+      ...(normalizedSignature.itemType === "appliance"
+        ? {}
+        : {
+            unit: new RegExp(
+              `^${normalizedSignature.unit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+              "i"
+            ),
+          }),
     }).session(session);
 
     signatureMatches.forEach(addCandidate);
@@ -450,6 +474,36 @@ const buildFulfillmentFromReleases = (releases = []) => {
     .filter((release) => release.releaseStatus === "received")
     .reduce((sum, release) => sum + toNumber(release.receivedMonetaryAmount), 0);
 
+  const releasedApplianceQuantity = releases.reduce(
+    (sum, release) =>
+      sum +
+      (Array.isArray(release.items)
+        ? release.items
+            .filter((item) => normalizeLower(item.itemType) === "appliance")
+            .reduce(
+              (innerSum, item) => innerSum + toNumber(item.quantityReleased),
+              0
+            )
+        : 0),
+    0
+  );
+
+  const receivedApplianceQuantity = releases
+    .filter((release) => release.releaseStatus === "received")
+    .reduce(
+      (sum, release) =>
+        sum +
+        (Array.isArray(release.items)
+          ? release.items
+              .filter((item) => normalizeLower(item.itemType) === "appliance")
+              .reduce(
+                (innerSum, item) => innerSum + toNumber(item.quantityReleased),
+                0
+              )
+          : 0),
+      0
+    );
+
   const receivedReleases = releases.filter(
     (release) => release.releaseStatus === "received"
   ).length;
@@ -468,6 +522,8 @@ const buildFulfillmentFromReleases = (releases = []) => {
     receivedFoodPacks,
     releasedMonetaryAmount,
     receivedMonetaryAmount,
+    releasedApplianceQuantity,
+    receivedApplianceQuantity,
     receivedReleases,
     pendingReleases,
     lastReleaseAt: lastRelease?.releasedAt || lastRelease?.createdAt || null,
@@ -505,6 +561,12 @@ const refreshRequestProgress = async (requestId, session = null) => {
   const receivedFoodPacks = toNumber(fulfillment.receivedFoodPacks);
   const releasedMonetaryAmount = toNumber(fulfillment.releasedMonetaryAmount);
   const receivedMonetaryAmount = toNumber(fulfillment.receivedMonetaryAmount);
+  const releasedApplianceQuantity = toNumber(
+    fulfillment.releasedApplianceQuantity
+  );
+  const receivedApplianceQuantity = toNumber(
+    fulfillment.receivedApplianceQuantity
+  );
 
   const hasAnyRelease = releases.length > 0;
 
@@ -512,7 +574,10 @@ const refreshRequestProgress = async (requestId, session = null) => {
     totalReleases: fulfillment.totalReleases,
     releasedFoodPacks: fulfillment.releasedFoodPacks,
     releasedMonetaryAmount: fulfillment.releasedMonetaryAmount,
+    releasedApplianceQuantity: fulfillment.releasedApplianceQuantity,
+    receivedFoodPacks: fulfillment.receivedFoodPacks,
     receivedMonetaryAmount: fulfillment.receivedMonetaryAmount,
+    receivedApplianceQuantity: fulfillment.receivedApplianceQuantity,
     receivedReleases: fulfillment.receivedReleases,
     pendingReleases: fulfillment.pendingReleases,
     lastReleaseAt: fulfillment.lastReleaseAt,
@@ -527,19 +592,24 @@ const refreshRequestProgress = async (requestId, session = null) => {
     }
   } else if (
     demand.requestedFoodPacks > 0 ||
-    demand.requestedMonetaryAmount > 0
+    demand.requestedMonetaryAmount > 0 ||
+    demand.requestedApplianceQuantity > 0
   ) {
     const fullyReleased =
       (!demand.requiresFoodPacks ||
         releasedFoodPacks >= demand.requestedFoodPacks) &&
       (!demand.requiresMonetary ||
-        releasedMonetaryAmount >= demand.requestedMonetaryAmount);
+        releasedMonetaryAmount >= demand.requestedMonetaryAmount) &&
+      (!demand.requiresAppliance ||
+        releasedApplianceQuantity >= demand.requestedApplianceQuantity);
 
     const fullyReceived =
       (!demand.requiresFoodPacks ||
         receivedFoodPacks >= demand.requestedFoodPacks) &&
       (!demand.requiresMonetary ||
-        receivedMonetaryAmount >= demand.requestedMonetaryAmount);
+        receivedMonetaryAmount >= demand.requestedMonetaryAmount) &&
+      (!demand.requiresAppliance ||
+        receivedApplianceQuantity >= demand.requestedApplianceQuantity);
 
     if (fullyReceived) {
       request.status = "received";
@@ -600,20 +670,49 @@ const getApprovedRequestsForRelease = async (req, res) => {
     res.json(
       requests.map((request) => ({
         ...(request.toObject?.() || request),
-        requestType: normalizeRequestType(request.requestType),
+        supportTypes: getSupportTypesFromRequest(request),
+        requestType: normalizeRequestType(
+          request.requestType,
+          getSupportTypesFromRequest(request)
+        ),
+        requestedAppliances: Array.isArray(request?.requestedAppliances)
+          ? request.requestedAppliances.map((item) => ({
+              itemName: normalizeString(item.itemName),
+              category: normalizeLower(item.category),
+              quantityRequested: toNumber(item.quantityRequested),
+              remarks: normalizeString(item.remarks),
+            }))
+          : [],
         totals: {
           ...(request.totals?.toObject?.() || request.totals || {}),
+          requestedFoodPacks: toNumber(request?.totals?.requestedFoodPacks),
           requestedMonetaryAmount: toNumber(
             request?.totals?.requestedMonetaryAmount
           ),
+          requestedApplianceQuantity:
+            Array.isArray(request?.requestedAppliances) &&
+            request.requestedAppliances.length > 0
+              ? request.requestedAppliances.reduce(
+                  (sum, item) => sum + toNumber(item.quantityRequested),
+                  0
+                )
+              : toNumber(request?.totals?.requestedApplianceQuantity),
         },
         fulfillment: {
           ...(request.fulfillment?.toObject?.() || request.fulfillment || {}),
+          releasedFoodPacks: toNumber(request?.fulfillment?.releasedFoodPacks),
           releasedMonetaryAmount: toNumber(
             request?.fulfillment?.releasedMonetaryAmount
           ),
+          releasedApplianceQuantity: toNumber(
+            request?.fulfillment?.releasedApplianceQuantity
+          ),
+          receivedFoodPacks: toNumber(request?.fulfillment?.receivedFoodPacks),
           receivedMonetaryAmount: toNumber(
             request?.fulfillment?.receivedMonetaryAmount
+          ),
+          receivedApplianceQuantity: toNumber(
+            request?.fulfillment?.receivedApplianceQuantity
           ),
         },
       }))
@@ -682,6 +781,9 @@ const createReliefRelease = async (req, res) => {
     const currentReleasedMonetaryAmount = toNumber(
       reliefRequest?.fulfillment?.releasedMonetaryAmount
     );
+    const currentReleasedApplianceQuantity = toNumber(
+      reliefRequest?.fulfillment?.releasedApplianceQuantity
+    );
     const remainingFoodPacks = Math.max(
       0,
       demand.requestedFoodPacks - currentReleasedFoodPacks
@@ -690,19 +792,52 @@ const createReliefRelease = async (req, res) => {
       0,
       demand.requestedMonetaryAmount - currentReleasedMonetaryAmount
     );
+    const remainingApplianceQuantity = Math.max(
+      0,
+      demand.requestedApplianceQuantity - currentReleasedApplianceQuantity
+    );
 
     const requestedMode = normalizeLower(releaseMode);
     const isTemplateMode =
       demand.requiresFoodPacks &&
       (requestedMode === "template" || !!normalizeString(foodPackTemplateId));
+    const normalizedIncomingItems = Array.isArray(items)
+      ? items.map((item) => ({
+          inventoryItemId: item.inventoryItemId || null,
+          itemType:
+            normalizeLower(item.itemType) === "appliance" ? "appliance" : "goods",
+          itemName: normalizeString(item.itemName),
+          category: normalizeLower(item.category),
+          quantityReleased: toNumber(item.quantityReleased),
+          unit: normalizeString(item.unit),
+          remarks: normalizeString(item.remarks),
+        }))
+      : [];
+    const applianceReleaseItems = normalizedIncomingItems.filter(
+      (item) => item.itemType === "appliance"
+    );
+    const isReleasingFoodPacks =
+      demand.requiresFoodPacks && (isTemplateMode || incomingFoodPackCount > 0);
+    const isReleasingMonetary =
+      demand.requiresMonetary && incomingMonetaryAmount > 0;
+    const isReleasingAppliances =
+      demand.requiresAppliance && applianceReleaseItems.length > 0;
 
     let finalReleaseMode = "manual";
     let releaseItems = [];
     let foodPackTemplate = null;
     let releasedFoodPackCount = 0;
     let releasedMonetaryAmount = 0;
+    let releasedApplianceQuantity = 0;
 
-    if (demand.requiresFoodPacks) {
+    if (!isReleasingFoodPacks && !isReleasingMonetary && !isReleasingAppliances) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        message: "Add at least one support item or amount to release.",
+      });
+    }
+
+    if (isReleasingFoodPacks) {
       if (isTemplateMode) {
         finalReleaseMode = "template";
 
@@ -723,16 +858,9 @@ const createReliefRelease = async (req, res) => {
       } else {
         finalReleaseMode = "manual";
 
-        releaseItems = Array.isArray(items)
-          ? items.map((item) => ({
-              inventoryItemId: item.inventoryItemId || null,
-              itemName: normalizeString(item.itemName),
-              category: normalizeLower(item.category),
-              quantityReleased: toNumber(item.quantityReleased),
-              unit: normalizeString(item.unit),
-              remarks: normalizeString(item.remarks),
-            }))
-          : [];
+        releaseItems = normalizedIncomingItems.filter(
+          (item) => item.itemType !== "appliance"
+        );
 
         const validationError = validateReleaseItems(releaseItems);
         if (validationError) {
@@ -769,7 +897,7 @@ const createReliefRelease = async (req, res) => {
       }
     }
 
-    if (demand.requiresMonetary) {
+    if (isReleasingMonetary) {
       releasedMonetaryAmount = incomingMonetaryAmount;
 
       if (releasedMonetaryAmount <= 0) {
@@ -797,9 +925,36 @@ const createReliefRelease = async (req, res) => {
       }
     }
 
+    if (isReleasingAppliances) {
+      const validationError = validateReleaseItems(applianceReleaseItems);
+      if (validationError) {
+        await session.abortTransaction();
+        return res.status(400).json({ message: validationError });
+      }
+
+      releasedApplianceQuantity = applianceReleaseItems.reduce(
+        (sum, item) => sum + toNumber(item.quantityReleased),
+        0
+      );
+
+      if (remainingApplianceQuantity <= 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          message: "This request no longer has pending appliance items to release.",
+        });
+      }
+
+      if (releasedApplianceQuantity > remainingApplianceQuantity) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          message: `Appliance release cannot exceed the remaining approved appliance quantity (${remainingApplianceQuantity}).`,
+        });
+      }
+    }
+
     const preparedItems = [];
 
-    if (demand.requiresFoodPacks) {
+    if (isReleasingFoodPacks) {
       for (const item of releaseItems) {
         const allocation = await allocateInventoryForReleaseItem(item, session);
 
@@ -843,6 +998,7 @@ const createReliefRelease = async (req, res) => {
         preparedItems.push({
           inventoryItemId:
             item.inventoryItemId || allocation.primaryInventoryDoc._id,
+          itemType: "goods",
           itemName: normalizeString(
             item.itemName || allocation.primaryInventoryDoc.name
           ),
@@ -856,7 +1012,65 @@ const createReliefRelease = async (req, res) => {
       }
     }
 
-    if (demand.requiresMonetary) {
+    if (isReleasingAppliances) {
+      for (const item of applianceReleaseItems) {
+        const allocation = await allocateInventoryForReleaseItem(item, session);
+
+        if (!allocation.primaryInventoryDoc) {
+          await session.abortTransaction();
+          return res.status(404).json({
+            message: `Inventory item not found for "${item.itemName}".`,
+          });
+        }
+
+        if (allocation.totalAvailable < allocation.requestedQty) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            message: `Insufficient stock for "${item.itemName}". Available: ${allocation.totalAvailable}, requested release: ${allocation.requestedQty}.`,
+          });
+        }
+
+        for (const split of allocation.allocations) {
+          split.inventoryDoc.quantity =
+            Number(split.inventoryDoc.quantity || 0) - split.quantity;
+
+          await split.inventoryDoc.save({ session });
+
+          await InventoryLog.create(
+            [
+              {
+                inventoryItem: split.inventoryDoc._id,
+                itemName: split.inventoryDoc.name,
+                itemType: split.inventoryDoc.type,
+                action: "release",
+                quantity: split.quantity,
+                amount: undefined,
+                performedBy: username,
+                remarks: `Released appliance support for relief request ${reliefRequest.requestNo}`,
+              },
+            ],
+            { session }
+          );
+        }
+
+        preparedItems.push({
+          inventoryItemId:
+            item.inventoryItemId || allocation.primaryInventoryDoc._id,
+          itemType: "appliance",
+          itemName: normalizeString(
+            item.itemName || allocation.primaryInventoryDoc.name
+          ),
+          category: normalizeLower(
+            item.category || allocation.primaryInventoryDoc.category
+          ),
+          quantityReleased: allocation.requestedQty,
+          unit: normalizeString(item.unit || allocation.primaryInventoryDoc.unit),
+          remarks: item.remarks,
+        });
+      }
+    }
+
+    if (isReleasingMonetary) {
       const monetaryAllocation = await allocateMonetaryInventory(
         releasedMonetaryAmount,
         session
@@ -923,6 +1137,7 @@ const createReliefRelease = async (req, res) => {
           receivedMonetaryAmount: 0,
           items: preparedItems.map((item) => ({
             inventoryItemId: item.inventoryItemId,
+            itemType: item.itemType || "goods",
             itemName: item.itemName,
             category: item.category,
             quantityReleased: item.quantityReleased,
@@ -976,6 +1191,9 @@ const createReliefRelease = async (req, res) => {
             demand.requiresMonetary
               ? `Released PHP ${formatMonetaryAmount(releasedMonetaryAmount)}`
               : null,
+            isReleasingAppliances
+              ? `Released ${releasedApplianceQuantity} appliance unit(s)`
+              : null,
           ]
             .filter(Boolean)
             .join(" and "),
@@ -1016,6 +1234,9 @@ await createNotification({
     demand.requiresMonetary
       ? `PHP ${formatMonetaryAmount(releasedMonetaryAmount)} released`
       : null,
+    isReleasingAppliances
+      ? `${releasedApplianceQuantity} appliance unit(s) released`
+      : null,
   ]
     .filter(Boolean)
     .join(" and ")}.`,
@@ -1032,6 +1253,7 @@ await createNotification({
     releaseMode: finalReleaseMode,
     foodPacksReleased: releasedFoodPackCount,
     releasedMonetaryAmount,
+    releasedApplianceQuantity,
     totalItemsReleased: preparedItems.reduce(
       (sum, item) => sum + Number(item.quantityReleased || 0),
       0
@@ -1075,9 +1297,15 @@ const exportReliefReleasePdf = async (req, res) => {
       });
     }
 
-    const relatedRequest = await ReliefRequest.findById(
-      reliefRelease.reliefRequestId
-    ).lean();
+  const relatedRequest = await ReliefRequest.findById(
+    reliefRelease.reliefRequestId
+  ).lean();
+  const relatedDemand = getRequestDemandProfile(relatedRequest || {});
+  const releasedApplianceQuantity = Array.isArray(reliefRelease.items)
+    ? reliefRelease.items
+        .filter((item) => normalizeLower(item.itemType) === "appliance")
+        .reduce((sum, item) => sum + toNumber(item.quantityReleased), 0)
+    : 0;
 
     const safeReleaseNo = normalizeString(reliefRelease.releaseNo || "relief-release")
       .replace(/[^\w\-]+/g, "_");
@@ -1123,6 +1351,11 @@ const exportReliefReleasePdf = async (req, res) => {
       doc,
       "Monetary Released",
       `PHP ${formatMonetaryAmount(reliefRelease.releasedMonetaryAmount)}`
+    );
+    drawPdfLabelValue(
+      doc,
+      "Appliance Units Released",
+      String(releasedApplianceQuantity)
     );
     drawPdfLabelValue(
       doc,
@@ -1212,6 +1445,34 @@ const exportReliefReleasePdf = async (req, res) => {
           relatedRequest?.totals?.requestedMonetaryAmount
         )}`
       );
+      drawPdfLabelValue(
+        doc,
+        "Requested Appliance Units",
+        String(toNumber(relatedDemand.requestedApplianceQuantity))
+      );
+
+      if (relatedDemand.requestedAppliances.length) {
+        drawPdfSectionTitle(doc, "Requested Appliance Details");
+        drawPdfTable(
+          doc,
+          [
+            { label: "Item", key: "itemName", width: 150 },
+            { label: "Category", key: "category", width: 110 },
+            { label: "Qty", key: "quantityRequested", width: 45, align: "right" },
+            { label: "Remarks", key: "remarks", width: 180 },
+          ],
+          relatedDemand.requestedAppliances.map((item) => ({
+            itemName: normalizeString(item.itemName) || "-",
+            category: normalizeString(item.category) || "-",
+            quantityRequested: toNumber(item.quantityRequested),
+            remarks: normalizeString(item.remarks) || "-",
+          })),
+          {
+            rowHeight: 24,
+            emptyMessage: "No requested appliance items available.",
+          }
+        );
+      }
     }
 
     drawPdfFooter(doc, { generatedAt: new Date() });

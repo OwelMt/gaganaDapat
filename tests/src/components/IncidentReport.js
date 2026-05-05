@@ -81,6 +81,26 @@ const maskStyle = {
   interactive: false,
 };
 
+function getBarangayColorParts(index = 0) {
+  const hue = Math.round((index * 137.508 + 24) % 360);
+  const saturationCycle = [78, 64, 86, 58];
+  const lightnessCycle = [48, 60, 42, 66];
+  const saturation = saturationCycle[index % saturationCycle.length];
+  const lightness = lightnessCycle[index % lightnessCycle.length];
+
+  return { hue, saturation, lightness };
+}
+
+function getBarangayOutlineColor(index = 0) {
+  const { hue, saturation, lightness } = getBarangayColorParts(index);
+  return `hsl(${hue}, ${Math.min(88, saturation + 8)}%, ${Math.max(34, lightness - 8)}%)`;
+}
+
+function getBarangayFillColor(index = 0) {
+  const { hue, saturation, lightness } = getBarangayColorParts(index);
+  return `hsla(${hue}, ${saturation}%, ${lightness}%, 0.54)`;
+}
+
 const safeLower = (value) => String(value ?? "").toLowerCase().trim();
 
 const formatNumber = (value) => {
@@ -124,17 +144,120 @@ const formatTimestamp = (ts) => {
   }).format(date);
 };
 
-const getIncidentStatusLabel = (status) => {
-  if (!status || status === "reported") return "Reported";
-  if (status === "onProcess") return "On Process";
-  if (status === "resolved") return "Resolved";
-  return status;
+const INCIDENT_PRIORITY_ORDER = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+  unknown: 4,
 };
 
-const getIncidentStatusTone = (status) => {
-  if (!status || status === "reported") return "warning";
-  if (status === "onProcess") return "info";
-  if (status === "resolved") return "success";
+const getIncidentCreatedTime = (incident = {}) => {
+  const candidates = [
+    incident.createdAt,
+    incident.date,
+    incident.reportedAt,
+    incident.updatedAt,
+  ];
+
+  for (const value of candidates) {
+    if (!value) continue;
+
+    if (typeof value === "number") {
+      return value > 1_000_000_000_000 ? value : value * 1000;
+    }
+
+    if (typeof value === "object" && typeof value.seconds === "number") {
+      return value.seconds * 1000;
+    }
+
+    const parsed = new Date(value).getTime();
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+
+  return 0;
+};
+
+const getIncidentPriority = (incident = {}) => {
+  const normalized = safeLower(incident.level);
+
+  if (normalized.includes("critical")) return "critical";
+  if (normalized.includes("high")) return "high";
+  if (normalized.includes("medium")) return "medium";
+  if (normalized.includes("low")) return "low";
+
+  return "unknown";
+};
+
+const getIncidentWorkflowStatus = (incident = {}) => {
+  const normalized = safeLower(incident.status);
+
+  if (normalized === "resolved") return "resolved";
+  if (
+    normalized === "approved" ||
+    normalized === "on_process" ||
+    normalized === "onprocess"
+  ) {
+    return "onProcess";
+  }
+
+  return "reported";
+};
+
+const isIncidentRejected = (incident = {}) => {
+  const verificationStatus = safeLower(incident.verification?.status);
+  const incidentStatus = safeLower(incident.status);
+
+  return verificationStatus === "rejected" || incidentStatus === "rejected";
+};
+
+const isIncidentApprovedForQueue = (incident = {}) => {
+  const verificationStatus = safeLower(incident.verification?.status);
+  const workflowStatus = getIncidentWorkflowStatus(incident);
+
+  if (isIncidentRejected(incident) || workflowStatus === "resolved") return false;
+
+  return verificationStatus === "approved" || workflowStatus === "onProcess";
+};
+
+const sortIncidentsByPriorityThenNewest = (items = []) => {
+  return [...items].sort((a, b) => {
+    if (isIncidentRejected(a) !== isIncidentRejected(b)) {
+      return Number(isIncidentRejected(a)) - Number(isIncidentRejected(b));
+    }
+
+    const aPriority =
+      INCIDENT_PRIORITY_ORDER[getIncidentPriority(a)] ??
+      INCIDENT_PRIORITY_ORDER.unknown;
+    const bPriority =
+      INCIDENT_PRIORITY_ORDER[getIncidentPriority(b)] ??
+      INCIDENT_PRIORITY_ORDER.unknown;
+
+    if (aPriority !== bPriority) return aPriority - bPriority;
+
+    return getIncidentCreatedTime(b) - getIncidentCreatedTime(a);
+  });
+};
+
+const getIncidentStatusLabel = (incident) => {
+  const workflowStatus = getIncidentWorkflowStatus(
+    typeof incident === "string" ? { status: incident } : incident
+  );
+
+  if (workflowStatus === "reported") return "Reported";
+  if (workflowStatus === "onProcess") return "On Process";
+  if (workflowStatus === "resolved") return "Resolved";
+  return "Reported";
+};
+
+const getIncidentStatusTone = (incident) => {
+  const workflowStatus = getIncidentWorkflowStatus(
+    typeof incident === "string" ? { status: incident } : incident
+  );
+
+  if (workflowStatus === "reported") return "warning";
+  if (workflowStatus === "onProcess") return "info";
+  if (workflowStatus === "resolved") return "success";
   return "neutral";
 };
 
@@ -142,17 +265,6 @@ const getVerificationTone = (status) => {
   if (status === "approved") return "success";
   if (status === "rejected") return "danger";
   return "warning";
-};
-
-const getSeverityTone = (level) => {
-  const normalized = safeLower(level);
-
-  if (normalized.includes("critical")) return "danger";
-  if (normalized.includes("high")) return "danger";
-  if (normalized.includes("medium")) return "warning";
-  if (normalized.includes("low")) return "success";
-
-  return "neutral";
 };
 
 const getSeverityLabel = (level) => {
@@ -177,12 +289,6 @@ const getIncidentTypeAccent = (type) => {
   if (normalized.includes("fire")) return "fire";
   if (normalized.includes("earthquake") || normalized.includes("quake")) return "quake";
   return "general";
-};
-
-const getStatusIcon = (status) => {
-  if (status === "resolved") return <FaCircleCheck aria-hidden="true" />;
-  if (status === "onProcess") return <FaClockRotateLeft aria-hidden="true" />;
-  return <FaBell aria-hidden="true" />;
 };
 
 function extractOuterRings(geojson) {
@@ -297,6 +403,17 @@ export default function IncidentReport() {
 
   const [landingIncidentMode, setLandingIncidentMode] = useState("all");
   const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
+  const [incidentActionModal, setIncidentActionModal] = useState(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyItems, setHistoryItems] = useState([]);
+  const [historySummary, setHistorySummary] = useState({
+    total: 0,
+    resolved: 0,
+    deleted: 0,
+  });
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState("all");
+  const [historySearch, setHistorySearch] = useState("");
 
   const [search, setSearch] = useState("");
   const [incidentStatusFilter, setIncidentStatusFilter] = useState("all");
@@ -402,6 +519,44 @@ export default function IncidentReport() {
     fetchLandingIncidentMode();
   }, [fetchIncidents, fetchBarangayBounds, fetchLandingIncidentMode]);
 
+  const fetchIncidentHistory = useCallback(async () => {
+    try {
+      setHistoryLoading(true);
+      const params = new URLSearchParams();
+      if (historyFilter !== "all") params.set("filter", historyFilter);
+      if (historySearch.trim()) params.set("search", historySearch.trim());
+
+      const res = await axios.get(`${BASE_URL}/incident/history?${params.toString()}`, {
+        withCredentials: true,
+      });
+
+      setHistoryItems(Array.isArray(res.data?.items) ? res.data.items : []);
+      setHistorySummary(
+        res.data?.summary || {
+          total: 0,
+          resolved: 0,
+          deleted: 0,
+        }
+      );
+    } catch (error) {
+      console.error("Fetch incident history error:", error);
+      setHistoryItems([]);
+      setHistorySummary({
+        total: 0,
+        resolved: 0,
+        deleted: 0,
+      });
+      pushNotification("Failed to load incident history.", "error");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [historyFilter, historySearch, pushNotification]);
+
+  useEffect(() => {
+    if (!historyOpen) return;
+    fetchIncidentHistory();
+  }, [fetchIncidentHistory, historyOpen]);
+
   const jaenBounds = useMemo(() => {
     if (!jaenGeoJSON) return null;
     return L.geoJSON(jaenGeoJSON).getBounds();
@@ -435,19 +590,19 @@ export default function IncidentReport() {
     const total = incidents.length;
 
     const reported = incidents.filter(
-      (item) => !item.status || item.status === "reported" || item.status === ""
+      (item) => getIncidentWorkflowStatus(item) === "reported"
     ).length;
 
     const onProcess = incidents.filter(
-      (item) => item.status === "onProcess"
+      (item) => getIncidentWorkflowStatus(item) === "onProcess"
     ).length;
 
     const resolved = incidents.filter(
-      (item) => item.status === "resolved"
+      (item) => getIncidentWorkflowStatus(item) === "resolved"
     ).length;
 
     const highSeverity = incidents.filter((item) =>
-      safeLower(item.level).includes("high")
+      ["critical", "high"].includes(getIncidentPriority(item))
     ).length;
 
     const aiPending = incidents.filter(
@@ -550,7 +705,7 @@ export default function IncidentReport() {
     };
   }, []);
 
-  const filteredIncidents = useMemo(() => {
+  const baseFilteredIncidents = useMemo(() => {
     const term = safeLower(search);
 
     let list = [...incidents];
@@ -574,7 +729,7 @@ export default function IncidentReport() {
 
     if (incidentStatusFilter !== "all") {
       list = list.filter((item) => {
-        const status = item.status || "reported";
+        const status = getIncidentWorkflowStatus(item);
         return status === incidentStatusFilter;
       });
     }
@@ -586,34 +741,6 @@ export default function IncidentReport() {
       });
     }
 
-    list.sort((a, b) => {
-      const priority = {
-        reported: 1,
-        onProcess: 2,
-        resolved: 3,
-      };
-
-      const aStatus = a.status || "reported";
-      const bStatus = b.status || "reported";
-      const aPriority = priority[aStatus] || 99;
-      const bPriority = priority[bStatus] || 99;
-
-      if (aPriority !== bPriority) return aPriority - bPriority;
-
-      const aSeverity = safeLower(a.level);
-      const bSeverity = safeLower(b.level);
-      const severityOrder = { high: 1, medium: 2, low: 3 };
-
-      if ((severityOrder[aSeverity] || 99) !== (severityOrder[bSeverity] || 99)) {
-        return (severityOrder[aSeverity] || 99) - (severityOrder[bSeverity] || 99);
-      }
-
-      const aDate = new Date(a.createdAt || a.updatedAt || 0).getTime();
-      const bDate = new Date(b.createdAt || b.updatedAt || 0).getTime();
-
-      return bDate - aDate;
-    });
-
     return list;
   }, [
     getAIReviewSummary,
@@ -623,25 +750,60 @@ export default function IncidentReport() {
     verificationFilter,
   ]);
 
+  const activeQueueIncidents = useMemo(() => {
+    const visibleActive = baseFilteredIncidents.filter((item) => {
+      const workflowStatus = getIncidentWorkflowStatus(item);
+      return workflowStatus !== "resolved" && !isIncidentApprovedForQueue(item);
+    });
+
+    return sortIncidentsByPriorityThenNewest(visibleActive);
+  }, [baseFilteredIncidents]);
+
+  const approvedQueueIncidents = useMemo(() => {
+    const approved = baseFilteredIncidents.filter(
+      (item) => isIncidentApprovedForQueue(item)
+    );
+
+    return sortIncidentsByPriorityThenNewest(approved);
+  }, [baseFilteredIncidents]);
+
+  const visibleMapIncidents = useMemo(() => {
+    return sortIncidentsByPriorityThenNewest(
+      baseFilteredIncidents.filter((item) => !isIncidentRejected(item))
+    );
+  }, [baseFilteredIncidents]);
+
+  const selectionCandidates = useMemo(() => {
+    const seen = new Set();
+    return [...activeQueueIncidents, ...approvedQueueIncidents, ...visibleMapIncidents].filter(
+      (item) => {
+        const key = String(item?._id || "");
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }
+    );
+  }, [activeQueueIncidents, approvedQueueIncidents, visibleMapIncidents]);
+
   useEffect(() => {
-    if (!filteredIncidents.length) {
+    if (!selectionCandidates.length) {
       setSelectedIncidentId(null);
       return;
     }
 
     if (!selectedIncidentId) {
-      setSelectedIncidentId(filteredIncidents[0]._id);
+      setSelectedIncidentId(selectionCandidates[0]._id);
       return;
     }
 
-    const stillVisible = filteredIncidents.some(
+    const stillVisible = selectionCandidates.some(
       (item) => String(item._id) === String(selectedIncidentId)
     );
 
     if (!stillVisible) {
-      setSelectedIncidentId(filteredIncidents[0]._id);
+      setSelectedIncidentId(selectionCandidates[0]._id);
     }
-  }, [filteredIncidents, selectedIncidentId]);
+  }, [selectionCandidates, selectedIncidentId]);
 
   const handleQueueSelect = useCallback((incidentId) => {
     setSelectedIncidentId(incidentId);
@@ -743,9 +905,11 @@ export default function IncidentReport() {
       }
 
       pushNotification(
-        `AI verification marked as ${normalizedStatus}.`,
-        normalizedStatus === "approved" ? "success" : "warning"
-      );
+  normalizedStatus === "approved"
+    ? "AI approved. Incident is now visible on mobile map."
+    : `AI verification marked as ${normalizedStatus}.`,
+  normalizedStatus === "approved" ? "success" : "warning"
+);
     } catch (error) {
       console.error("Update AI verification error:", error);
       pushNotification(
@@ -818,6 +982,39 @@ export default function IncidentReport() {
       console.error("Delete incident error:", error);
       pushNotification("Failed to delete incident report.", "error");
     }
+  };
+
+  const openIncidentActionModal = (type, incident) => {
+    if (!incident?._id) return;
+    setIncidentActionModal({
+      type,
+      incidentId: incident._id,
+      incidentType: incident.type || "Incident",
+    });
+  };
+
+  const closeIncidentActionModal = () => {
+    setIncidentActionModal(null);
+  };
+
+  const confirmIncidentAction = async () => {
+    if (!incidentActionModal?.incidentId) return;
+
+    const { type, incidentId } = incidentActionModal;
+
+    if (type === "delete") {
+      await handleDelete(incidentId);
+    }
+
+    if (type === "onProcess") {
+      await handleStatusChange(incidentId, "onProcess");
+    }
+
+    if (type === "resolved") {
+      await handleStatusChange(incidentId, "resolved");
+    }
+
+    closeIncidentActionModal();
   };
 
   const handleExportIncidentPdf = useCallback(
@@ -916,6 +1113,190 @@ export default function IncidentReport() {
     );
   };
 
+  const renderHistoryModal = () => {
+    if (!historyOpen) return null;
+    if (typeof document === "undefined") return null;
+
+    return createPortal(
+      <div
+        className="incident-history-modal"
+        onClick={() => setHistoryOpen(false)}
+      >
+        <div
+          className="incident-history-modal-card"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="incident-history-modal-head">
+            <div>
+              <span className="incident-history-kicker">Records</span>
+              <h3>Incident History</h3>
+              <p>Review resolved and deleted incident records without leaving the queue.</p>
+            </div>
+
+            <button
+              type="button"
+              className="incident-history-close"
+              onClick={() => setHistoryOpen(false)}
+              aria-label="Close incident history"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="incident-history-summary">
+            <div className="incident-history-stat">
+              <span>Total</span>
+              <strong>{formatNumber(historySummary.total)}</strong>
+            </div>
+            <div className="incident-history-stat">
+              <span>Resolved</span>
+              <strong>{formatNumber(historySummary.resolved)}</strong>
+            </div>
+            <div className="incident-history-stat">
+              <span>Deleted</span>
+              <strong>{formatNumber(historySummary.deleted)}</strong>
+            </div>
+          </div>
+
+          <div className="incident-history-toolbar">
+            <label className="incident-history-field">
+              <span>Status</span>
+              <select
+                value={historyFilter}
+                onChange={(e) => setHistoryFilter(e.target.value)}
+              >
+                <option value="all">All records</option>
+                <option value="resolved">Resolved</option>
+                <option value="deleted">Deleted</option>
+              </select>
+            </label>
+
+            <label className="incident-history-field incident-history-field-search">
+              <span>Search</span>
+              <input
+                type="text"
+                placeholder="Search location, type, actor..."
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="incident-history-list">
+            {historyLoading ? (
+              <div className="incident-history-empty">
+                <strong>Loading incident history...</strong>
+                <span>Checking resolved and deleted records.</span>
+              </div>
+            ) : historyItems.length ? (
+              historyItems.map((item) => (
+                <article
+                  key={item._id}
+                  className={`incident-history-item incident-history-item-${item.eventType}`}
+                >
+                  <div className="incident-history-item-top">
+                    <div>
+                      <h4>{item.type || "Incident"}</h4>
+                      <p>{item.location || "Unknown location"}</p>
+                    </div>
+
+                    <span className={`mini-status ${item.eventType === "deleted" ? "danger" : "success"}`}>
+                      {item.eventType}
+                    </span>
+                  </div>
+
+                  <div className="incident-history-item-meta">
+                    <span>{item.level || "-"}</span>
+                    <span>{item.actorName || "System"} • {item.actorRole || "system"}</span>
+                    <span>{formatDateTime(item.createdAt)}</span>
+                  </div>
+
+                  <p className="incident-history-item-copy">
+                    {item.description || "No additional details available."}
+                  </p>
+                </article>
+              ))
+            ) : (
+              <div className="incident-history-empty">
+                <strong>No incident history found</strong>
+                <span>Try another filter or wait for more resolved or deleted records.</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+  };
+
+  const renderIncidentActionModal = () => {
+    if (!incidentActionModal) return null;
+    if (typeof document === "undefined") return null;
+
+    const isDelete = incidentActionModal.type === "delete";
+    const isOnProcess = incidentActionModal.type === "onProcess";
+    const actionLabel = isDelete
+      ? "Delete Incident"
+      : isOnProcess
+      ? "Mark On Process"
+      : "Mark Resolved";
+    const actionCopy = isDelete
+      ? "This will remove the incident record from the active system view."
+      : isOnProcess
+      ? "This will move the incident into the on process workflow state."
+      : "This will mark the incident as resolved and remove it from the active queue.";
+
+    return createPortal(
+      <div
+        className="incident-action-modal"
+        onClick={closeIncidentActionModal}
+      >
+        <div
+          className="incident-action-modal-card"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="incident-action-modal-head">
+            <div>
+              <span className="incident-history-kicker">Confirm Action</span>
+              <h3>{actionLabel}</h3>
+              <p>
+                {actionCopy} Incident:{" "}
+                <strong>{incidentActionModal.incidentType}</strong>
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className="incident-history-close"
+              onClick={closeIncidentActionModal}
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="incident-action-modal-actions">
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={closeIncidentActionModal}
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              className={isDelete ? "delete-row-btn" : "incident-action-confirm-btn"}
+              onClick={confirmIncidentAction}
+            >
+              {actionLabel}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+  };
+
   if (loadingPage) {
     return (
       <DashboardShell variant="drrmo">
@@ -934,16 +1315,26 @@ export default function IncidentReport() {
     );
   }
 
-  const activeIncident = selectedIncident || filteredIncidents[0] || null;
+  const activeIncident = selectedIncident || selectionCandidates[0] || null;
   const activeAI = getAIReviewSummary(activeIncident?.verification || {});
-  const activeStatus =
-    statusMap[activeIncident?._id] || activeIncident?.status || "reported";
+  const activeStatus = getIncidentWorkflowStatus({
+    status: statusMap[activeIncident?._id] ?? activeIncident?.status,
+  });
+  const activePriority = getIncidentPriority(activeIncident || {});
+  const activeReportedAt = formatDateTime(
+    activeIncident?.createdAt ||
+      activeIncident?.updatedAt ||
+      activeIncident?.date ||
+      activeIncident?.reportedAt
+  );
 
   return (
     <DashboardShell variant="drrmo">
-      <div className="incident-dashboard-page">
-        {renderNotifications()}
-        {renderImageModal()}
+        <div className="incident-dashboard-page">
+          {renderNotifications()}
+          {renderImageModal()}
+          {renderHistoryModal()}
+          {renderIncidentActionModal()}
 
         <section className="incident-dashboard-header">
           <div className="incident-dashboard-heading">
@@ -958,10 +1349,18 @@ export default function IncidentReport() {
             </p>
           </div>
 
-          <div className="incident-dashboard-actions">
-            <button
-              type="button"
-              className={`ghost-btn public-toggle-header-btn bulk-public-btn ${
+            <div className="incident-dashboard-actions">
+              <button
+                type="button"
+                className="ghost-btn incident-history-header-btn"
+                onClick={() => setHistoryOpen(true)}
+              >
+                <FaClockRotateLeft aria-hidden="true" />
+                Incident History
+              </button>
+              <button
+                type="button"
+                className={`ghost-btn public-toggle-header-btn bulk-public-btn ${
                 landingIncidentMode === "resolved-only" ? "is-on" : "is-off"
               }`}
               onClick={handleLandingIncidentModeToggle}
@@ -1079,34 +1478,36 @@ export default function IncidentReport() {
           </label>
         </section>
 
-        <section className="incident-main-layout">
+        <section className="incident-main-layout incident-three-panel-layout">
           <aside className="incident-left-panel">
             <div className="panel-head">
               <div>
-                <h2>Incident Queue</h2>
-                <p>Priority queue. Click a report to jump to details.</p>
-                <div className="incident-queue-legend">
-                  <span className="mini-status warning">reported</span>
-                  <span className="mini-status info">on process</span>
-                  <span className="mini-status success">resolved</span>
+                <h2>Active Incident Queue</h2>
+                <p>Priority-first queue for newly reported incidents.</p>
+                <div className="incident-queue-legend incident-priority-legend">
+                  <span className="mini-status priority-critical">critical</span>
+                  <span className="mini-status priority-high">high</span>
+                  <span className="mini-status priority-medium">medium</span>
+                  <span className="mini-status priority-low">low</span>
                 </div>
               </div>
             </div>
 
             <div className="incident-queue-list">
-              {filteredIncidents.length ? (
-                filteredIncidents.map((incident) => {
+              {activeQueueIncidents.length ? (
+                activeQueueIncidents.map((incident) => {
                   const ai = getAIReviewSummary(incident.verification);
+                  const priority = getIncidentPriority(incident);
 
                   return (
                     <button
                       key={incident._id}
                       type="button"
-                      className={`incident-queue-card ${
+                      className={`incident-queue-card queue-priority-${priority} ${
                         String(selectedIncidentId) === String(incident._id)
                           ? "selected"
                           : ""
-                      } status-${incident.status || "reported"}`}
+                      } status-${getIncidentWorkflowStatus(incident)}`}
                       onClick={() => handleQueueSelect(incident._id)}
                     >
                       <div className="incident-queue-top">
@@ -1125,6 +1526,22 @@ export default function IncidentReport() {
                             )}
                           </div>
                         </div>
+
+                        <div className="incident-queue-badge-stack">
+                          <span
+                            className={`mini-status ai-tag ${getVerificationTone(
+                              ai.status
+                            )}`}
+                          >
+                            AI {ai.status || "pending"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="incident-queue-meta">
+                        <span className={`mini-status priority-chip priority-${priority}`}>
+                          {priority}
+                        </span>
                       </div>
 
                       <div className="incident-queue-foot">
@@ -1202,15 +1619,16 @@ export default function IncidentReport() {
                         key={item._id || index}
                         positions={positions}
                         pathOptions={{
-                          color: "#3388ff",
+                          color: getBarangayOutlineColor(index),
                           weight: 2,
-                          fillOpacity: 0.12,
+                          fillColor: getBarangayFillColor(index),
+                          fillOpacity: 0.54,
                         }}
                       />
                     );
                   })}
 
-                {filteredIncidents.map((incident) => {
+                {visibleMapIncidents.map((incident) => {
                   const lat = Number(incident.latitude);
                   const lng = Number(incident.longitude);
 
@@ -1232,7 +1650,7 @@ export default function IncidentReport() {
                             {String(incident.type || "Incident").toUpperCase()}
                           </strong>
                           <br />
-                          Status: {getIncidentStatusLabel(incident.status)}
+                          Status: {getIncidentStatusLabel(incident)}
                           <br />
                           Severity: {incident.level || "-"}
                           <br />
@@ -1245,6 +1663,85 @@ export default function IncidentReport() {
               </MapContainer>
             </div>
           </section>
+
+          <aside className="incident-right-panel">
+            <div className="panel-head">
+              <div>
+                <h2>Approved Queue</h2>
+                <p>Approved incidents stay here while DRRMO updates their workflow status.</p>
+                <div className="incident-queue-legend incident-workflow-legend">
+                  <span className="mini-status warning">reported</span>
+                  <span className="mini-status info">on process</span>
+                  <span className="mini-status success">resolved</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="incident-approved-list">
+              {approvedQueueIncidents.length ? (
+                approvedQueueIncidents.map((incident) => {
+                  const ai = getAIReviewSummary(incident.verification);
+
+                  return (
+                    <button
+                      key={incident._id}
+                      type="button"
+                      className={`incident-queue-card incident-approved-card ${
+                        String(selectedIncidentId) === String(incident._id)
+                          ? "selected"
+                          : ""
+                      } status-${getIncidentWorkflowStatus(incident)}`}
+                      onClick={() => handleQueueSelect(incident._id)}
+                    >
+                      <div className="incident-queue-top">
+                        <div>
+                          <div className="incident-queue-title">
+                            {incident.type || "Incident"}
+                          </div>
+
+                          <div className="incident-queue-subtitle">
+                            <FaCalendarDays aria-hidden="true" />
+                            {formatDateTime(
+                              incident.createdAt ||
+                                incident.updatedAt ||
+                                incident.date ||
+                                incident.reportedAt
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="incident-queue-badge-stack">
+                          <span
+                            className={`mini-status ai-tag ${getVerificationTone(
+                              ai.status
+                            )}`}
+                          >
+                            AI {ai.status || "pending"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="incident-queue-foot">
+                        <span className="mini-neutral-badge">
+                          {truncateLocation(incident.location)}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="empty-state-card incident-approved-empty">
+                  <div>
+                    <span className="empty-state-icon">
+                      <FaCircleCheck />
+                    </span>
+                    <strong>No approved incidents</strong>
+                    <span>Approved or on-process incidents will appear here.</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </aside>
         </section>
 
         <section
@@ -1257,168 +1754,63 @@ export default function IncidentReport() {
         >
           <div className="incident-details-body incident-unified-body">
             {activeIncident ? (
-              <div className="incident-unified-card">
-                <div
-                  className={`incident-unified-hero ${getIncidentTypeAccent(
-                    activeIncident.type
-                  )}`}
-                >
-                  <div className="incident-review-icon-wrap">
-                    {safeLower(activeIncident.type).includes("fire") ? (
-                      <FaTriangleExclamation aria-hidden="true" />
-                    ) : safeLower(activeIncident.type).includes("earthquake") ? (
-                      <FaMapLocationDot aria-hidden="true" />
-                    ) : (
-                      <FaBell aria-hidden="true" />
-                    )}
-                  </div>
-
-                  <div className="incident-review-title-wrap">
-                    <div className="incident-details-topline">
-                      <span
-                        className={`mini-status ${getIncidentStatusTone(
-                          activeIncident.status || "reported"
-                        )}`}
-                      >
-                        {getIncidentStatusLabel(activeIncident.status)}
-                      </span>
-
-                      <span
-                        className={`mini-status ${getSeverityTone(
-                          activeIncident.level
-                        )}`}
-                      >
-                        {activeIncident.level || "unknown"}
-                      </span>
-
-                      <span
-                        className={`mini-status ${getVerificationTone(
-                          activeAI.status
-                        )}`}
-                      >
-                        AI {activeAI.status}
-                      </span>
+              <div className="incident-command-shell">
+                <div className="incident-command-header">
+                  <div className="incident-command-head-main">
+                    <div className="incident-review-icon-wrap">
+                      {safeLower(activeIncident.type).includes("fire") ? (
+                        <FaTriangleExclamation aria-hidden="true" />
+                      ) : safeLower(activeIncident.type).includes("earthquake") ? (
+                        <FaMapLocationDot aria-hidden="true" />
+                      ) : (
+                        <FaBell aria-hidden="true" />
+                      )}
                     </div>
 
-                    <h3>{activeIncident.type || "Incident"}</h3>
-
-                    <div className="incident-hero-location">
-                      <FaLocationDot aria-hidden="true" />
-                      <span>{activeIncident.location || "Unknown location"}</span>
-                    </div>
-
-                    <div className="incident-hero-actions">
-                      <div className="top-response-actions" aria-label="Response status">
-                        {["reported", "onProcess", "resolved"].map((status) => (
-                          <button
-                            key={status}
-                            type="button"
-                            className={`top-response-btn ${status} ${
-                              activeStatus === status ? "active" : ""
-                            }`}
-                            onClick={() =>
-                              handleStatusChange(activeIncident._id, status)
-                            }
-                          >
-                            {status === "reported" && <FaClock aria-hidden="true" />}
-                            {status === "onProcess" && (
-                              <FaClockRotateLeft aria-hidden="true" />
-                            )}
-                            {status === "resolved" && (
-                              <FaCircleCheck aria-hidden="true" />
-                            )}
-                            {getIncidentStatusLabel(status)}
-                          </button>
-                        ))}
+                    <div className="incident-command-copy">
+                      <div className="incident-command-badges">
+                        <span className={`mini-status priority-chip priority-${activePriority}`}>
+                          {activePriority}
+                        </span>
+                        <span className={`mini-status ${getIncidentStatusTone(activeIncident)}`}>
+                          {getIncidentStatusLabel(activeIncident)}
+                        </span>
+                        <span className={`mini-status ${getVerificationTone(activeAI.status)}`}>
+                          AI {activeAI.status}
+                        </span>
                       </div>
 
-                      <button
-                        type="button"
-                        className="ghost-btn export-incident-btn"
-                        onClick={() => handleExportIncidentPdf(activeIncident?._id)}
-                        disabled={!activeIncident?._id}
-                      >
-                        <FaFilePdf aria-hidden="true" />
-                        Export PDF
-                      </button>
+                      <h3>{activeIncident.type || "Incident"}</h3>
+
+                      <p className="incident-command-subline">
+                        <FaLocationDot aria-hidden="true" />
+                        <span>{activeIncident.location || "Unknown location"}</span>
+                        <span className="incident-command-dot">•</span>
+                        <FaCalendarDays aria-hidden="true" />
+                        <span>{activeReportedAt}</span>
+                      </p>
                     </div>
+                  </div>
+
+                  <div className="incident-command-actions">
+                    <button
+                      type="button"
+                      className="ghost-btn export-incident-btn"
+                      onClick={() => handleExportIncidentPdf(activeIncident?._id)}
+                      disabled={!activeIncident?._id}
+                    >
+                      <FaFilePdf aria-hidden="true" />
+                      Export PDF
+                    </button>
                   </div>
                 </div>
 
-                <div className="incident-two-column-layout">
-                  <div className="incident-left-column">
-                    <div className="incident-context-row">
-                      <div className="context-card">
-                        <span className="context-icon">
-                          <FaUser aria-hidden="true" />
-                        </span>
+                <div className="incident-command-body">
+                  <div className="incident-command-left">
+                    <section className="incident-command-card incident-command-evidence">
+                      <div className="incident-command-card-head">
                         <div>
-                          <span>Reporter</span>
-                          <strong>{activeIncident.usernames || "-"}</strong>
-                        </div>
-                      </div>
-
-                      <div className="context-card">
-                        <span className="context-icon">
-                          <FaPhone aria-hidden="true" />
-                        </span>
-                        <div>
-                          <span>Phone</span>
-                          <strong>{activeIncident.phone || "-"}</strong>
-                        </div>
-                      </div>
-
-                      <div className="context-card">
-                        <span className="context-icon">
-                          <FaCalendarDays aria-hidden="true" />
-                        </span>
-                        <div>
-                          <span>Reported</span>
-                          <strong>
-                            {formatDateTime(
-                              activeIncident.createdAt ||
-                                activeIncident.updatedAt ||
-                                activeIncident.date ||
-                                activeIncident.reportedAt
-                            )}
-                          </strong>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="incident-review-section incident-location-card">
-                      <div className="incident-review-section-head compact">
-                        <div>
-                          <h3>Location Details</h3>
-                          <p>Coordinates and written address.</p>
-                        </div>
-                      </div>
-
-                      <div className="incident-metadata-grid review-meta-grid">
-                        <div className="incident-meta-item wide">
-                          <span>
-                            <FaLocationDot aria-hidden="true" />
-                            Address
-                          </span>
-                          <strong>{activeIncident.location || "-"}</strong>
-                        </div>
-
-                        <div className="incident-meta-item">
-                          <span>Latitude</span>
-                          <strong>{activeIncident.latitude || "-"}</strong>
-                        </div>
-
-                        <div className="incident-meta-item">
-                          <span>Longitude</span>
-                          <strong>{activeIncident.longitude || "-"}</strong>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="incident-review-section incident-evidence-card">
-                      <div className="incident-review-section-head compact">
-                        <div>
-                          <h3>Image Evidence</h3>
+                          <h4>Evidence</h4>
                         </div>
                       </div>
 
@@ -1450,160 +1842,200 @@ export default function IncidentReport() {
                           <span>This report has no attached image evidence.</span>
                         </div>
                       )}
-                    </div>
+
+                      <div className="incident-evidence-ai-block">
+                        <div className="incident-command-card-head incident-command-head-split">
+                          <div>
+                            <h4>AI Verification</h4>
+                          </div>
+
+                          <span
+                            className={`mini-status ${getVerificationTone(activeAI.status)}`}
+                          >
+                            {activeAI.status}
+                          </span>
+                        </div>
+
+                        <div className="incident-ai-summary-card">
+                          <div className="incident-ai-verdict-row">
+                            <strong>{activeAI.verdict}</strong>
+                            <span className="ai-score-pill">Score {activeAI.score}</span>
+                          </div>
+
+                          <div className="incident-ai-detail-grid">
+                            <div>
+                              <span>Match</span>
+                              <strong>{activeAI.matchText}</strong>
+                            </div>
+
+                            <div>
+                              <span>Labels</span>
+                              <strong>{activeAI.labelsText}</strong>
+                            </div>
+
+                            <div>
+                              <span>Metadata</span>
+                              <strong>{activeAI.metaText}</strong>
+                            </div>
+                          </div>
+
+                          <p className="incident-ai-reasoning">{activeAI.reasoning}</p>
+                        </div>
+
+                        <div className="status-action-grid ai-action-grid">
+                          <button
+                            type="button"
+                            className={`status-action-btn available ${
+                              activeAI.status === "approved" ? "active" : ""
+                            }`}
+                            onClick={() =>
+                              handleVerifyOverride(activeIncident._id, "approved")
+                            }
+                          >
+                            <FaCircleCheck aria-hidden="true" />
+                            Approve AI
+                          </button>
+
+                          <button
+                            type="button"
+                            className={`status-action-btn full ${
+                              activeAI.status === "rejected" ? "active" : ""
+                            }`}
+                            onClick={() =>
+                              handleVerifyOverride(activeIncident._id, "rejected")
+                            }
+                          >
+                            <FaTriangleExclamation aria-hidden="true" />
+                            Reject AI
+                          </button>
+
+                          <button
+                            type="button"
+                            className="status-action-btn limited"
+                            onClick={() => handleReverify(activeIncident._id)}
+                          >
+                            <FaWandMagicSparkles aria-hidden="true" />
+                            Re-Verify
+                          </button>
+                        </div>
+                      </div>
+                    </section>
                   </div>
 
-                  <div className="incident-right-column">
-                    <div className="incident-review-section incident-ai-review-section">
-                    <div className="incident-review-section-head">
-                      <div>
-                        <h3>AI Verification Review</h3>
-                      </div>
-
-                      <span
-                        className={`mini-status ${getVerificationTone(
-                          activeAI.status
-                        )}`}
-                      >
-                        {activeAI.status}
-                      </span>
-                    </div>
-
-                    <div className="incident-ai-summary-card">
-                      <div className="incident-ai-verdict-row">
-                        <strong>{activeAI.verdict}</strong>
-                        <span className="ai-score-pill">
-                          Score {activeAI.score}
-                        </span>
-                      </div>
-
-                      <div className="incident-ai-detail-grid">
-                        <div>
-                          <span>Match</span>
-                          <strong>{activeAI.matchText}</strong>
+                  <div className="incident-command-right">
+                    <section className="incident-command-card incident-command-sidecard">
+                      <div className="incident-command-side-block">
+                        <div className="incident-command-card-head">
+                          <div>
+                            <h4>Report Summary</h4>
+                            <p>Quick incident facts for review.</p>
+                          </div>
                         </div>
 
-                        <div>
-                          <span>Labels</span>
-                          <strong>{activeAI.labelsText}</strong>
+                        <div className="incident-summary-grid incident-summary-grid-compact">
+                          <div className="incident-summary-row incident-summary-row-inline">
+                            <span className="incident-summary-label">
+                              <FaUser aria-hidden="true" />
+                              Reporter
+                            </span>
+                            <strong>{activeIncident.usernames || "-"}</strong>
+                          </div>
+
+                          <div className="incident-summary-row incident-summary-row-inline">
+                            <span className="incident-summary-label">
+                              <FaPhone aria-hidden="true" />
+                              Phone
+                            </span>
+                            <strong>{activeIncident.phone || "-"}</strong>
+                          </div>
+
+                          <div className="incident-summary-row incident-summary-row-wide">
+                            <span className="incident-summary-label">
+                              <FaLocationDot aria-hidden="true" />
+                              Location
+                            </span>
+                            <strong>{activeIncident.location || "-"}</strong>
+                          </div>
+
+                          <div className="incident-summary-row incident-summary-row-inline">
+                            <span className="incident-summary-label">Latitude</span>
+                            <strong>{activeIncident.latitude || "-"}</strong>
+                          </div>
+
+                          <div className="incident-summary-row incident-summary-row-inline">
+                            <span className="incident-summary-label">Longitude</span>
+                            <strong>{activeIncident.longitude || "-"}</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="incident-command-side-block incident-command-action-block">
+                        <div
+                          className="top-response-actions incident-command-workflow-actions"
+                          aria-label="Response status"
+                        >
+                          {["onProcess", "resolved"].map((status) => (
+                            <button
+                              key={status}
+                              type="button"
+                              className={`top-response-btn ${status} ${
+                                activeStatus === status ? "active" : ""
+                              }`}
+                              onClick={() => openIncidentActionModal(status, activeIncident)}
+                            >
+                              {status === "onProcess" && (
+                                <FaClockRotateLeft aria-hidden="true" />
+                              )}
+                              {status === "resolved" && (
+                                <FaCircleCheck aria-hidden="true" />
+                              )}
+                              {getIncidentStatusLabel(status)}
+                            </button>
+                          ))}
                         </div>
 
-                        <div>
-                          <span>Metadata</span>
-                          <strong>{activeAI.metaText}</strong>
+                        <div className="incident-delete-row incident-command-danger">
+                          <button
+                            type="button"
+                            className="delete-row-btn review-delete-btn"
+                            onClick={() => openIncidentActionModal("delete", activeIncident)}
+                          >
+                            <FaTrashCan aria-hidden="true" />
+                            Delete Incident
+                          </button>
                         </div>
                       </div>
-
-                      <p className="incident-ai-reasoning">
-                        {activeAI.reasoning}
-                      </p>
-                    </div>
-
-                    <div className="status-action-grid ai-action-grid">
-                      <button
-                        type="button"
-                        className={`status-action-btn available ${
-                          activeAI.status === "approved" ? "active" : ""
-                        }`}
-                        onClick={() =>
-                          handleVerifyOverride(activeIncident._id, "approved")
-                        }
-                      >
-                        <FaCircleCheck aria-hidden="true" />
-                        Approve AI
-                      </button>
-
-                      <button
-                        type="button"
-                        className={`status-action-btn full ${
-                          activeAI.status === "rejected" ? "active" : ""
-                        }`}
-                        onClick={() =>
-                          handleVerifyOverride(activeIncident._id, "rejected")
-                        }
-                      >
-                        <FaTriangleExclamation aria-hidden="true" />
-                        Reject AI
-                      </button>
-
-                      <button
-                        type="button"
-                        className="status-action-btn limited"
-                        onClick={() => handleReverify(activeIncident._id)}
-                      >
-                        <FaWandMagicSparkles aria-hidden="true" />
-                        Re-Verify
-                      </button>
-                    </div>
-                    </div>
-
-                    <div className="incident-review-section incident-system-section">
-                    <div className="incident-review-section-head compact">
-                      <div>
-                        <h3>System Metadata</h3>
-                      </div>
-                    </div>
-
-                    <div className="incident-metadata-grid incident-system-grid">
-                      <div className="incident-meta-item">
-                        <span>Created</span>
-                        <strong>
-                          {formatDateTime(
-                            activeIncident.createdAt ||
-                              activeIncident.date ||
-                              activeIncident.reportedAt
-                          )}
-                        </strong>
-                      </div>
-
-                      <div className="incident-meta-item">
-                        <span>Updated</span>
-                        <strong>{formatDateTime(activeIncident.updatedAt)}</strong>
-                      </div>
-
-                      <div className="incident-meta-item">
-                        <span>Image Time</span>
-                        <strong>
-                          {activeAI.metadata?.timestamp
-                            ? formatTimestamp(activeAI.metadata.timestamp)
-                            : "Unknown date"}
-                        </strong>
-                      </div>
-
-                      <div className="incident-meta-item">
-                        <span>Device</span>
-                        <strong>{activeAI.metadata?.device || "-"}</strong>
-                      </div>
-
-                      <div className="incident-meta-item">
-                        <span>GPS</span>
-                        <strong>
-                          {activeAI.metadata?.hasGPS ? "Present" : "No GPS"}
-                        </strong>
-                      </div>
-
-                      <div className="incident-meta-item">
-                        <span>Within Area</span>
-                        <strong>
-                          {activeAI.metadata?.isWithinArea
-                            ? "Within Jaen"
-                            : "Unknown / outside"}
-                        </strong>
-                      </div>
-                    </div>
-                    </div>
-
-                    <div className="incident-review-danger-row">
-                      <button
-                        type="button"
-                        className="delete-row-btn review-delete-btn"
-                        onClick={() => handleDelete(activeIncident._id)}
-                      >
-                        <FaTrashCan aria-hidden="true" />
-                        Delete Incident
-                      </button>
-                    </div>
+                    </section>
                   </div>
+                </div>
+
+                <div className="incident-command-footer-meta">
+                  <span>
+                    <strong>Created:</strong> {activeReportedAt}
+                  </span>
+                  <span>
+                    <strong>Updated:</strong>{" "}
+                    {formatDateTime(activeIncident.updatedAt)}
+                  </span>
+                  <span>
+                    <strong>Image Time:</strong>{" "}
+                    {activeAI.metadata?.timestamp
+                      ? formatTimestamp(activeAI.metadata.timestamp)
+                      : "Unknown date"}
+                  </span>
+                  <span>
+                    <strong>Device:</strong> {activeAI.metadata?.device || "-"}
+                  </span>
+                  <span>
+                    <strong>GPS:</strong>{" "}
+                    {activeAI.metadata?.hasGPS ? "Present" : "No GPS"}
+                  </span>
+                  <span>
+                    <strong>Area:</strong>{" "}
+                    {activeAI.metadata?.isWithinArea
+                      ? "Within Jaen"
+                      : "Unknown / outside"}
+                  </span>
                 </div>
               </div>
             ) : (

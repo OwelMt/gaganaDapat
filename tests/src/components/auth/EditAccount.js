@@ -1,6 +1,14 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../css/EditAccount.css';
+import {
+  sanitizeAddress,
+  sanitizeEmail,
+  sanitizeHotline,
+  sanitizePassword,
+  sanitizePhoneNumber,
+  sanitizeUsername
+} from './inputSanitizers';
 
 export default function EditAccount() {
   const navigate = useNavigate();
@@ -64,9 +72,21 @@ export default function EditAccount() {
   };
 
   const handleChange = (id, field, value) => {
+    const sanitizers = {
+      username: sanitizeUsername,
+      email: sanitizeEmail,
+      phoneNumber: sanitizePhoneNumber,
+      hotline: sanitizeHotline,
+      address: sanitizeAddress,
+      password: sanitizePassword,
+      confirmPassword: sanitizePassword
+    };
+
+    const nextValue = sanitizers[field] ? sanitizers[field](value) : value;
+
     setForms((prev) => ({
       ...prev,
-      [id]: { ...prev[id], [field]: value }
+      [id]: { ...prev[id], [field]: nextValue }
     }));
   };
 

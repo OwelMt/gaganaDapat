@@ -47,6 +47,13 @@ const redIcon = new L.Icon({
   iconAnchor: [16, 32],
 });
 
+const greyIcon = L.divIcon({
+  className: "custom-evac-archived-marker",
+  html: '<span class="custom-evac-archived-marker__dot"></span>',
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
+});
+
 /* ---------------- Styles ---------------- */
 
 const jaenStyle = {
@@ -64,6 +71,26 @@ const maskStyle = {
   fillOpacity: 0.28,
   interactive: false,
 };
+
+function getBarangayColorParts(index = 0) {
+  const hue = Math.round((index * 137.508 + 24) % 360);
+  const saturationCycle = [78, 64, 86, 58];
+  const lightnessCycle = [48, 60, 42, 66];
+  const saturation = saturationCycle[index % saturationCycle.length];
+  const lightness = lightnessCycle[index % lightnessCycle.length];
+
+  return { hue, saturation, lightness };
+}
+
+function getBarangayFillColor(index = 0) {
+  const { hue, saturation, lightness } = getBarangayColorParts(index);
+  return `hsla(${hue}, ${saturation}%, ${lightness}%, 0.54)`;
+}
+
+function getBarangayOutlineColor(index = 0) {
+  const { hue, saturation, lightness } = getBarangayColorParts(index);
+  return `hsl(${hue}, ${Math.min(88, saturation + 8)}%, ${Math.max(34, lightness - 8)}%)`;
+}
 
 /* ---------------- Helpers ---------------- */
 
@@ -170,8 +197,14 @@ function buildInverseMaskGeoJSON(geojson) {
   };
 }
 
-function getStatusIcon(status) {
-  const normalized = safeLower(status);
+function getStatusIcon(placeOrStatus) {
+  const place =
+    placeOrStatus && typeof placeOrStatus === "object"
+      ? placeOrStatus
+      : { capacityStatus: placeOrStatus };
+  const normalized = safeLower(place?.capacityStatus);
+
+  if (place?.isArchived) return greyIcon;
 
   if (normalized === "limited") return orangeIcon;
   if (normalized === "full") return redIcon;
@@ -186,6 +219,8 @@ function FitToJaenBounds({ bounds, publicMode = false }) {
   useEffect(() => {
     if (!bounds) return;
 
+    let cancelled = false;
+
     map.fitBounds(bounds, {
       padding: publicMode ? [28, 28] : [20, 20],
     });
@@ -196,9 +231,16 @@ function FitToJaenBounds({ bounds, publicMode = false }) {
       map.setMaxBounds(null);
     }
 
-    setTimeout(() => {
-      map.invalidateSize();
+    const timer = setTimeout(() => {
+      if (!cancelled && map?._container) {
+        map.invalidateSize();
+      }
     }, 150);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [bounds, map, publicMode]);
 
   return null;
@@ -212,6 +254,8 @@ function MapUpdater({ position, zoom, allowedBounds, publicMode = false }) {
   useEffect(() => {
     if (!position) return;
 
+    let cancelled = false;
+
     const target = L.latLng(position[0], position[1]);
 
     if (publicMode) {
@@ -220,23 +264,40 @@ function MapUpdater({ position, zoom, allowedBounds, publicMode = false }) {
       map.setView(position, zoom);
     }
 
-    setTimeout(() => {
-      map.invalidateSize();
+    const timer = setTimeout(() => {
+      if (!cancelled && map?._container) {
+        map.invalidateSize();
+      }
     }, 150);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [position, zoom, map, allowedBounds, publicMode]);
 
   useEffect(() => {
+    let cancelled = false;
+
     const handleResize = () => {
-      map.invalidateSize();
+      if (map?._container) {
+        map.invalidateSize();
+      }
     };
 
     window.addEventListener("resize", handleResize);
 
-    setTimeout(() => {
-      map.invalidateSize();
+    const timer = setTimeout(() => {
+      if (!cancelled && map?._container) {
+        map.invalidateSize();
+      }
     }, 300);
 
-    return () => window.removeEventListener("resize", handleResize);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      window.removeEventListener("resize", handleResize);
+    };
   }, [map]);
 
   return null;
@@ -337,6 +398,7 @@ function renderPublicPopup(place) {
         <em>Barangay:</em> {place.barangayName || "-"}
         <br />
         <em>Status:</em> {place.capacityStatus || "available"}
+        {place?.isArchived ? " (archived)" : ""}
         <br />
         <em>Tip:</em> Click marker to view the details card
       </div>
@@ -370,6 +432,7 @@ function renderOperationalPopup(place) {
         {place.isCovidFacility ? "COVID Facility" : ""}
         <br />
         <em>Status:</em> {place.capacityStatus || "available"}
+        {place?.isArchived ? " (archived)" : ""}
         <br />
         <em>Tip:</em> Click marker to open the details panel
       </div>
@@ -515,9 +578,13 @@ const Map = ({
       maxBoundsViscosity={publicMode ? 0.35 : 1.0}
       style={{ height: "100%", width: "100%" }}
       whenCreated={(map) => {
-        setTimeout(() => {
-          map.invalidateSize();
+        const timer = setTimeout(() => {
+          if (map?._container) {
+            map.invalidateSize();
+          }
         }, 200);
+
+        return () => clearTimeout(timer);
       }}
     >
       <FitToJaenBounds bounds={jaenBounds} publicMode={publicMode} />
@@ -560,7 +627,7 @@ const Map = ({
           <FlyToOnClickMarker
             key={place._id}
             place={place}
-            icon={getStatusIcon(place.capacityStatus)}
+            icon={getStatusIcon(place)}
             onSelectLocation={onSelectLocation}
             onSelectPlace={onSelectPlace}
             allowedBounds={effectiveBounds}
@@ -589,9 +656,10 @@ const Map = ({
             key={b._id || index}
             positions={positions}
             pathOptions={{
-              color: "#3388ff",
+              color: getBarangayOutlineColor(index),
               weight: 2,
-              fillOpacity: 0.2,
+              fillColor: getBarangayFillColor(index),
+              fillOpacity: 0.54,
             }}
           />
         );

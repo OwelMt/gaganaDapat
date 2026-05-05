@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import {
   FaBell,
   FaCheck,
@@ -15,6 +16,21 @@ import {
 } from 'react-icons/fa';
 import DashboardShell from '../layout/DashboardShell';
 import '../css/ReliefRequestList.css';
+import {
+  SUPPORT_TYPE_APPLIANCE,
+  SUPPORT_TYPE_FOODPACKS,
+  SUPPORT_TYPE_MONETARY,
+  getSupportTypesFromRequest,
+  getSupportTypeLabel,
+  hasSupportType,
+} from './supportTypes';
+import {
+  getRequestEditBadgeLabel,
+  getVisibleCenterCount,
+  getVisibleRowTotals,
+  getVisibleRows,
+} from './requestListUtils';
+import { isConfirmationSubmitDisabled } from './requestReviewUtils';
 
 const BASE_URL =
   process.env.REACT_APP_API_URL || 'https://gaganadapat.onrender.com';
@@ -25,6 +41,11 @@ const NOTIFICATION_DURATION = 10000;
 const MAX_VISIBLE_NOTIFICATIONS = 4;
 
 const normalize = (value) => String(value || '').trim().toLowerCase();
+const formatMoney = (value) =>
+  Number(value || 0).toLocaleString('en-PH', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  });
 
 const formatStatusLabel = (value) =>
   String(value || '')
@@ -43,7 +64,10 @@ const isResolvedStatus = (status) => {
 };
 
 const getRequestIndividuals = (request) => {
-  const totals = request?.totals || {};
+  const totals =
+    Array.isArray(request?.rows) && request.rows.length > 0
+      ? getVisibleRowTotals(request)
+      : request?.totals || {};
   return (
     Number(totals.male || 0) +
     Number(totals.female || 0) +
@@ -54,19 +78,51 @@ const getRequestIndividuals = (request) => {
   );
 };
 
-const getVulnerableCount = (request) => {
-  const priority = request?.prioritySnapshot || {};
-  if (priority.vulnerableCount !== undefined) {
-    return Number(priority.vulnerableCount || 0);
+const getRequestSupportTypes = (request) => getSupportTypesFromRequest(request);
+
+const getRequestTypeLabel = (request) =>
+  getSupportTypeLabel(getRequestSupportTypes(request));
+
+const buildQueueDemandSummary = (request) => {
+  const supportTypes = getRequestSupportTypes(request);
+  const visibleRowTotals = getVisibleRowTotals(request);
+  const requestedFoodPacks =
+    visibleRowTotals.requestedFoodPacks || Number(request?.totals?.requestedFoodPacks || 0);
+  const parts = [];
+
+  if (hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS)) {
+    parts.push(`${requestedFoodPacks.toLocaleString()} packs`);
   }
 
-  const totals = request?.totals || {};
-  return (
-    Number(totals.pwd || 0) +
-    Number(totals.pregnant || 0) +
-    Number(totals.senior || 0)
-  );
+  if (hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY)) {
+    parts.push(`PHP ${formatMoney(request?.totals?.requestedMonetaryAmount || 0)}`);
+  }
+
+  if (hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE)) {
+    const applianceCount = getRequestedApplianceQuantity(request);
+    parts.push(
+      `${applianceCount.toLocaleString()} appliance${applianceCount === 1 ? '' : 's'}`
+    );
+  }
+
+  return parts.join(' | ');
 };
+
+const getRequestedApplianceQuantity = (request) => {
+  if (request?.totals?.requestedApplianceQuantity !== undefined) {
+    return Number(request?.totals?.requestedApplianceQuantity || 0);
+  }
+
+  return Array.isArray(request?.requestedAppliances)
+    ? request.requestedAppliances.reduce(
+        (sum, item) => sum + Number(item?.quantityRequested || 0),
+        0
+      )
+    : 0;
+};
+
+const getRequestedApplianceCount = (request) =>
+  Array.isArray(request?.requestedAppliances) ? request.requestedAppliances.length : 0;
 
 const getRequestSyncKey = (request) =>
   [
@@ -74,7 +130,11 @@ const getRequestSyncKey = (request) =>
     request?.updatedAt || '',
     request?.lastEditedAt || '',
     request?.editCount || 0,
-    request?.totals?.requestedFoodPacks || 0,
+    getVisibleRowTotals(request).requestedFoodPacks || request?.totals?.requestedFoodPacks || 0,
+    request?.totals?.requestedMonetaryAmount || 0,
+    request?.totals?.requestedApplianceQuantity || getRequestedApplianceQuantity(request),
+    getVisibleCenterCount(request),
+    getRequestSupportTypes(request).join(','),
     normalize(request?.status)
   ].join('|');
 
@@ -83,7 +143,7 @@ const getFlowTone = (request) => {
 
   if (status === 'pending') return 'pending';
   if (status === 'approved') return 'approved';
-  if (status === 'partially_released') return 'approved';
+  if (status === 'partially_released') return 'released';
   if (status === 'released') return 'released';
   if (status === 'received') return 'received';
   return 'default';
@@ -94,9 +154,9 @@ const getStatusOrder = (status) => {
 
   if (normalized === 'pending') return 0;
   if (normalized === 'approved') return 1;
-  if (normalized === 'partially_released') return 1;
-  if (normalized === 'released') return 2;
-  if (normalized === 'received') return 3;
+  if (normalized === 'partially_released') return 2;
+  if (normalized === 'released') return 3;
+  if (normalized === 'received') return 4;
   return 99;
 };
 
@@ -120,9 +180,23 @@ const areQueuesEquivalent = (prevRows = [], nextRows = []) => {
     if ((prev?._id || '') !== (next?._id || '')) return false;
     if (normalize(prev?.status) !== normalize(next?.status)) return false;
 
-    const prevRequested = Number(prev?.totals?.requestedFoodPacks || 0);
-    const nextRequested = Number(next?.totals?.requestedFoodPacks || 0);
+    const prevRequested = getVisibleRowTotals(prev).requestedFoodPacks;
+    const nextRequested = getVisibleRowTotals(next).requestedFoodPacks;
     if (prevRequested !== nextRequested) return false;
+
+    if (getVisibleCenterCount(prev) !== getVisibleCenterCount(next)) return false;
+
+    const prevMonetary = Number(prev?.totals?.requestedMonetaryAmount || 0);
+    const nextMonetary = Number(next?.totals?.requestedMonetaryAmount || 0);
+    if (prevMonetary !== nextMonetary) return false;
+
+    const prevAppliances = getRequestedApplianceQuantity(prev);
+    const nextAppliances = getRequestedApplianceQuantity(next);
+    if (prevAppliances !== nextAppliances) return false;
+
+    if (getRequestSupportTypes(prev).join(',') !== getRequestSupportTypes(next).join(',')) {
+      return false;
+    }
 
     const prevEdited = Boolean(prev?.isEditedAfterSubmit);
     const nextEdited = Boolean(next?.isEditedAfterSubmit);
@@ -185,6 +259,9 @@ export default function ReliefRequestsList() {
   const notificationTimeoutsRef = useRef({});
   const lastSelectedRequestIdRef = useRef(null);
   const editedWarningNotifiedRef = useRef(new Set());
+  const queueCardRef = useRef(null);
+  const detailsCardRef = useRef(null);
+  const [queueCardHeight, setQueueCardHeight] = useState(null);
 
   useEffect(() => {
     const storedRole = localStorage.getItem('role');
@@ -349,14 +426,32 @@ export default function ReliefRequestsList() {
         );
 
         if (editedPending.length > 0) {
+          const resubmittedCount = editedPending.filter(
+            (item) => getRequestEditBadgeLabel(item) === 'Resubmitted'
+          ).length;
+          const updatedCount = editedPending.length - resubmittedCount;
+          const noticeParts = [];
+
+          if (resubmittedCount > 0) {
+            noticeParts.push(
+              `${resubmittedCount} resubmitted request${
+                resubmittedCount > 1 ? 's need' : ' needs'
+              } review`
+            );
+          }
+
+          if (updatedCount > 0) {
+            noticeParts.push(
+              `${updatedCount} edited request${updatedCount > 1 ? 's need' : ' needs'} review`
+            );
+          }
+
           editedPending.forEach((item) => {
             editedWarningNotifiedRef.current.add(item._id);
           });
 
           pushNotification(
-            `${editedPending.length} edited request${
-              editedPending.length > 1 ? 's need' : ' needs'
-            } review.`,
+            `${noticeParts.join('. ')}.`,
             'warning'
           );
         }
@@ -565,10 +660,45 @@ export default function ReliefRequestsList() {
     );
   }, [filteredRows, receivedRows, receivedSummaryBarangay]);
 
-  const displayedRequested = Number(displayedRequest?.totals?.requestedFoodPacks || 0);
+  const displayedVisibleRows = getVisibleRows(displayedRequest);
+  const displayedVisibleTotals = getVisibleRowTotals(displayedRequest);
+  const displayedRequested = Number(
+    displayedVisibleTotals.requestedFoodPacks ||
+      displayedRequest?.totals?.requestedFoodPacks ||
+      0
+  );
+  const displayedRequestedMonetaryAmount = Number(
+    displayedRequest?.totals?.requestedMonetaryAmount || 0
+  );
+  const displayedRequestedApplianceQuantity = getRequestedApplianceQuantity(displayedRequest);
+  const displayedRequestedApplianceCount = getRequestedApplianceCount(displayedRequest);
+  const displayedSupportTypes = getRequestSupportTypes(displayedRequest);
+  const displayedCenterCount = getVisibleCenterCount(displayedRequest);
+  const displayedEditBadgeLabel = getRequestEditBadgeLabel(displayedRequest);
+  const displayedNeedsFood = hasSupportType(
+    displayedSupportTypes,
+    SUPPORT_TYPE_FOODPACKS
+  );
+  const displayedNeedsMonetary = hasSupportType(
+    displayedSupportTypes,
+    SUPPORT_TYPE_MONETARY
+  );
+  const displayedNeedsAppliance = hasSupportType(
+    displayedSupportTypes,
+    SUPPORT_TYPE_APPLIANCE
+  );
 
-  const selectedIndividuals = displayedRequest ? getRequestIndividuals(displayedRequest) : 0;
-  const selectedVulnerable = displayedRequest ? getVulnerableCount(displayedRequest) : 0;
+  const selectedIndividuals =
+    displayedVisibleTotals.male +
+    displayedVisibleTotals.female +
+    displayedVisibleTotals.lgbtq +
+    displayedVisibleTotals.pwd +
+    displayedVisibleTotals.pregnant +
+    displayedVisibleTotals.senior;
+  const selectedVulnerable =
+    displayedVisibleTotals.pwd +
+    displayedVisibleTotals.pregnant +
+    displayedVisibleTotals.senior;
   const selectedSubmittedAt =
     displayedRequest?.submittedAt ||
     displayedRequest?.createdAt ||
@@ -577,6 +707,31 @@ export default function ReliefRequestsList() {
 
   const lowStockCount = lowStockWarnings.length;
   const totalStockUnits = Number(inventorySummary?.totalStockUnits || 0);
+
+  useLayoutEffect(() => {
+    if (!detailsCardRef.current || typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+
+    const updateHeights = () => {
+      const nextHeight = detailsCardRef.current?.offsetHeight || 0;
+      setQueueCardHeight(nextHeight > 0 ? nextHeight : null);
+    };
+
+    updateHeights();
+
+    const observer = new ResizeObserver(() => {
+      updateHeights();
+    });
+
+    observer.observe(detailsCardRef.current);
+    window.addEventListener('resize', updateHeights);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateHeights);
+    };
+  }, [displayedRequest, loadingDetails, filteredRows.length]);
 
   const openReleasePlanner = (request) => {
     if (!request?._id) return;
@@ -617,19 +772,6 @@ export default function ReliefRequestsList() {
       title: 'Reject relief request?',
       message: `Enter the rejection reason for ${request.barangayName || 'this barangay'} before confirming.`,
       action: 'reject',
-      request
-    });
-    setRejectReason('');
-  }, []);
-
-  const openReceiveConfirmation = useCallback((request) => {
-    if (!request?._id) return;
-
-    setConfirmState({
-      open: true,
-      title: 'Mark release as received?',
-      message: `This will close ${request.barangayName || 'this barangay'} request as received and keep the released item data visible in their request record.`,
-      action: 'receive',
       request
     });
     setRejectReason('');
@@ -718,39 +860,6 @@ export default function ReliefRequestsList() {
     }
   };
 
-  const handleMarkReceived = async (request) => {
-    if (!request?._id) return;
-
-    try {
-      setSubmittingAction(true);
-
-      const res = await fetch(`${BASE_URL}/api/relief-requests/${request._id}/received`, {
-        method: 'PUT',
-        credentials: 'include'
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.message || 'Failed to mark request as received');
-      }
-
-      setPdfPreviewUrl('');
-      setReviewDetails(null);
-      setFeasibility(null);
-      lastSelectedRequestIdRef.current = null;
-      setConfirmState(EMPTY_CONFIRM_STATE);
-      setRejectReason('');
-      await fetchQueue();
-      pushNotification('Released goods marked as received.', 'success');
-    } catch (err) {
-      console.error(err);
-      pushNotification(err.message || 'Failed to mark request as received.', 'error');
-    } finally {
-      setSubmittingAction(false);
-    }
-  };
-
   const handleConfirmAction = async () => {
     if (!confirmState?.request?._id) return;
 
@@ -762,10 +871,6 @@ export default function ReliefRequestsList() {
     if (confirmState.action === 'reject') {
       await handleReject(confirmState.request._id);
       return;
-    }
-
-    if (confirmState.action === 'receive') {
-      await handleMarkReceived(confirmState.request);
     }
   };
 
@@ -798,7 +903,6 @@ export default function ReliefRequestsList() {
 
   const canApprove = normalize(displayedRequest?.status) === 'pending';
   const canOpenPlanner = normalize(displayedRequest?.status) === 'approved';
-  const canMarkReceived = normalize(displayedRequest?.status) === 'released';
   const canReject =
     normalize(displayedRequest?.status) === 'pending' ||
     normalize(displayedRequest?.status) === 'approved';
@@ -852,7 +956,19 @@ export default function ReliefRequestsList() {
 
           <section className="rrl-board rrl-board-tight">
             <div className="rrl-board-left">
-              <section className="rrl-card rrl-queue-card">
+              <section
+                ref={queueCardRef}
+                className="rrl-card rrl-queue-card"
+                style={
+                  queueCardHeight
+                    ? {
+                        height: `${queueCardHeight}px`,
+                        minHeight: `${queueCardHeight}px`,
+                        maxHeight: `${queueCardHeight}px`,
+                      }
+                    : undefined
+                }
+              >
                 <div className="rrl-toolbar">
                   <div className="rrl-toolbar-top">
                     <div className="rrl-toolbar-title">
@@ -905,8 +1021,8 @@ export default function ReliefRequestsList() {
                         const submittedAt =
                           row?.submittedAt || row?.createdAt || row?.requestDate || null;
                         const tone = getFlowTone(row);
-                        const wasEdited = Boolean(row?.isEditedAfterSubmit);
-
+                        const editBadgeLabel = getRequestEditBadgeLabel(row);
+                        const visibleCenterCount = getVisibleCenterCount(row);
                         return (
                           <button
                             type="button"
@@ -926,10 +1042,16 @@ export default function ReliefRequestsList() {
                                   <div className="rrl-queue-requestno">
                                   {row.requestNo || '-'}
                                   </div>
-                                  {wasEdited ? (
-                                    <span className="rrl-edited-badge">
+                                  {editBadgeLabel ? (
+                                    <span
+                                      className={`rrl-edited-badge ${
+                                        editBadgeLabel === 'Resubmitted'
+                                          ? 'rrl-edited-badge-resubmitted'
+                                          : ''
+                                      }`}
+                                    >
                                       <FaExclamationTriangle />
-                                      Edited
+                                      {editBadgeLabel}
                                     </span>
                                   ) : null}
                                 </div>
@@ -937,16 +1059,15 @@ export default function ReliefRequestsList() {
                             </div>
 
                             <div className="rrl-queue-bottom">
-                              <div className="rrl-queue-inline-meta">
-                                <span>{row?.rows?.length || 0} center(s)</span>
-                                <span>{getRequestIndividuals(row)} people</span>
-                                <span>
-                                  {Number(
-                                    row?.totals?.requestedFoodPacks || 0
-                                  ).toLocaleString()} packs
-                                </span>
+                              <div className="rrl-queue-bottom-main">
+                                <div className="rrl-queue-inline-meta">
+                                  <span>{visibleCenterCount} center(s)</span>
+                                  <span>{getRequestIndividuals(row)} people</span>
+                                </div>
+                                <div className="rrl-queue-demand-summary">
+                                  {buildQueueDemandSummary(row) || getRequestTypeLabel(row)}
+                                </div>
                               </div>
-
                               <div className="rrl-queue-datetime">
                                 <strong>{formatDate(submittedAt)}</strong>
                                 <span>{formatTime(submittedAt)}</span>
@@ -969,7 +1090,10 @@ export default function ReliefRequestsList() {
                   </div>
                 </section>
               ) : (
-                <section className="rrl-card rrl-details-card rrl-details-card-compact">
+                <section
+                  ref={detailsCardRef}
+                  className="rrl-card rrl-details-card rrl-details-card-compact"
+                >
                   <div className="rrl-details-head rrl-details-head-compact">
                     <div className="rrl-details-heading">
                       <div className="rrl-details-barangay">
@@ -978,8 +1102,34 @@ export default function ReliefRequestsList() {
                       <div className="rrl-details-disaster">
                         {displayedRequest.disaster || '-'}
                       </div>
-                      <div className="rrl-details-requestno">
-                        {displayedRequest.requestNo || '-'}
+                      <div className="rrl-details-meta-row">
+                        <div className="rrl-details-requestno">
+                          {displayedRequest.requestNo || '-'}
+                        </div>
+                        {displayedEditBadgeLabel ? (
+                          <span
+                            className={`rrl-edited-badge ${
+                              displayedEditBadgeLabel === 'Resubmitted'
+                                ? 'rrl-edited-badge-resubmitted'
+                                : ''
+                            }`}
+                          >
+                            <FaExclamationTriangle />
+                            {displayedEditBadgeLabel}
+                          </span>
+                        ) : null}
+                        {displayedRequest?.lastEditedAt ? (
+                          <div className="rrl-detail-meta-pill">
+                            <span>Last Edited</span>
+                            <strong>{formatDateTime(displayedRequest?.lastEditedAt)}</strong>
+                          </div>
+                        ) : null}
+                        {Number(displayedRequest?.editCount || 0) > 0 ? (
+                          <div className="rrl-detail-meta-pill">
+                            <span>Edit Count</span>
+                            <strong>{Number(displayedRequest?.editCount || 0)}</strong>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
 
@@ -989,6 +1139,10 @@ export default function ReliefRequestsList() {
                   </div>
 
                   <div className="rrl-meta-strip">
+                    <div className="rrl-meta-chip">
+                      <span>Support Type</span>
+                      <strong>{getRequestTypeLabel(displayedRequest)}</strong>
+                    </div>
                     <div className="rrl-meta-chip">
                       <span>Request Date</span>
                       <strong>{formatDate(displayedRequest.requestDate)}</strong>
@@ -1002,43 +1156,39 @@ export default function ReliefRequestsList() {
                       <strong>{selectedIndividuals}</strong>
                     </div>
                     <div className="rrl-meta-chip">
+                      <span>Vulnerable</span>
+                      <strong>{selectedVulnerable}</strong>
+                    </div>
+                    <div className="rrl-meta-chip">
                       <span>Centers</span>
-                      <strong>{displayedRequest?.rows?.length || 0}</strong>
+                      <strong>{displayedCenterCount}</strong>
                     </div>
                   </div>
 
-                  <div className="rrl-request-focus-layout rrl-request-focus-inline">
+                  <div className="rrl-request-focus-layout">
                     <div className="rrl-balance-strip rrl-balance-strip-request-only">
                       <div className="rrl-balance-chip rrl-balance-chip-primary rrl-balance-chip-request">
-                        <span>Requested</span>
-                        <strong>{displayedRequested}</strong>
+                        <span>Requested Packs</span>
+                        <strong>{displayedNeedsFood ? displayedRequested : '-'}</strong>
                       </div>
-                    </div>
-
-                    <div className="rrl-support-strip rrl-support-strip-side">
-                      <div className="rrl-support-chip">
-                        <span>Vulnerable</span>
-                        <strong>{selectedVulnerable}</strong>
+                      <div className="rrl-balance-chip rrl-balance-chip-request">
+                        <span>Requested Monetary</span>
+                        <strong>
+                          {displayedNeedsMonetary
+                            ? `PHP ${formatMoney(displayedRequestedMonetaryAmount)}`
+                            : '-'}
+                        </strong>
+                      </div>
+                      <div className="rrl-balance-chip rrl-balance-chip-request">
+                        <span>Requested Appliances</span>
+                        <strong>
+                          {displayedNeedsAppliance
+                            ? `${displayedRequestedApplianceQuantity} unit(s)`
+                            : '-'}
+                        </strong>
                       </div>
                     </div>
                   </div>
-
-                  {displayedRequest?.isEditedAfterSubmit ? (
-                    <div className="rrl-edited-info-strip">
-                      <div className="rrl-edited-info-chip">
-                        <span>Edited After Submit</span>
-                        <strong>Yes</strong>
-                      </div>
-                      <div className="rrl-edited-info-chip">
-                        <span>Last Edited</span>
-                        <strong>{formatDateTime(displayedRequest?.lastEditedAt)}</strong>
-                      </div>
-                      <div className="rrl-edited-info-chip">
-                        <span>Edit Count</span>
-                        <strong>{Number(displayedRequest?.editCount || 0)}</strong>
-                      </div>
-                    </div>
-                  ) : null}
 
                   <div className="rrl-review-layout-focused">
                     <div className="rrl-review-main">
@@ -1065,14 +1215,14 @@ export default function ReliefRequestsList() {
                               </tr>
                             </thead>
                             <tbody>
-                              {(displayedRequest.rows || []).length === 0 ? (
+                              {displayedVisibleRows.length === 0 ? (
                                 <tr>
                                   <td colSpan="11" className="rrl-empty-cell">
                                     No evacuation rows found.
                                   </td>
                                 </tr>
                               ) : (
-                                (displayedRequest.rows || []).map((row, index) => (
+                                displayedVisibleRows.map((row, index) => (
                                   <tr key={`${row.evacuationCenterName}-${index}`}>
                                     <td>{index + 1}</td>
                                     <td>{row.evacuationCenterName || '-'}</td>
@@ -1094,15 +1244,19 @@ export default function ReliefRequestsList() {
                                 <td colSpan="2" className="rrl-total-label">
                                   Total
                                 </td>
-                                <td>{displayedRequest?.totals?.households || 0}</td>
-                                <td>{displayedRequest?.totals?.families || 0}</td>
-                                <td>{displayedRequest?.totals?.male || 0}</td>
-                                <td>{displayedRequest?.totals?.female || 0}</td>
-                                <td>{displayedRequest?.totals?.lgbtq || 0}</td>
-                                <td>{displayedRequest?.totals?.pwd || 0}</td>
-                                <td>{displayedRequest?.totals?.pregnant || 0}</td>
-                                <td>{displayedRequest?.totals?.senior || 0}</td>
-                                <td>{displayedRequest?.totals?.requestedFoodPacks || 0}</td>
+                                <td>{displayedVisibleTotals.households}</td>
+                                <td>{displayedVisibleTotals.families}</td>
+                                <td>{displayedVisibleTotals.male}</td>
+                                <td>{displayedVisibleTotals.female}</td>
+                                <td>{displayedVisibleTotals.lgbtq}</td>
+                                <td>{displayedVisibleTotals.pwd}</td>
+                                <td>{displayedVisibleTotals.pregnant}</td>
+                                <td>{displayedVisibleTotals.senior}</td>
+                                <td>
+                                  {displayedNeedsFood
+                                    ? displayedVisibleTotals.requestedFoodPacks
+                                    : '-'}
+                                </td>
                               </tr>
                             </tfoot>
                           </table>
@@ -1114,7 +1268,60 @@ export default function ReliefRequestsList() {
                           <h3>Remarks</h3>
                         </div>
                         <div className="rrl-remarks-box">
-                          <p>{displayedRequest?.remarks || 'No remarks provided.'}</p>
+                          <div className="rrl-remarks-primary">
+                            {displayedRequest?.remarks || 'No remarks provided.'}
+                          </div>
+
+                          <div className="rrl-remarks-summary-grid">
+                            {displayedNeedsMonetary ? (
+                              <div className="rrl-remarks-summary-card">
+                                <span>Requested Monetary</span>
+                                <strong>PHP {formatMoney(displayedRequestedMonetaryAmount)}</strong>
+                              </div>
+                            ) : null}
+                            {displayedNeedsAppliance ? (
+                              <div className="rrl-remarks-summary-card">
+                                <span>Requested Appliances</span>
+                                <strong>
+                                  {displayedRequestedApplianceQuantity} unit(s) across{' '}
+                                  {displayedRequestedApplianceCount} item type(s)
+                                </strong>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          {displayedNeedsAppliance &&
+                          Array.isArray(displayedRequest?.requestedAppliances) &&
+                          displayedRequest.requestedAppliances.length > 0 ? (
+                            <div className="rrl-appliance-request-list">
+                              {displayedRequest.requestedAppliances
+                                .map((item, index) => {
+                                  const itemName = String(item?.itemName || '').trim();
+                                  const category = String(item?.category || '').trim();
+                                  const quantity = Number(item?.quantityRequested || 0);
+                                  const itemRemarks = String(item?.remarks || '').trim();
+
+                                  if (!itemName) return null;
+
+                                  return (
+                                    <div
+                                      key={`${itemName}-${index}`}
+                                      className="rrl-appliance-request-card"
+                                    >
+                                      <div className="rrl-appliance-request-head">
+                                        <strong>{itemName}</strong>
+                                        <span>{quantity} unit(s)</span>
+                                      </div>
+                                      <div className="rrl-appliance-request-meta">
+                                        <span>{category || 'Uncategorized'}</span>
+                                        <span>{itemRemarks || 'No item remarks'}</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                                .filter(Boolean)}
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </div>
@@ -1132,6 +1339,15 @@ export default function ReliefRequestsList() {
                             <div className="rrl-readiness-compact-row">
                               <span>Stock Units</span>
                               <strong>{totalStockUnits}</strong>
+                            </div>
+                            <div className="rrl-readiness-compact-row">
+                              <span>Monetary Pool</span>
+                              <strong>
+                                PHP{' '}
+                                {formatMoney(
+                                  feasibility?.inventorySummary?.totalMonetaryAmount || 0
+                                )}
+                              </strong>
                             </div>
                             <div
                               className={`rrl-readiness-compact-row ${lowStockCount > 0 ? 'warn' : ''}`}
@@ -1180,16 +1396,6 @@ export default function ReliefRequestsList() {
                             >
                               <FaClipboardCheck />
                               Open Release Planner
-                            </button>
-                          ) : canMarkReceived ? (
-                            <button
-                              type="button"
-                              className="rrl-btn rrl-btn-approve"
-                              disabled={submittingAction}
-                              onClick={() => openReceiveConfirmation(displayedRequest)}
-                            >
-                              <FaCheck />
-                              Mark Received
                             </button>
                           ) : (
                             <div className="rrl-btn-slot" />
@@ -1241,59 +1447,68 @@ export default function ReliefRequestsList() {
           </section>
         </div>
 
-        {confirmState.open ? (
-          <div className="rrl-modal-backdrop">
-            <div className="rrl-modal-card">
-              <h3>{confirmState.title}</h3>
-              <p>{confirmState.message}</p>
+        {confirmState.open && typeof document !== 'undefined'
+          ? createPortal(
+              <div className="rrl-modal-backdrop" onClick={closeConfirmation}>
+                <div className="rrl-modal-card" onClick={(e) => e.stopPropagation()}>
+                  <h3>{confirmState.title}</h3>
+                  <p>{confirmState.message}</p>
 
-              {confirmState.action === 'reject' ? (
-                <div className="rrl-modal-field">
-                  <label htmlFor="rrl-reject-reason" className="rrl-modal-label">
-                    Rejection Reason
-                  </label>
-                  <textarea
-                    id="rrl-reject-reason"
-                    className="rrl-modal-textarea"
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                    placeholder="Enter the reason for rejecting this request."
-                    rows={4}
-                    disabled={submittingAction}
-                  />
+                  {confirmState.action === 'reject' ? (
+                    <div className="rrl-modal-field">
+                      <label htmlFor="rrl-reject-reason" className="rrl-modal-label">
+                        Rejection Reason <span className="rrl-modal-required">*</span>
+                      </label>
+                      <textarea
+                        id="rrl-reject-reason"
+                        className="rrl-modal-textarea"
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        placeholder="Enter the reason for rejecting this request."
+                        rows={4}
+                        disabled={submittingAction}
+                        required
+                        aria-required="true"
+                      />
+                      <span className="rrl-modal-help">
+                        A reason is required before DRRMO can reject this request.
+                      </span>
+                    </div>
+                  ) : null}
+
+                  <div className="rrl-modal-actions">
+                    <button
+                      type="button"
+                      className="rrl-btn rrl-btn-secondary"
+                      onClick={closeConfirmation}
+                      disabled={submittingAction}
+                    >
+                      <FaUndo />
+                      Go Back
+                    </button>
+                    <button
+                      type="button"
+                      className={`rrl-btn ${
+                        confirmState.action === 'reject'
+                          ? 'rrl-btn-danger'
+                          : 'rrl-btn-primary'
+                      }`}
+                      onClick={handleConfirmAction}
+                      disabled={isConfirmationSubmitDisabled({
+                        action: confirmState.action,
+                        rejectReason,
+                        submittingAction,
+                      })}
+                    >
+                      {confirmState.action === 'reject' ? <FaTimes /> : <FaCheck />}
+                      {submittingAction ? 'Processing...' : 'Confirm'}
+                    </button>
+                  </div>
                 </div>
-              ) : null}
-
-              <div className="rrl-modal-actions">
-                <button
-                  type="button"
-                  className="rrl-btn rrl-btn-secondary"
-                  onClick={closeConfirmation}
-                  disabled={submittingAction}
-                >
-                  <FaUndo />
-                  Go Back
-                </button>
-                <button
-                  type="button"
-                  className={`rrl-btn ${
-                    confirmState.action === 'reject'
-                      ? 'rrl-btn-danger'
-                      : 'rrl-btn-primary'
-                  }`}
-                  onClick={handleConfirmAction}
-                  disabled={
-                    submittingAction ||
-                    (confirmState.action === 'reject' && !rejectReason.trim())
-                  }
-                >
-                  {confirmState.action === 'reject' ? <FaTimes /> : <FaCheck />}
-                  {submittingAction ? 'Processing...' : 'Confirm'}
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
+              </div>,
+              document.body
+            )
+          : null}
 
         {pdfPreviewUrl ? (
           <div className="rrl-pdf-modal-overlay" onClick={closePdfPreview}>
@@ -1322,19 +1537,26 @@ export default function ReliefRequestsList() {
           </div>
         ) : null}
 
-        <div className="notification-stack">
-          {notifications.map((notification) => (
-            <button
-              key={notification.id}
-              type="button"
-              className={`notification-toast ${notification.type}`}
-              onClick={() => removeNotification(notification.id)}
-            >
-              <span className="notification-icon">{getNotificationIcon(notification.type)}</span>
-              <span className="notification-text">{notification.message}</span>
-            </button>
-          ))}
-        </div>
+        {typeof document !== 'undefined'
+          ? createPortal(
+              <div className="notification-stack rrl-notification-stack">
+                {notifications.map((notification) => (
+                  <button
+                    key={notification.id}
+                    type="button"
+                    className={`notification-toast ${notification.type}`}
+                    onClick={() => removeNotification(notification.id)}
+                  >
+                    <span className="notification-icon">
+                      {getNotificationIcon(notification.type)}
+                    </span>
+                    <span className="notification-text">{notification.message}</span>
+                  </button>
+                ))}
+              </div>,
+              document.body
+            )
+          : null}
       </div>
     </DashboardShell>
   );

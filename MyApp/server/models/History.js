@@ -12,6 +12,10 @@ const historySchema = new mongoose.Schema(
       required: true,
     },
     details: String,
+    metadata: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
   },
   { timestamps: true }
 );

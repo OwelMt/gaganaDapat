@@ -1,8 +1,9 @@
 const PDFDocument = require("pdfkit");
 const ReliefRequest = require("../models/ReliefRequest");
 const ReliefRelease = require("../models/ReliefRelease");
+const { callAiAnalyticsProvider } = require("../utils/aiAnalyticsProvider");
 
-const AI_CACHE_MS = 6 * 60 * 60 * 1000;
+const AI_CACHE_MS = Number(process.env.AI_CACHE_MS || 2 * 60 * 60 * 1000);
 let reliefAiCache = null;
 let reliefAiCacheTime = 0;
 
@@ -77,6 +78,14 @@ const formatLabel = (value) => {
   return text
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const getAiSourceLabel = (ai) => {
+  const source = normalizeLower(ai?.source);
+  if (!ai?.aiAvailable || source === "rule_based_fallback") return "Rule-based Fallback";
+  if (source === "bedrock") return "AWS Bedrock";
+  if (source === "gemini") return "Gemini AI";
+  return `${formatLabel(source || "AI")} AI`;
 };
 
 const formatWhole = (value) => {
@@ -624,131 +633,6 @@ const buildRuleBasedAi = (snapshot, fallbackReason = "") => {
   };
 };
 
-const parseGeminiJson = (rawText = "") => {
-  try {
-    if (!rawText) return null;
-
-    let cleaned = String(rawText)
-      .trim()
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .trim();
-
-    const start = cleaned.indexOf("{");
-    const end = cleaned.lastIndexOf("}");
-
-    if (start >= 0 && end > start) {
-      cleaned = cleaned.slice(start, end + 1);
-    }
-
-    cleaned = cleaned.replace(/,\s*([}\]])/g, "$1");
-
-    return JSON.parse(cleaned);
-  } catch (err) {
-    console.error("Relief Gemini JSON Parse Error:", err);
-    return null;
-  }
-};
-
-const callGeminiForReliefInsights = async (facts) => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
-
-  const { GoogleGenerativeAI } = require("@google/generative-ai");
-
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const modelName = process.env.GEMINI_MODEL || "gemini-1.5-flash";
-
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-      temperature: 0.15,
-      topP: 0.8,
-      maxOutputTokens: 900,
-    },
-  });
-
-  const prompt = `
-Return ONLY valid minified JSON. No markdown. No explanation. No code fences.
-
-You are an AI analytics assistant for a DRRMO disaster relief management system.
-Analyze only the provided relief request and release facts. Do not invent records.
-
-JSON shape:
-{"overallSeverity":"success|info|notice|warning|critical","executiveSummary":"1 to 3 short sentences","priorityActions":["action 1","action 2","action 3"],"insights":[{"type":"short_snake_case","severity":"success|info|notice|warning|critical","title":"short title","message":"short data-based explanation","action":"specific recommended action"}]}
-
-Rules:
-- Make 3 to 5 insights only.
-- Keep messages short.
-- Mention urgent barangays, approved-but-unreleased requests, pending receipts, food pack gaps, high demand, template usage, or rejection patterns only when supported by facts.
-- Treat partially_released as legacy/old workflow data because current operation expects complete releases.
-- Do not recommend partial releases.
-
-Facts:
-${JSON.stringify(facts)}
-`;
-
-  const result = await model.generateContent(prompt);
-  const text = result?.response?.text?.() || "";
-  const parsed = parseGeminiJson(text);
-
-  if (!parsed || !Array.isArray(parsed.insights)) return null;
-
-  const allowedSeverities = ["success", "info", "notice", "warning", "critical"];
-
-  const safeInsights = parsed.insights
-    .filter((item) => item && typeof item === "object")
-    .slice(0, 5)
-    .map((item, index) => {
-      const severity = allowedSeverities.includes(item.severity) ? item.severity : "info";
-
-      return {
-        type: normalizeString(item.type) || `ai_insight_${index + 1}`,
-        severity,
-        title: normalizeString(item.title) || "AI insight",
-        message:
-          normalizeString(item.message) ||
-          "The AI found an operational pattern in current relief records.",
-        action:
-          normalizeString(item.action) ||
-          "Review this area before making operational decisions.",
-      };
-    });
-
-  if (!safeInsights.length) return null;
-
-  const severityRank = {
-    critical: 4,
-    warning: 3,
-    notice: 2,
-    info: 1,
-    success: 0,
-  };
-
-  const overallSeverity = allowedSeverities.includes(parsed.overallSeverity)
-    ? parsed.overallSeverity
-    : safeInsights.reduce((highest, insight) => {
-        return severityRank[insight.severity] > severityRank[highest]
-          ? insight.severity
-          : highest;
-      }, "success");
-
-  return {
-    source: "gemini",
-    model: modelName,
-    aiAvailable: true,
-    overallSeverity,
-    executiveSummary:
-      normalizeString(parsed.executiveSummary) ||
-      "AI reviewed the current relief request and release records.",
-    priorityActions: Array.isArray(parsed.priorityActions)
-      ? parsed.priorityActions.map((item) => normalizeString(item)).filter(Boolean).slice(0, 5)
-      : safeInsights.slice(0, 4).map((item) => item.action),
-    insights: safeInsights,
-    cacheHit: false,
-  };
-};
-
 const getReliefAnalyticsOverview = async (req, res) => {
   try {
     const snapshot = await buildAnalyticsSnapshot();
@@ -866,47 +750,32 @@ const getReliefAiInsights = async (req, res) => {
       highDemandRequests: snapshot.highDemandRequests.slice(0, 5),
     };
 
-    let aiResult = null;
-    let fallbackReason = "";
+    const prompt = `
+Return ONLY valid minified JSON. No markdown. No explanation. No code fences.
 
-    try {
-      aiResult = await callGeminiForReliefInsights(facts);
-    } catch (geminiError) {
-      console.error("Gemini Relief AI Error:", geminiError);
+You are an AI analytics assistant for a DRRMO disaster relief management system.
+Analyze only the provided relief request and release facts. Do not invent records.
 
-      if (geminiError?.status === 429) {
-        fallbackReason =
-          "Gemini free quota was reached. Showing locally generated relief intelligence instead.";
-      } else {
-        fallbackReason =
-          "Gemini was unavailable. Showing locally generated relief intelligence instead.";
-      }
-    }
+JSON shape:
+{"overallSeverity":"success|info|notice|warning|critical","executiveSummary":"1 to 3 short sentences","priorityActions":["action 1","action 2","action 3"],"insights":[{"type":"short_snake_case","severity":"success|info|notice|warning|critical","title":"short title","message":"short data-based explanation","action":"specific recommended action"}]}
 
-    const finalPayload = aiResult
-      ? {
-          ...fallback,
-          source: aiResult.source,
-          model: aiResult.model,
-          aiAvailable: true,
-          overallSeverity: aiResult.overallSeverity,
-          executiveSummary: aiResult.executiveSummary,
-          priorityActions: aiResult.priorityActions,
-          insights: aiResult.insights,
-          fallbackReason: "",
-          cacheHit: false,
-        }
-      : {
-          ...fallback,
-          aiAvailable: false,
-          fallbackReason:
-            fallbackReason ||
-            (process.env.GEMINI_API_KEY
-              ? "Gemini did not return a valid response, so rule-based fallback was used."
-              : "GEMINI_API_KEY is missing, so rule-based fallback was used."),
-          executiveSummary: fallbackReason || fallback.executiveSummary,
-          cacheHit: false,
-        };
+Rules:
+- Make 3 to 5 insights only.
+- Keep messages short and dashboard-friendly.
+- Mention approved requests waiting for release, pending barangay receipt, food pack gaps, high-demand barangays, template usage, and rejected request patterns only when supported by facts.
+- Treat legacy partially_released data as old workflow information only.
+- Do not recommend partial releases.
+- Do not invent barangays, requests, releases, or totals.
+
+Facts:
+${JSON.stringify(facts)}
+`;
+
+    const finalPayload = await callAiAnalyticsProvider({
+      controllerLabel: "Relief Analytics",
+      prompt,
+      fallback,
+    });
 
     reliefAiCache = finalPayload;
     reliefAiCacheTime = Date.now();
@@ -1377,7 +1246,7 @@ const exportReliefAnalyticsPdf = async (req, res) => {
 
     drawPdfInfoCard(
       doc,
-      `${ai.aiAvailable ? "Gemini AI" : "Rule-based Fallback"} • ${severityTheme.label}`,
+      `${getAiSourceLabel(ai)} • ${severityTheme.label}`,
       ai.executiveSummary || "No AI summary available.",
       {
         tone:

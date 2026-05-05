@@ -1,8 +1,10 @@
+import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import {
   FaCheck,
+  FaMinus,
   FaExclamationTriangle,
   FaFileImport,
   FaFilePdf,
@@ -12,6 +14,28 @@ import {
   FaTimes
 } from 'react-icons/fa';
 import DashboardShell from '../layout/DashboardShell';
+import {
+  SUPPORT_TYPE_APPLIANCE,
+  SUPPORT_TYPE_FOODPACKS,
+  SUPPORT_TYPE_MONETARY,
+  SUPPORT_TYPE_OPTIONS,
+  deriveLegacyRequestType,
+  getSupportTypesFromRequest,
+  getSupportTypeLabel,
+  hasSupportType,
+  normalizeSupportTypes
+} from './supportTypes';
+import {
+  RELIEF_IMPORT_HEADER_ALIASES,
+  buildImportSummaryText,
+  deriveImportedSupportTypes,
+  normalizeImportedRequestType,
+  shouldShowConfirmReceivedAction
+} from './reliefImportUtils';
+import {
+  mapSpreadsheetRow,
+  parseSafeNumber
+} from '../shared/spreadsheetImportUtils';
 import '../css/ReliefRequestForm.css';
 
 const BASE_URL =
@@ -30,46 +54,12 @@ const numberFields = [
 ];
 
 const STAGE_STEPS = [
-  { key: 'prepare', label: 'Prepare' },
-  { key: 'review', label: 'For Review' },
-  { key: 'approved', label: 'Approved' },
-  { key: 'to_receive', label: 'Receive Goods' },
-  { key: 'received', label: 'Received' }
+  { key: 'prepare', label: 'Prepare', hint: 'Set request details' },
+  { key: 'review', label: 'For Review', hint: 'Waiting for DRRMO' },
+  { key: 'approved', label: 'Approved', hint: 'Ready for release' },
+  { key: 'to_receive', label: 'Receive Goods', hint: 'Release in progress' },
+  { key: 'received', label: 'Received', hint: 'Confirmation complete' }
 ];
-
-const IMPORT_HEADER_ALIASES = {
-  evacuationCenterName: [
-    'evacuationcentername',
-    'evacuation center name',
-    'evacuation center',
-    'evacuationcenter',
-    'centername',
-    'center name',
-    'evacuation site',
-    'evacuationsite',
-    'evac name',
-    'name'
-  ],
-  households: ['households', 'household'],
-  families: ['families', 'family'],
-  male: ['male', 'males'],
-  female: ['female', 'females'],
-  lgbtq: ['lgbtq', 'lgbt', 'lgbtqia', 'lgbtqia+'],
-  pwd: ['pwd', 'pwds', 'personswithdisability', 'personwithdisability'],
-  pregnant: ['pregnant', 'pregnantwomen', 'pregnant woman', 'pregnant women'],
-  senior: ['senior', 'seniors', 'seniorcitizen', 'senior citizen', 'seniorcitizens'],
-  requestedFoodPacks: [
-    'requestedfoodpacks',
-    'requested food packs',
-    'foodpacks',
-    'food packs',
-    'requestedpacks',
-    'packsrequested',
-    'packs'
-  ],
-  rowRemarks: ['rowremarks', 'row remarks', 'remarks', 'notes', 'comment', 'comments']
-};
-
 const createPreparedRow = (row = {}) => ({
   evacPlaceId: row.evacPlaceId || row._id || '',
   evacuationCenterName: String(row.evacuationCenterName || row.name || '').trim(),
@@ -135,6 +125,59 @@ const normalizeValue = (value) =>
     .trim()
     .toLowerCase();
 
+const sanitizeInlineText = (value, { maxLength = 240, multiline = false } = {}) => {
+  const raw = String(value || '').replace(/[<>]/g, '');
+  const normalized = multiline
+    ? raw
+        .replace(/\r/g, '')
+        .replace(/[ \t]+/g, ' ')
+        .replace(/\n{3,}/g, '\n\n')
+    : raw.replace(/\s+/g, ' ');
+
+  return normalized.slice(0, maxLength);
+};
+
+const sanitizeCurrencyInput = (value) => {
+  const raw = String(value ?? '').replace(/[^\d.]/g, '');
+  if (!raw) return '';
+
+  const [whole, ...fractionParts] = raw.split('.');
+  const normalizedWhole = whole.replace(/^0+(?=\d)/, '') || '0';
+  const normalizedFraction = fractionParts.join('').slice(0, 2);
+
+  return normalizedFraction ? `${normalizedWhole}.${normalizedFraction}` : normalizedWhole;
+};
+
+const sanitizeWholeNumberInput = (value) => {
+  const raw = String(value ?? '').replace(/[^\d]/g, '');
+  return raw.replace(/^0+(?=\d)/, '') || (raw ? '0' : '');
+};
+
+const createRequestedAppliance = (item = {}) => ({
+  itemName: sanitizeInlineText(item.itemName || '', { maxLength: 120 }),
+  category: sanitizeInlineText(item.category || '', { maxLength: 80 }),
+  quantityRequested: String(item.quantityRequested ?? '').trim(),
+  remarks: sanitizeInlineText(item.remarks || '', {
+    maxLength: 180,
+    multiline: true
+  })
+});
+
+const hasRequestedApplianceContent = (item = {}) =>
+  Boolean(
+    String(item.itemName || '').trim() ||
+      String(item.category || '').trim() ||
+      parseSafeNumber(item.quantityRequested) > 0 ||
+      String(item.remarks || '').trim()
+  );
+
+const hasCompleteRequestedAppliance = (item = {}) =>
+  Boolean(
+    String(item.itemName || '').trim() &&
+      String(item.category || '').trim() &&
+      parseSafeNumber(item.quantityRequested) > 0
+  );
+
 const normalizeStatus = (value) =>
   String(value || '')
     .trim()
@@ -167,35 +210,11 @@ const getStageMeta = (stage) => {
   }
 };
 
-const parseSafeNumber = (value) => {
-  if (value === null || value === undefined || value === '') return 0;
-  const parsed = Number(value);
-  return Number.isNaN(parsed) ? 0 : Math.max(0, parsed);
-};
-
-const normalizeHeader = (value) =>
-  String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/[^a-z0-9 ]/g, '');
-
-const resolveHeaderKey = (rawHeader) => {
-  const normalized = normalizeHeader(rawHeader);
-  const entries = Object.entries(IMPORT_HEADER_ALIASES);
-
-  for (const [field, aliases] of entries) {
-    if (aliases.includes(normalized)) return field;
-  }
-
-  return '';
-};
-
-const buildImportSummaryText = (summary) => {
-  if (!summary) return '';
-  return `${summary.totalRows} row${summary.totalRows === 1 ? '' : 's'} imported - ${summary.matchedRows} matched - ${summary.unmatchedRows} unmatched`;
-};
+const formatMoney = (value) =>
+  Number(value || 0).toLocaleString('en-PH', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  });
 
 const serializeRowsForCompare = (rows = []) =>
   rows.map((row) => ({
@@ -231,6 +250,11 @@ export default function ReliefRequestForm() {
   const [requestId, setRequestId] = useState('');
   const [requestNo, setRequestNo] = useState('Auto-generated');
   const [disaster, setDisaster] = useState('');
+  const [supportTypes, setSupportTypes] = useState([SUPPORT_TYPE_FOODPACKS]);
+  const [requestedMonetaryAmount, setRequestedMonetaryAmount] = useState('');
+  const [requestedAppliances, setRequestedAppliances] = useState([
+    createRequestedAppliance()
+  ]);
   const [requestDate, setRequestDate] = useState(
     new Date().toISOString().slice(0, 10)
   );
@@ -401,6 +425,17 @@ export default function ReliefRequestForm() {
           setRequestId(editingRequest._id || '');
           setRequestNo(editingRequest.requestNo || 'Auto-generated');
           setDisaster(editingRequest.disaster || '');
+          setSupportTypes(getSupportTypesFromRequest(editingRequest));
+          setRequestedMonetaryAmount(
+            String(editingRequest?.totals?.requestedMonetaryAmount || '')
+          );
+          setRequestedAppliances(
+            (Array.isArray(editingRequest?.requestedAppliances) &&
+            editingRequest.requestedAppliances.length
+              ? editingRequest.requestedAppliances
+              : [createRequestedAppliance()]
+            ).map((item) => createRequestedAppliance(item))
+          );
           setRequestDate(
             editingRequest.requestDate
               ? new Date(editingRequest.requestDate).toISOString().slice(0, 10)
@@ -430,6 +465,17 @@ export default function ReliefRequestForm() {
           setRequestId(sanitizedJourney.request._id || '');
           setRequestNo(sanitizedJourney.request.requestNo || 'Auto-generated');
           setDisaster(sanitizedJourney.request.disaster || '');
+          setSupportTypes(getSupportTypesFromRequest(sanitizedJourney.request));
+          setRequestedMonetaryAmount(
+            String(sanitizedJourney.request?.totals?.requestedMonetaryAmount || '')
+          );
+          setRequestedAppliances(
+            (Array.isArray(sanitizedJourney.request?.requestedAppliances) &&
+            sanitizedJourney.request.requestedAppliances.length
+              ? sanitizedJourney.request.requestedAppliances
+              : [createRequestedAppliance()]
+            ).map((item) => createRequestedAppliance(item))
+          );
           setRequestDate(
             sanitizedJourney.request.requestDate
               ? new Date(sanitizedJourney.request.requestDate).toISOString().slice(0, 10)
@@ -452,6 +498,9 @@ export default function ReliefRequestForm() {
         setRequestId('');
         setRequestNo('Auto-generated');
         setDisaster('');
+        setSupportTypes([SUPPORT_TYPE_FOODPACKS]);
+        setRequestedMonetaryAmount('');
+        setRequestedAppliances([createRequestedAppliance()]);
         setRequestDate(new Date().toISOString().slice(0, 10));
         setRemarks('');
         setRows(resolvedBootstrapRows);
@@ -507,12 +556,6 @@ export default function ReliefRequestForm() {
     return journey.request;
   }, [journey.request]);
 
-  const stageMeta = useMemo(() => {
-    if (editMode || showEditor) return getStageMeta('preparation');
-    if (!latestRequest) return getStageMeta('preparation');
-    return getStageMeta(journey.stage);
-  }, [editMode, showEditor, latestRequest, journey.stage]);
-
   const preparedRows = useMemo(() => rows.map((row) => createPreparedRow(row)), [rows]);
 
   const activeRows = useMemo(
@@ -548,6 +591,78 @@ export default function ReliefRequestForm() {
         0
     );
   }, [activeRequestRowsForDisplay, latestRequest, journey.summary]);
+
+  const displayRequestedMonetaryAmount = useMemo(() => {
+    return Number(
+      latestRequest?.totals?.requestedMonetaryAmount ||
+        journey.summary?.requestedMonetaryAmount ||
+        0
+    );
+  }, [latestRequest, journey.summary]);
+
+  const requestedApplianceQuantity = useMemo(
+    () =>
+      requestedAppliances.reduce(
+        (sum, item) => sum + parseSafeNumber(item.quantityRequested),
+        0
+      ),
+    [requestedAppliances]
+  );
+
+  const displayRequestedApplianceQuantity = useMemo(() => {
+    const requestItems = Array.isArray(latestRequest?.requestedAppliances)
+      ? latestRequest.requestedAppliances
+      : [];
+
+    const latestTotal = requestItems.reduce(
+      (sum, item) => sum + parseSafeNumber(item.quantityRequested),
+      0
+    );
+
+    return Number(
+      latestRequest?.totals?.requestedApplianceQuantity ||
+        latestRequest?.summary?.requestedApplianceQuantity ||
+        journey.summary?.requestedApplianceQuantity ||
+        latestTotal ||
+        0
+    );
+  }, [latestRequest, journey.summary]);
+
+  const requestType = useMemo(
+    () => deriveLegacyRequestType(supportTypes),
+    [supportTypes]
+  );
+
+  const displaySupportTypes = useMemo(
+    () =>
+      latestRequest
+        ? getSupportTypesFromRequest(latestRequest)
+        : supportTypes,
+    [latestRequest, supportTypes]
+  );
+
+  const displaySupportTypeLabel = useMemo(
+    () => getSupportTypeLabel(displaySupportTypes),
+    [displaySupportTypes]
+  );
+
+  const currentSupportTypeLabel = useMemo(
+    () => getSupportTypeLabel(supportTypes),
+    [supportTypes]
+  );
+
+  const displayIncludesFoodPacks = hasSupportType(
+    displaySupportTypes,
+    SUPPORT_TYPE_FOODPACKS
+  );
+  const displayIncludesMonetary = hasSupportType(
+    displaySupportTypes,
+    SUPPORT_TYPE_MONETARY
+  );
+  const displayIncludesAppliance = hasSupportType(
+    displaySupportTypes,
+    SUPPORT_TYPE_APPLIANCE
+  );
 
   const displayTotalAffected = useMemo(() => {
     const rowTotal = activeRequestRowsForDisplay.reduce(
@@ -639,6 +754,10 @@ export default function ReliefRequestForm() {
     );
   }, [activeRows]);
 
+  const includesFoodPacks = hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS);
+  const includesMonetary = hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY);
+  const includesAppliance = hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE);
+
   const totalIndividuals = useMemo(() => {
     return (
       totals.male +
@@ -671,10 +790,102 @@ export default function ReliefRequestForm() {
     });
   }, [preparedRows]);
 
+  const requestedMonetaryValue = useMemo(
+    () => parseSafeNumber(requestedMonetaryAmount),
+    [requestedMonetaryAmount]
+  );
+
+  const normalizedRequestedAppliances = useMemo(
+    () => requestedAppliances.map((item) => createRequestedAppliance(item)),
+    [requestedAppliances]
+  );
+
+  const validRequestedAppliances = useMemo(
+    () =>
+      normalizedRequestedAppliances.filter(
+        (item) =>
+          item.itemName.trim() &&
+          item.category.trim() &&
+          parseSafeNumber(item.quantityRequested) > 0
+      ),
+    [normalizedRequestedAppliances]
+  );
+
+  const inlineErrors = useMemo(() => {
+    const errors = {};
+
+    if (!supportTypes.length) {
+      errors.supportTypes = 'Select at least one support type.';
+    }
+
+    if (!sanitizeInlineText(disaster, { maxLength: 160 }).trim()) {
+      errors.disaster = 'Disaster or incident is required.';
+    }
+
+    if (includesMonetary && requestedMonetaryValue <= 0) {
+      errors.requestedMonetaryAmount = 'Enter a valid monetary amount.';
+    }
+
+    if (includesMonetary && !sanitizeInlineText(remarks, { maxLength: 800, multiline: true }).trim()) {
+      errors.remarks = 'Remarks are required when monetary support is included.';
+    }
+
+    if (includesFoodPacks && Number(totals.requestedFoodPacks || 0) <= 0) {
+      errors.requestedFoodPacks = 'Add requested food packs in at least one active row.';
+    }
+
+    if (includesAppliance) {
+      if (!normalizedRequestedAppliances.length) {
+        errors.requestedAppliances = 'Add at least one appliance request item.';
+      } else {
+        const hasAnyStartedRow = normalizedRequestedAppliances.some(
+          (item) =>
+            item.itemName.trim() ||
+            item.category.trim() ||
+            String(item.quantityRequested || '').trim() ||
+            item.remarks.trim()
+        );
+
+        if (!hasAnyStartedRow) {
+          errors.requestedAppliances = 'Add at least one appliance request item.';
+        } else if (validRequestedAppliances.length !== normalizedRequestedAppliances.length) {
+          errors.requestedAppliances =
+            'Complete each appliance row with item name, category, and quantity.';
+        }
+      }
+    }
+
+    return errors;
+  }, [
+    supportTypes,
+    disaster,
+    includesMonetary,
+    requestedMonetaryValue,
+    remarks,
+    includesFoodPacks,
+    totals.requestedFoodPacks,
+    includesAppliance,
+    normalizedRequestedAppliances,
+    validRequestedAppliances.length
+  ]);
+
+  const hasInvalidDemand = useMemo(() => {
+    return Object.keys(inlineErrors).length > 0;
+  }, [inlineErrors]);
+
   const baselineSource = useMemo(() => {
     if (editMode && editingRequest) {
       return {
         disaster: editingRequest.disaster || '',
+        supportTypes: getSupportTypesFromRequest(editingRequest),
+        requestedMonetaryAmount: String(
+          editingRequest?.totals?.requestedMonetaryAmount || ''
+        ),
+        requestedAppliances: (Array.isArray(editingRequest?.requestedAppliances) &&
+        editingRequest.requestedAppliances.length
+          ? editingRequest.requestedAppliances
+          : [createRequestedAppliance()]
+        ).map((item) => createRequestedAppliance(item)),
         requestDate: editingRequest.requestDate
           ? new Date(editingRequest.requestDate).toISOString().slice(0, 10)
           : new Date().toISOString().slice(0, 10),
@@ -691,6 +902,15 @@ export default function ReliefRequestForm() {
     ) {
       return {
         disaster: journey.request.disaster || '',
+        supportTypes: getSupportTypesFromRequest(journey.request),
+        requestedMonetaryAmount: String(
+          journey.request?.totals?.requestedMonetaryAmount || ''
+        ),
+        requestedAppliances: (Array.isArray(journey.request?.requestedAppliances) &&
+        journey.request.requestedAppliances.length
+          ? journey.request.requestedAppliances
+          : [createRequestedAppliance()]
+        ).map((item) => createRequestedAppliance(item)),
         requestDate: journey.request.requestDate
           ? new Date(journey.request.requestDate).toISOString().slice(0, 10)
           : new Date().toISOString().slice(0, 10),
@@ -701,6 +921,9 @@ export default function ReliefRequestForm() {
 
     return {
       disaster: '',
+      supportTypes: [SUPPORT_TYPE_FOODPACKS],
+      requestedMonetaryAmount: '',
+      requestedAppliances: [createRequestedAppliance()],
       requestDate: new Date().toISOString().slice(0, 10),
       remarks: '',
       rows: bootstrapRows.map((row) => createPreparedRow(row))
@@ -716,21 +939,47 @@ export default function ReliefRequestForm() {
 
   const isDirty = useMemo(() => {
     const current = JSON.stringify({
-      disaster: disaster.trim(),
+      disaster: sanitizeInlineText(disaster, { maxLength: 160 }).trim(),
+      supportTypes: normalizeSupportTypes(supportTypes),
+      requestedMonetaryAmount: String(requestedMonetaryAmount || ''),
+      requestedAppliances: requestedAppliances.map((item) =>
+        createRequestedAppliance(item)
+      ),
       requestDate,
-      remarks: remarks.trim(),
+      remarks: sanitizeInlineText(remarks, { maxLength: 800, multiline: true }).trim(),
       rows: serializeRowsForCompare(preparedRows)
     });
 
     const baseline = JSON.stringify({
-      disaster: String(baselineSource.disaster || '').trim(),
+      disaster: sanitizeInlineText(baselineSource.disaster || '', {
+        maxLength: 160
+      }).trim(),
+      supportTypes: normalizeSupportTypes(baselineSource.supportTypes),
+      requestedMonetaryAmount: String(
+        baselineSource.requestedMonetaryAmount || ''
+      ),
+      requestedAppliances: (baselineSource.requestedAppliances || []).map((item) =>
+        createRequestedAppliance(item)
+      ),
       requestDate: baselineSource.requestDate,
-      remarks: String(baselineSource.remarks || '').trim(),
+      remarks: sanitizeInlineText(baselineSource.remarks || '', {
+        maxLength: 800,
+        multiline: true
+      }).trim(),
       rows: serializeRowsForCompare(baselineSource.rows || [])
     });
 
     return current !== baseline;
-  }, [disaster, requestDate, remarks, preparedRows, baselineSource]);
+  }, [
+    disaster,
+    supportTypes,
+    requestedMonetaryAmount,
+    requestedAppliances,
+    requestDate,
+    remarks,
+    preparedRows,
+    baselineSource
+  ]);
 
   const isEditingExisting = Boolean(editMode || requestId);
   const isSubmitDisabled =
@@ -741,7 +990,36 @@ export default function ReliefRequestForm() {
     !requestDate ||
     !preparedRows.length ||
     hasInvalidRows ||
+    hasInvalidDemand ||
     (isEditingExisting && !isDirty);
+
+  const hasCompletedReceiptState = useMemo(() => {
+    const normalizedStage = normalizeStatus(journey?.stage);
+    const normalizedRequestStatus = normalizeStatus(latestRequest?.status);
+
+    return (
+      Number(journey.summary?.receivedReleases || 0) > 0 ||
+      Boolean(journey.summary?.receivedAt || latestRequest?.receivedAt) ||
+      normalizedStage === 'completed' ||
+      normalizedRequestStatus === 'received' ||
+      normalizedRequestStatus === 'completed'
+    );
+  }, [
+    journey?.stage,
+    journey.summary?.receivedReleases,
+    journey.summary?.receivedAt,
+    latestRequest?.status,
+    latestRequest?.receivedAt
+  ]);
+
+  const stageMeta = useMemo(() => {
+    if (editMode || showEditor) return getStageMeta('preparation');
+    if (!latestRequest) return getStageMeta('preparation');
+    if (hasCompletedReceiptState) {
+      return getStageMeta('completed');
+    }
+    return getStageMeta(journey.stage);
+  }, [editMode, showEditor, latestRequest, hasCompletedReceiptState, journey.stage]);
 
   const requestStatusLabel = useMemo(() => {
     const normalizedStage = normalizeStatus(journey?.stage);
@@ -793,56 +1071,10 @@ export default function ReliefRequestForm() {
     return stageMeta.label || 'Prepare';
   }, [journey?.stage, latestRequest?.status, stageMeta.label]);
 
-  const receiptMeta = useMemo(() => {
-    const receivedAt = journey.summary?.receivedAt || latestRequest?.receivedAt;
-    const releasedPacks = Number(journey.summary?.releasedFoodPacks || 0);
-    const receivedPacks = Number(journey.summary?.receivedFoodPacks || 0);
-    const normalizedStage = normalizeStatus(journey?.stage);
-
-    if (receivedAt) {
-      return {
-        label: 'Received Date',
-        value: formatDateTime(receivedAt),
-        tone: 'completed'
-      };
-    }
-
-    if (
-      normalizedStage === 'released_waiting_receipt' ||
-      normalizedStage === 'partially_released' ||
-      releasedPacks > receivedPacks
-    ) {
-      return {
-        label: 'Receipt',
-        value: 'Awaiting confirmation',
-        tone: 'released'
-      };
-    }
-
-    if (normalizedStage === 'rejected') {
-      return {
-        label: 'Receipt',
-        value: 'Request was rejected',
-        tone: 'rejected'
-      };
-    }
-
-    return {
-      label: 'Receipt',
-      value: 'Not yet released',
-      tone: 'draft'
-    };
-  }, [
-    journey?.stage,
-    journey.summary?.receivedAt,
-    journey.summary?.releasedFoodPacks,
-    journey.summary?.receivedFoodPacks,
-    latestRequest?.receivedAt
-  ]);
-
   const canShowRequestAgainButton = useMemo(() => {
     if (journey.canRequestAgain) return true;
     if (!latestRequest) return true;
+    if (hasCompletedReceiptState) return true;
 
     const normalizedStatus = normalizeStatus(latestRequest?.status);
     const normalizedStage = normalizeStatus(journey?.stage);
@@ -851,11 +1083,11 @@ export default function ReliefRequestForm() {
       ['completed', 'received', 'rejected', 'cancelled', 'canceled'].includes(
         normalizedStatus
       ) ||
-      ['completed', 'received', 'rejected', 'cancelled', 'canceled'].includes(
-        normalizedStage
-      )
-    );
-  }, [journey.canRequestAgain, journey.stage, latestRequest]);
+        ['completed', 'received', 'rejected', 'cancelled', 'canceled'].includes(
+          normalizedStage
+        )
+      );
+    }, [journey.canRequestAgain, journey.stage, latestRequest, hasCompletedReceiptState]);
 
   const decisionRemarks = useMemo(() => {
     return (
@@ -925,11 +1157,51 @@ export default function ReliefRequestForm() {
     });
   }, [releaseRecords]);
 
+  const pendingReleaseRecords = useMemo(() => {
+    return releaseRecords.filter((release) => {
+      const status = normalizeStatus(
+        release?.status ||
+          release?.releaseStatus ||
+          release?.receiveStatus ||
+          release?.receiptStatus ||
+          release?.acknowledgementStatus
+      );
+
+      return status !== 'received' && status !== 'completed' && status !== 'cancelled';
+    });
+  }, [releaseRecords]);
+
+  const hasReceiptCompletionSignal = useMemo(() => {
+    const normalizedStage = normalizeStatus(journey?.stage);
+    const normalizedStatus = normalizeStatus(latestRequest?.status);
+
+    return (
+      receivedReleaseRecords.length > 0 ||
+      Number(journey.summary?.receivedReleases || 0) > 0 ||
+      Boolean(journey.summary?.receivedAt || latestRequest?.receivedAt) ||
+      normalizedStage === 'completed' ||
+      normalizedStatus === 'received' ||
+      normalizedStatus === 'completed'
+    );
+  }, [
+    receivedReleaseRecords.length,
+    journey?.stage,
+    journey.summary?.receivedReleases,
+    journey.summary?.receivedAt,
+    latestRequest?.status,
+    latestRequest?.receivedAt
+  ]);
+
   const receivedItems = useMemo(() => {
+    const hasReceiptEvidence =
+      receivedReleaseRecords.length > 0 ||
+      Number(journey.summary?.receivedReleases || 0) > 0 ||
+      Boolean(journey.summary?.receivedAt || latestRequest?.receivedAt);
+
     const sourceRecords =
       receivedReleaseRecords.length > 0
         ? receivedReleaseRecords
-        : normalizeStatus(journey?.stage) === 'completed'
+        : hasReceiptEvidence || normalizeStatus(journey?.stage) === 'completed'
           ? releaseRecords
           : [];
 
@@ -973,7 +1245,55 @@ export default function ReliefRequestForm() {
         };
       });
     });
-  }, [receivedReleaseRecords, releaseRecords, journey?.stage]);
+  }, [
+    receivedReleaseRecords,
+    releaseRecords,
+    journey?.stage,
+    journey.summary?.receivedReleases,
+    journey.summary?.receivedAt,
+    latestRequest?.receivedAt
+  ]);
+
+  const releasedItems = useMemo(() => {
+    return pendingReleaseRecords.flatMap((release) => {
+      const releaseDate =
+        release?.updatedAt ||
+        release?.createdAt ||
+        release?.releasedAt ||
+        release?.dateReleased ||
+        null;
+
+      const releaseLabel = release?.releaseNo || release?.referenceNo || release?._id || '-';
+
+      return (Array.isArray(release?.items) ? release.items : []).map((item, index) => {
+        const quantity =
+          item?.quantityReleased ??
+          item?.quantityReceived ??
+          item?.quantity ??
+          item?.packsReleased ??
+          item?.packsReceived ??
+          0;
+
+        const amount =
+          item?.amountReleased ??
+          item?.amountReceived ??
+          item?.amount ??
+          0;
+
+        return {
+          key: `${releaseLabel}-${item?._id || item?.inventoryItemId || item?.itemName || index}`,
+          itemName: item?.itemName || item?.name || 'Unnamed item',
+          category: item?.category || '-',
+          unit: item?.unit || (amount ? 'PHP' : '-'),
+          quantity: Number(quantity || 0),
+          amount: Number(amount || 0),
+          remarks: item?.remarks || release?.remarks || '-',
+          releaseLabel,
+          releaseDate
+        };
+      });
+    });
+  }, [pendingReleaseRecords]);
 
   const receivedSummary = useMemo(() => {
     const sourceRecords =
@@ -1020,13 +1340,30 @@ export default function ReliefRequestForm() {
       0
     );
 
+    const releaseLevelAmount = sourceRecords.reduce((sum, release) => {
+      const amount =
+        release?.receivedMonetaryAmount ??
+        release?.releasedMonetaryAmount ??
+        release?.amountReceived ??
+        release?.amountReleased ??
+        0;
+
+      return sum + Number(amount || 0);
+    }, 0);
+
+    const totalApplianceUnits = receivedItems.reduce((sum, item) => {
+      const category = normalizeStatus(item?.category);
+      return sum + (category.includes('appliance') ? Number(item.quantity || 0) : 0);
+    }, 0);
+
     return {
       releaseCount: sourceRecords.length,
       latestReceivedAt,
       totalFoodPacks,
       itemLines: receivedItems.length,
       totalQuantity,
-      totalAmount
+      totalAmount: totalAmount || releaseLevelAmount,
+      totalApplianceUnits
     };
   }, [receivedReleaseRecords, releaseRecords, receivedItems, journey?.stage]);
 
@@ -1037,23 +1374,6 @@ export default function ReliefRequestForm() {
         0
     );
   }, [journey.summary?.receivedFoodPacks, receivedSummary.totalFoodPacks]);
-
-  const displayPendingReceipt = useMemo(() => {
-    return Math.max(
-      0,
-      Number(journey.summary?.releasedFoodPacks || displayReceivedPacks || 0) -
-        Number(displayReceivedPacks || 0)
-    );
-  }, [journey.summary?.releasedFoodPacks, displayReceivedPacks]);
-
-  const hasReceivedData = useMemo(() => {
-    return (
-      receivedSummary.releaseCount > 0 ||
-      receivedItems.length > 0 ||
-      Number(journey.summary?.receivedFoodPacks || 0) > 0 ||
-      normalizeStatus(journey?.stage) === 'completed'
-    );
-  }, [receivedSummary, receivedItems, journey.summary?.receivedFoodPacks, journey?.stage]);
 
   const shouldShowReceivedSection = useMemo(() => {
     const normalizedStage = normalizeStatus(journey?.stage);
@@ -1068,21 +1388,138 @@ export default function ReliefRequestForm() {
     );
   }, [journey?.stage, latestRequest?.status]);
 
-  const isReceiptConfirmed = useMemo(() => {
-    const normalizedStage = normalizeStatus(journey?.stage);
-    const normalizedStatus = normalizeStatus(latestRequest?.status);
+  const displayDeliveryItems = useMemo(() => {
+    const hasConfirmedReceipt =
+      receivedReleaseRecords.length > 0 ||
+      Number(journey.summary?.receivedReleases || 0) > 0 ||
+      Boolean(journey.summary?.receivedAt || latestRequest?.receivedAt) ||
+      normalizeStatus(journey?.stage) === 'completed' ||
+      normalizeStatus(latestRequest?.status) === 'received' ||
+      normalizeStatus(latestRequest?.status) === 'completed';
 
-    return (
-      normalizedStage === 'completed' ||
-      normalizedStatus === 'received' ||
-      normalizedStatus === 'completed' ||
-      Boolean(journey.summary?.receivedAt || latestRequest?.receivedAt)
-    );
+    if (!hasConfirmedReceipt && releasedItems.length > 0) {
+      return releasedItems;
+    }
+
+    if (receivedItems.length > 0) {
+      return receivedItems;
+    }
+
+    return releasedItems;
   }, [
-    journey?.stage,
+    receivedReleaseRecords.length,
+    journey.summary?.receivedReleases,
     journey.summary?.receivedAt,
+    latestRequest?.receivedAt,
+    journey?.stage,
     latestRequest?.status,
-    latestRequest?.receivedAt
+    receivedItems,
+    releasedItems
+  ]);
+
+  const isReceiptConfirmed = useMemo(() => {
+    return hasReceiptCompletionSignal;
+  }, [hasReceiptCompletionSignal]);
+
+  const canShowConfirmReceivedAction = useMemo(() => {
+    return shouldShowConfirmReceivedAction({
+      canReceiveAnyRelease: journey.canReceiveAnyRelease,
+      stage: journey.stage,
+      requestStatus: latestRequest?.status,
+      releaseRecords,
+      hasReceiptEvidence: isReceiptConfirmed
+    });
+  }, [journey.canReceiveAnyRelease, journey.stage, latestRequest?.status, releaseRecords, isReceiptConfirmed]);
+
+  useEffect(() => {
+    if (isReceiptConfirmed && formFeedback.type === 'error') {
+      clearFeedback();
+    }
+  }, [isReceiptConfirmed, formFeedback.type]);
+
+  const receiptPanelSummary = useMemo(() => {
+    const showingReleasedForConfirmation =
+      !isReceiptConfirmed &&
+      displayDeliveryItems.length > 0;
+
+    const latestActivityAt = displayDeliveryItems.reduce((latest, item) => {
+      const value = item?.releaseDate || null;
+
+      if (!value) return latest;
+      if (!latest) return value;
+
+      return new Date(value).getTime() > new Date(latest).getTime() ? value : latest;
+    }, null);
+
+    const totalFoodPacks = showingReleasedForConfirmation
+      ? displayDeliveryItems.reduce((sum, item) => {
+          const category = normalizeStatus(item?.category);
+          const isFoodPackLike =
+            category.includes('food') ||
+            category.includes('canned') ||
+            category.includes('goods');
+          return sum + (isFoodPackLike ? Number(item?.quantity || 0) : 0);
+        }, 0)
+      : displayReceivedPacks;
+
+    const totalQuantity = displayDeliveryItems.reduce(
+      (sum, item) => sum + Number(item?.quantity || 0),
+      0
+    );
+
+    const itemLevelAmount = displayDeliveryItems.reduce(
+      (sum, item) => sum + Number(item?.amount || 0),
+      0
+    );
+
+    const amountSourceRecords = showingReleasedForConfirmation
+      ? pendingReleaseRecords
+      : receivedReleaseRecords.length > 0
+        ? receivedReleaseRecords
+        : releaseRecords;
+
+    const releaseLevelAmount = amountSourceRecords.reduce((sum, release) => {
+      const amount = showingReleasedForConfirmation
+        ? release?.releasedMonetaryAmount ??
+          release?.amountReleased ??
+          0
+        : release?.receivedMonetaryAmount ??
+          release?.releasedMonetaryAmount ??
+          release?.amountReceived ??
+          release?.amountReleased ??
+          0;
+
+      return sum + Number(amount || 0);
+    }, 0);
+
+    const totalApplianceUnits = displayDeliveryItems.reduce((sum, item) => {
+      const category = normalizeStatus(item?.category);
+      return sum + (category.includes('appliance') ? Number(item?.quantity || 0) : 0);
+    }, 0);
+
+    const totalAmount = showingReleasedForConfirmation
+      ? itemLevelAmount || releaseLevelAmount
+      : receivedSummary.totalAmount || itemLevelAmount || releaseLevelAmount;
+
+    return {
+      showingReleasedForConfirmation,
+      totalFoodPacks,
+      totalQuantity,
+      totalApplianceUnits,
+      totalAmount,
+      itemLines: displayDeliveryItems.length,
+      latestActivityAt:
+        latestActivityAt || receivedSummary.latestReceivedAt || null,
+    };
+  }, [
+    displayDeliveryItems,
+    displayReceivedPacks,
+    isReceiptConfirmed,
+    pendingReleaseRecords,
+    receivedReleaseRecords,
+    releaseRecords,
+    receivedSummary.totalAmount,
+    receivedSummary.latestReceivedAt
   ]);
 
   const clearFeedback = () => {
@@ -1126,7 +1563,79 @@ export default function ReliefRequestForm() {
 
   const handleRowRemarksChange = (index, value) => {
     setRows((prev) =>
-      prev.map((row, i) => (i === index ? { ...row, rowRemarks: value } : row))
+      prev.map((row, i) =>
+        i === index
+          ? {
+              ...row,
+              rowRemarks: sanitizeInlineText(value, {
+                maxLength: 180,
+                multiline: true
+              })
+            }
+          : row
+      )
+    );
+  };
+
+  const handleSupportTypeToggle = (type) => {
+    setSupportTypes((prev) => {
+      const normalized = normalizeSupportTypes(prev);
+      const hasType = normalized.includes(type);
+      const nextTypes = hasType
+        ? normalized.filter((entry) => entry !== type)
+        : [...normalized, type];
+
+      return nextTypes.length ? normalizeSupportTypes(nextTypes) : normalized;
+    });
+
+    if (type === SUPPORT_TYPE_FOODPACKS && includesFoodPacks) {
+      setRows((prev) =>
+        prev.map((row) => ({
+          ...row,
+          requestedFoodPacks: 0
+        }))
+      );
+    }
+
+    if (type === SUPPORT_TYPE_MONETARY && includesMonetary) {
+      setRequestedMonetaryAmount('');
+    }
+
+    if (type === SUPPORT_TYPE_APPLIANCE && includesAppliance) {
+      setRequestedAppliances([createRequestedAppliance()]);
+    }
+  };
+
+  const handleRequestedApplianceChange = (index, field, value) => {
+    setRequestedAppliances((prev) =>
+      prev.map((item, i) => {
+        if (i !== index) return item;
+
+        if (field === 'quantityRequested') {
+          return {
+            ...item,
+            quantityRequested: sanitizeWholeNumberInput(value)
+          };
+        }
+
+        return {
+          ...item,
+          [field]: sanitizeInlineText(value, {
+            maxLength: field === 'remarks' ? 180 : field === 'category' ? 80 : 120,
+            multiline: field === 'remarks'
+          })
+        };
+      })
+    );
+  };
+
+  const handleAddRequestedAppliance = () => {
+    setRequestedAppliances((prev) => [...prev, createRequestedAppliance()]);
+  };
+
+  const handleRemoveRequestedAppliance = (index) => {
+    setRequestedAppliances((prev) =>
+      prev.length > 1 ? prev.filter((_, i) => i !== index) : [createRequestedAppliance()]
     );
   };
 
@@ -1178,17 +1687,40 @@ export default function ReliefRequestForm() {
 
   const handleResetForm = () => {
     clearFeedback();
-    setDisaster(baselineSource.disaster || '');
+    setDisaster(sanitizeInlineText(baselineSource.disaster || '', { maxLength: 160 }));
+    setSupportTypes(normalizeSupportTypes(baselineSource.supportTypes));
+    setRequestedMonetaryAmount(baselineSource.requestedMonetaryAmount || '');
+    setRequestedAppliances(
+      (baselineSource.requestedAppliances || [createRequestedAppliance()]).map((item) =>
+        createRequestedAppliance(item)
+      )
+    );
     setRequestDate(baselineSource.requestDate);
-    setRemarks(baselineSource.remarks || '');
+    setRemarks(
+      sanitizeInlineText(baselineSource.remarks || '', {
+        maxLength: 800,
+        multiline: true
+      })
+    );
     setRows((baselineSource.rows || []).map((row) => createPreparedRow(row)));
     resetImportState();
   };
 
   const buildPayload = () => ({
-    disaster: disaster.trim(),
+    disaster: sanitizeInlineText(disaster, { maxLength: 160 }).trim(),
+    supportTypes: normalizeSupportTypes(supportTypes),
+    requestType,
+    requestedMonetaryAmount: includesMonetary ? requestedMonetaryValue : 0,
+    requestedAppliances: includesAppliance
+      ? validRequestedAppliances.map((item) => ({
+          itemName: item.itemName.trim(),
+          category: item.category.trim(),
+          quantityRequested: parseSafeNumber(item.quantityRequested),
+          remarks: item.remarks.trim()
+        }))
+      : [],
     requestDate,
-    remarks: remarks.trim(),
+    remarks: sanitizeInlineText(remarks, { maxLength: 800, multiline: true }).trim(),
     rows: preparedRows.map((row) => ({
       evacPlaceId: row.evacPlaceId || null,
       evacuationCenterName: row.evacuationCenterName.trim(),
@@ -1203,6 +1735,8 @@ export default function ReliefRequestForm() {
       requestedFoodPacks: Number(row.requestedFoodPacks || 0),
       isActiveRow: Boolean(row.isActiveRow),
       rowRemarks: String(row.rowRemarks || '').trim()
+        ? sanitizeInlineText(row.rowRemarks, { maxLength: 180, multiline: true }).trim()
+        : ''
     })),
     entryMode: importInfo.source === 'excel_import' ? 'excel_import' : 'manual',
     rowSource:
@@ -1217,6 +1751,22 @@ export default function ReliefRequestForm() {
     if (isSubmitDisabled) {
       if (isEditingExisting && !isDirty) {
         setErrorFeedback('No changes to save.');
+        return;
+      }
+      if (includesMonetary && requestedMonetaryValue <= 0) {
+        setErrorFeedback('Enter the requested monetary amount.');
+        return;
+      }
+      if (includesMonetary && !remarks.trim()) {
+        setErrorFeedback('Remarks are required when monetary support is included.');
+        return;
+      }
+      if (includesFoodPacks && Number(totals.requestedFoodPacks || 0) <= 0) {
+        setErrorFeedback('Enter the requested food packs for this request type.');
+        return;
+      }
+      if (includesAppliance && inlineErrors.requestedAppliances) {
+        setErrorFeedback(inlineErrors.requestedAppliances);
         return;
       }
       setErrorFeedback('Please complete the request before saving.');
@@ -1321,6 +1871,9 @@ export default function ReliefRequestForm() {
         setRequestId('');
         setRequestNo('Auto-generated');
         setDisaster('');
+        setSupportTypes([SUPPORT_TYPE_FOODPACKS]);
+        setRequestedMonetaryAmount('');
+        setRequestedAppliances([createRequestedAppliance()]);
         setRequestDate(new Date().toISOString().slice(0, 10));
         setRemarks('');
         setRows(bootstrapRows.map((row) => createPreparedRow(row)));
@@ -1362,6 +1915,39 @@ export default function ReliefRequestForm() {
         );
         await loadJourneyData({ silent: true });
       }
+
+      if (confirmState.action === 'not_received') {
+        const res = await fetch(`${BASE_URL}/api/relief-requests/${latestRequest?._id}/not-received`, {
+          method: 'PUT',
+          credentials: 'include'
+        });
+
+        const contentType = res.headers.get('content-type') || '';
+        const rawText = await res.text();
+
+        let data = {};
+        if (contentType.includes('application/json')) {
+          try {
+            data = JSON.parse(rawText);
+          } catch {
+            data = {};
+          }
+        }
+
+        if (!res.ok) {
+          throw new Error(
+            data?.message ||
+              (rawText.startsWith('<!DOCTYPE') || rawText.startsWith('<html')
+                ? 'Not-received route returned HTML instead of JSON. Check the backend route or server error.'
+                : 'Failed to notify DRRMO about the missing delivery.')
+          );
+        }
+
+        setSuccessFeedback(
+          data?.message || 'DRRMO has been notified that the delivery was not received.'
+        );
+        await loadJourneyData({ silent: true });
+      }
     } catch (err) {
       console.error(err);
       setErrorFeedback(err.message || 'Action failed.');
@@ -1382,6 +1968,9 @@ export default function ReliefRequestForm() {
       setRequestId('');
       setRequestNo('Auto-generated');
       setDisaster('');
+      setSupportTypes([SUPPORT_TYPE_FOODPACKS]);
+      setRequestedMonetaryAmount('');
+      setRequestedAppliances([createRequestedAppliance()]);
       setRequestDate(new Date().toISOString().slice(0, 10));
       setRemarks('');
       resetImportState();
@@ -1407,6 +1996,17 @@ export default function ReliefRequestForm() {
     setRequestId(latestRequest._id || '');
     setRequestNo(latestRequest.requestNo || 'Auto-generated');
     setDisaster(latestRequest.disaster || '');
+      setSupportTypes(getSupportTypesFromRequest(latestRequest));
+    setRequestedMonetaryAmount(
+      String(latestRequest?.totals?.requestedMonetaryAmount || '')
+    );
+    setRequestedAppliances(
+      (Array.isArray(latestRequest?.requestedAppliances) &&
+      latestRequest.requestedAppliances.length
+        ? latestRequest.requestedAppliances
+        : [createRequestedAppliance()]
+      ).map((item) => createRequestedAppliance(item))
+    );
     setRequestDate(
       latestRequest.requestDate
         ? new Date(latestRequest.requestDate).toISOString().slice(0, 10)
@@ -1462,19 +2062,46 @@ export default function ReliefRequestForm() {
       }
 
       const mappedRows = [];
+      const importedAppliances = [];
       const issues = [];
       let matchedRows = 0;
       let unmatchedRows = 0;
+      let importedRequestType = '';
+      let importedMonetaryAmount = null;
 
       rawRows.forEach((rawRow, index) => {
-        const mapped = {};
+        const mapped = mapSpreadsheetRow(rawRow, RELIEF_IMPORT_HEADER_ALIASES);
 
-        Object.keys(rawRow || {}).forEach((header) => {
-          const resolvedKey = resolveHeaderKey(header);
-          if (resolvedKey) {
-            mapped[resolvedKey] = rawRow[header];
+        if (!importedRequestType && mapped.requestType) {
+          importedRequestType = normalizeImportedRequestType(mapped.requestType);
+          if (!importedRequestType) {
+            issues.push(
+              `Row ${index + 2}: Unrecognized support type "${mapped.requestType}".`
+            );
           }
+        }
+
+        const rowMonetaryAmount = parseSafeNumber(mapped.requestedMonetaryAmount);
+        if (rowMonetaryAmount > 0) {
+          importedMonetaryAmount = Math.max(importedMonetaryAmount || 0, rowMonetaryAmount);
+        }
+
+        const importedAppliance = createRequestedAppliance({
+          itemName: mapped.applianceItemName,
+          category: mapped.applianceCategory,
+          quantityRequested: parseSafeNumber(mapped.requestedApplianceQuantity) || '',
+          remarks: mapped.applianceRemarks
         });
+
+        if (hasRequestedApplianceContent(importedAppliance)) {
+          if (hasCompleteRequestedAppliance(importedAppliance)) {
+            importedAppliances.push(importedAppliance);
+          } else {
+            issues.push(
+              `Row ${index + 2}: Complete appliance item, category, and quantity.`
+            );
+          }
+        }
 
         const evacuationCenterName = String(
           mapped.evacuationCenterName || ''
@@ -1530,10 +2157,51 @@ export default function ReliefRequestForm() {
 
       setRows([...mappedRows, ...untouchedBootstrapRows]);
 
+      const derivedFoodPackTotal = mappedRows.reduce(
+        (sum, row) => sum + Number(row.requestedFoodPacks || 0),
+        0
+      );
+      const finalImportedSupportTypes = deriveImportedSupportTypes({
+        importedRequestType,
+        derivedFoodPackTotal,
+        importedMonetaryAmount,
+        importedAppliances,
+        previousSupportTypes: supportTypes
+      });
+
+      const existingAppliances = requestedAppliances
+        .map((item) => createRequestedAppliance(item))
+        .filter(hasRequestedApplianceContent);
+      const nextRequestedAppliances = finalImportedSupportTypes.includes(SUPPORT_TYPE_APPLIANCE)
+        ? importedAppliances.length > 0
+          ? importedAppliances
+          : existingAppliances.length > 0
+            ? existingAppliances
+            : [createRequestedAppliance()]
+        : [createRequestedAppliance()];
+
+      setSupportTypes(finalImportedSupportTypes);
+      const nextRequestedMonetaryAmount =
+        importedMonetaryAmount && importedMonetaryAmount > 0
+          ? String(importedMonetaryAmount)
+          : finalImportedSupportTypes.includes(SUPPORT_TYPE_MONETARY)
+            ? sanitizeWholeNumberInput(requestedMonetaryAmount)
+            : '';
+      setRequestedMonetaryAmount(
+        nextRequestedMonetaryAmount
+      );
+      setRequestedAppliances(nextRequestedAppliances);
+
       const summary = {
         totalRows: mappedRows.length,
         matchedRows,
-        unmatchedRows
+        unmatchedRows,
+        requestType: getSupportTypeLabel(finalImportedSupportTypes),
+        requestedMonetaryAmount: parseSafeNumber(nextRequestedMonetaryAmount),
+        requestedApplianceQuantity: nextRequestedAppliances.reduce(
+          (sum, item) => sum + parseSafeNumber(item.quantityRequested),
+          0
+        )
       };
 
       setImportInfo({
@@ -1544,7 +2212,7 @@ export default function ReliefRequestForm() {
         source: 'excel_import'
       });
 
-      setSuccessFeedback(`Import complete. ${buildImportSummaryText(summary)}.`);
+      setSuccessFeedback(`Import complete. ${buildImportSummaryText(summary, formatMoney)}.`);
     } catch (err) {
       console.error(err);
       setErrorFeedback(err.message || 'Failed to import file.');
@@ -1602,6 +2270,9 @@ export default function ReliefRequestForm() {
                     <h2>Current request status</h2>
                   </div>
                   <div className="rrf-stage-head">
+                    <span className="rrf-stage-context">
+                      {displaySupportTypeLabel}
+                    </span>
                     <span className={`rrf-stage-badge rrf-stage-${stageMeta.tone}`}>
                       {stageMeta.label}
                     </span>
@@ -1629,13 +2300,14 @@ export default function ReliefRequestForm() {
                     return (
                       <div
                         key={step.key}
-                        className={`rrf-step ${isDone ? 'done' : ''} ${
+                        className={`rrf-step rrf-step-${step.key} ${isDone ? 'done' : ''} ${
                           isActive ? 'active' : ''
                         } ${isIdle ? 'idle' : ''}`}
                       >
                         <span>{stepNumber}</span>
                         <div>
                           <strong>{step.label}</strong>
+                          <small>{step.hint}</small>
                         </div>
                       </div>
                     );
@@ -1708,7 +2380,7 @@ export default function ReliefRequestForm() {
                         <div className="rrf-import-strip">
                           <div className="rrf-import-strip-main">
                             <strong>{importInfo.fileName || 'Imported file'}</strong>
-                            <span>{buildImportSummaryText(importInfo.summary)}</span>
+                            <span>{buildImportSummaryText(importInfo.summary, formatMoney)}</span>
                           </div>
 
                           {importInfo.issues?.length ? (
@@ -1743,8 +2415,17 @@ export default function ReliefRequestForm() {
                                 id="disaster"
                                 type="text"
                                 value={disaster}
-                                onChange={(e) => setDisaster(e.target.value)}
+                                onChange={(e) =>
+                                  setDisaster(
+                                    sanitizeInlineText(e.target.value, {
+                                      maxLength: 160
+                                    })
+                                  )
+                                }
                               />
+                              {inlineErrors.disaster ? (
+                                <small className="rrf-inline-error">{inlineErrors.disaster}</small>
+                              ) : null}
                             </div>
 
                             <div className="rrf-field">
@@ -1756,16 +2437,183 @@ export default function ReliefRequestForm() {
                                 onChange={(e) => setRequestDate(e.target.value)}
                               />
                             </div>
+
+                            <div className="rrf-field rrf-support-type-field">
+                              <label>Support Type</label>
+                              <div className="rrf-support-type-options">
+                                {SUPPORT_TYPE_OPTIONS.map((option) => {
+                                  const checked = supportTypes.includes(option.value);
+                                  return (
+                                    <label
+                                      key={option.value}
+                                      className={`rrf-support-type-chip ${checked ? 'active' : ''}`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => handleSupportTypeToggle(option.value)}
+                                      />
+                                      <span>{option.label}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                              {inlineErrors.supportTypes ? (
+                                <small className="rrf-inline-error">{inlineErrors.supportTypes}</small>
+                              ) : null}
+                            </div>
+
+                            <div className="rrf-field">
+                              <label htmlFor="requestedMonetaryAmount">
+                                Requested Monetary Amount
+                              </label>
+                              <input
+                                id="requestedMonetaryAmount"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={requestedMonetaryAmount}
+                                onChange={(e) =>
+                                  setRequestedMonetaryAmount(
+                                    sanitizeCurrencyInput(e.target.value)
+                                  )
+                                }
+                                disabled={!includesMonetary}
+                                placeholder={
+                                  includesMonetary ? 'Enter amount in PHP' : 'Not included'
+                                }
+                              />
+                              {inlineErrors.requestedMonetaryAmount ? (
+                                <small className="rrf-inline-error">
+                                  {inlineErrors.requestedMonetaryAmount}
+                                </small>
+                              ) : null}
+                            </div>
                           </div>
 
                           <div className="rrf-field rrf-remarks-field">
-                            <label htmlFor="remarks">Overall Remarks</label>
+                            <label htmlFor="remarks">
+                              Overall Remarks
+                              {includesMonetary ? ' *' : ''}
+                            </label>
                             <textarea
                               id="remarks"
                               value={remarks}
-                              onChange={(e) => setRemarks(e.target.value)}
+                              onChange={(e) =>
+                                setRemarks(
+                                  sanitizeInlineText(e.target.value, {
+                                    maxLength: 800,
+                                    multiline: true
+                                  })
+                                )
+                              }
+                              placeholder={
+                                includesMonetary
+                                  ? 'Required for monetary requests.'
+                                  : ''
+                              }
                             />
+                            {inlineErrors.remarks ? (
+                              <small className="rrf-inline-error">{inlineErrors.remarks}</small>
+                            ) : null}
                           </div>
+
+                          {includesAppliance ? (
+                            <div className="rrf-appliance-section">
+                              <div className="rrf-subsection-head">
+                                <div>
+                                  <span className="rrf-subsection-kicker">Appliance Requests</span>
+                                  <h3>List requested appliance items</h3>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="rrf-btn rrf-btn-secondary rrf-btn-small"
+                                  onClick={handleAddRequestedAppliance}
+                                >
+                                  <FaPlus />
+                                  Add Item
+                                </button>
+                              </div>
+
+                              <div className="rrf-appliance-list">
+                                {requestedAppliances.map((item, index) => (
+                                  <div key={`appliance-${index}`} className="rrf-appliance-row">
+                                    <div className="rrf-form-grid rrf-form-grid-appliance">
+                                      <div className="rrf-field">
+                                        <label>Item Name</label>
+                                        <input
+                                          type="text"
+                                          value={item.itemName}
+                                          onChange={(e) =>
+                                            handleRequestedApplianceChange(index, 'itemName', e.target.value)
+                                          }
+                                          placeholder="e.g. Generator"
+                                        />
+                                      </div>
+
+                                      <div className="rrf-field">
+                                        <label>Category</label>
+                                        <input
+                                          type="text"
+                                          value={item.category}
+                                          onChange={(e) =>
+                                            handleRequestedApplianceChange(index, 'category', e.target.value)
+                                          }
+                                          placeholder="e.g. Power Equipment"
+                                        />
+                                      </div>
+
+                                      <div className="rrf-field">
+                                        <label>Quantity Requested</label>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          value={item.quantityRequested}
+                                          onChange={(e) =>
+                                            handleRequestedApplianceChange(
+                                              index,
+                                              'quantityRequested',
+                                              e.target.value
+                                            )
+                                          }
+                                          placeholder="0"
+                                        />
+                                      </div>
+
+                                      <div className="rrf-field">
+                                        <label>Remarks</label>
+                                        <input
+                                          type="text"
+                                          value={item.remarks}
+                                          onChange={(e) =>
+                                            handleRequestedApplianceChange(index, 'remarks', e.target.value)
+                                          }
+                                          placeholder="Optional"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    {requestedAppliances.length > 1 ? (
+                                      <button
+                                        type="button"
+                                        className="rrf-btn rrf-btn-danger rrf-btn-small"
+                                        onClick={() => handleRemoveRequestedAppliance(index)}
+                                      >
+                                        <FaMinus />
+                                        Remove
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                ))}
+                              </div>
+
+                              {inlineErrors.requestedAppliances ? (
+                                <small className="rrf-inline-error">
+                                  {inlineErrors.requestedAppliances}
+                                </small>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
 
                         <div className="rrf-editor-side">
@@ -1794,8 +2642,26 @@ export default function ReliefRequestForm() {
                                 <strong>{vulnerableCount}</strong>
                               </div>
                               <div className="rrf-summary-item emphasis">
+                                <span>Support Type</span>
+                                <strong>{currentSupportTypeLabel}</strong>
+                              </div>
+                              <div className="rrf-summary-item emphasis">
                                 <span>Food Packs</span>
-                                <strong>{totals.requestedFoodPacks}</strong>
+                                <strong>
+                                  {includesFoodPacks ? totals.requestedFoodPacks : '-'}
+                                </strong>
+                              </div>
+                              <div className="rrf-summary-item emphasis">
+                                <span>Monetary</span>
+                                <strong>
+                                  {includesMonetary
+                                    ? `PHP ${formatMoney(requestedMonetaryValue)}`
+                                    : '-'}
+                                </strong>
+                              </div>
+                              <div className="rrf-summary-item emphasis">
+                                <span>Appliance Units</span>
+                                <strong>{includesAppliance ? requestedApplianceQuantity : '-'}</strong>
                               </div>
                             </div>
                           </div>
@@ -1862,7 +2728,11 @@ export default function ReliefRequestForm() {
                                         onChange={(e) =>
                                           handleRowNumberChange(index, field, e.target.value)
                                         }
-                                        disabled={!row.isActiveRow}
+                                        disabled={
+                                          !row.isActiveRow ||
+                                          (field === 'requestedFoodPacks' &&
+                                            !includesFoodPacks)
+                                        }
                                       />
                                     </td>
                                   ))}
@@ -1895,12 +2765,17 @@ export default function ReliefRequestForm() {
                                 <td>{totals.pwd}</td>
                                 <td>{totals.pregnant}</td>
                                 <td>{totals.senior}</td>
-                                <td>{totals.requestedFoodPacks}</td>
+                                <td>{includesFoodPacks ? totals.requestedFoodPacks : '-'}</td>
                                 <td />
                               </tr>
                             </tfoot>
                           </table>
                         </div>
+                        {inlineErrors.requestedFoodPacks ? (
+                          <small className="rrf-inline-error rrf-inline-error-block">
+                            {inlineErrors.requestedFoodPacks}
+                          </small>
+                        ) : null}
                       </div>
 
                       <div className="rrf-submit-row">
@@ -1939,12 +2814,12 @@ export default function ReliefRequestForm() {
                     className={`rrf-card rrf-current-request-card rrf-unified-request-card ${requestLayoutClass}`}
                   >
                     <div className="rrf-unified-request-header">
-                      <div>
+                      <div className="rrf-unified-request-title">
                         <span className="rrf-subsection-kicker">Current request</span>
                         <h2>Relief Request Overview</h2>
                       </div>
 
-                      <div className="rrf-inline-actions">
+                      <div className="rrf-inline-actions rrf-inline-actions-right">
                         {journey.canEdit || isRejectedJourney ? (
                           <button
                             type="button"
@@ -1974,7 +2849,25 @@ export default function ReliefRequestForm() {
                           </button>
                         ) : null}
 
-                        {journey.canReceiveAnyRelease ? (
+                        {canShowConfirmReceivedAction ? (
+                          <>
+                            <button
+                              type="button"
+                              className="rrf-btn rrf-btn-secondary"
+                              onClick={() =>
+                                openConfirmation({
+                                  title: "Report delivery not received?",
+                                  message:
+                                    "This will notify DRRMO that the current release was not received yet.",
+                                  action: "not_received"
+                                })
+                              }
+                              disabled={submittingAction}
+                            >
+                              Didn't Receive
+                              <FaTimes />
+                            </button>
+
                           <button
                             type="button"
                             className="rrf-btn rrf-btn-primary"
@@ -1991,6 +2884,7 @@ export default function ReliefRequestForm() {
                             Confirm Received
                             <FaCheck />
                           </button>
+                          </>
                         ) : null}
 
                         {canShowRequestAgainButton ? (
@@ -2024,87 +2918,95 @@ export default function ReliefRequestForm() {
                     ) : null}
 
                     <div className="rrf-unified-request-body">
-                      <div className="rrf-request-identity-panel">
-                        <span>Request No.</span>
-                        <strong>{latestRequest.requestNo || '-'}</strong>
-
-                        <div className="rrf-request-identity-foot">
-                          <div>
-                            <small>Status</small>
-                            <b className={`rrf-stage-badge rrf-stage-${stageMeta.tone}`}>
-                              {requestStatusLabel}
-                            </b>
+                      <div className="rrf-request-overview-shell">
+                        <div className="rrf-request-overview-top">
+                          <div className="rrf-request-reference featured">
+                            <span>Request No.</span>
+                            <strong>{latestRequest.requestNo || '-'}</strong>
+                            <em className="rrf-request-subtitle">
+                              {latestRequest.disaster || 'No disaster / incident provided'}
+                            </em>
                           </div>
 
-                          <div>
-                            <small>Request Date</small>
-                            <b>{formatDate(latestRequest.requestDate)}</b>
+                          <div className="rrf-request-meta-item">
+                            <span>Status</span>
+                            <strong>{requestStatusLabel}</strong>
+                          </div>
+
+                          <div className="rrf-request-meta-item">
+                            <span>Request Date</span>
+                            <strong>{formatDate(latestRequest.requestDate)}</strong>
+                          </div>
+
+                          <div className="rrf-request-meta-item">
+                            <span>Request Type</span>
+                            <strong>{displaySupportTypeLabel}</strong>
+                          </div>
+
+                          <div className="rrf-request-meta-item">
+                            <span>Entry Mode</span>
+                            <strong>
+                              {latestRequest.entryMode === 'excel_import'
+                                ? 'Excel Import'
+                                : 'Manual Encoding'}
+                            </strong>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="rrf-request-metrics-grid">
-                        <div className="rrf-request-metric highlight">
-                          <span>Requested Packs</span>
-                          <strong>{displayRequestedPacks}</strong>
-                          <small>Total food packs requested</small>
+                        <div className="rrf-request-metrics-grid">
+                          <div className="rrf-request-metric success">
+                            <span>Requested Packs</span>
+                            <strong>
+                              {!displayIncludesFoodPacks
+                                ? '-'
+                                : displayRequestedPacks}
+                            </strong>
+                          </div>
+
+                          <div className="rrf-request-metric warning">
+                            <span>Requested Monetary</span>
+                            <strong>
+                              {!displayIncludesMonetary
+                                ? '-'
+                                : `PHP ${formatMoney(displayRequestedMonetaryAmount)}`}
+                            </strong>
+                          </div>
+
+                          <div className="rrf-request-metric info">
+                            <span>Appliance Units</span>
+                            <strong>
+                              {displayIncludesAppliance ? displayRequestedApplianceQuantity : '-'}
+                            </strong>
+                          </div>
+
+                          <div className="rrf-request-metric neutral">
+                            <span>Vulnerable Count</span>
+                            <strong>{displayVulnerableCount}</strong>
+                          </div>
+
+                          <div className="rrf-request-metric highlight">
+                            <span>Total Affected</span>
+                            <strong>{displayTotalAffected}</strong>
+                          </div>
                         </div>
-
-                        <div className="rrf-request-metric success">
-                          <span>Received Packs</span>
-                          <strong>{displayReceivedPacks}</strong>
-                          <small>Confirmed by barangay</small>
-                        </div>
-
-                        <div className="rrf-request-metric warning">
-                          <span>Pending Receipt</span>
-                          <strong>{displayPendingReceipt}</strong>
-                          <small>Waiting confirmation</small>
-                        </div>
-
-                        <div className={`rrf-request-metric receipt ${receiptMeta.tone}`}>
-                          <span>{receiptMeta.label}</span>
-                          <strong>{receiptMeta.value}</strong>
-                          <small>Receipt status</small>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rrf-request-details-grid">
-                      <div className="rrf-request-detail-card">
-                        <span>Disaster / Incident</span>
-                        <strong>{latestRequest.disaster || '-'}</strong>
-                      </div>
-
-                      <div className="rrf-request-detail-card">
-                        <span>Entry Mode</span>
-                        <strong>
-                          {latestRequest.entryMode === 'excel_import'
-                            ? 'Excel Import'
-                            : 'Manual Encoding'}
-                        </strong>
-                      </div>
-
-                      <div className="rrf-request-detail-card">
-                        <span>Total Affected</span>
-                        <strong>{displayTotalAffected}</strong>
-                      </div>
-
-                      <div className="rrf-request-detail-card">
-                        <span>Vulnerable Count</span>
-                        <strong>{displayVulnerableCount}</strong>
                       </div>
                     </div>
 
                     {shouldShowReceivedSection ? (
-                      <div className="rrf-unified-receipt-panel">
-                        <div className="rrf-unified-receipt-head">
-                          <div>
-                            <span className="rrf-subsection-kicker">Receipt Details</span>
-                            <h3>{hasReceivedData ? 'Delivery Received' : 'Waiting for Delivery'}</h3>
-                          </div>
+                        <div className="rrf-unified-receipt-panel">
+                          <div className="rrf-unified-receipt-head">
+                            <div>
+                              <span className="rrf-subsection-kicker">Receipt Details</span>
+                            <h3>
+                              {isReceiptConfirmed
+                                ? 'Delivery Received'
+                                : displayDeliveryItems.length
+                                  ? 'Released for Confirmation'
+                                  : 'Waiting for Delivery'}
+                            </h3>
+                            </div>
 
-                          {latestRequest?._id && isReceiptConfirmed ? (
+                          {latestRequest?._id && shouldShowReceivedSection ? (
                             <button
                               type="button"
                               className="rrf-btn rrf-btn-secondary rrf-btn-small"
@@ -2116,47 +3018,97 @@ export default function ReliefRequestForm() {
                           ) : null}
                         </div>
 
-                        <div className="rrf-receipt-summary-grid">
-                          <div className="rrf-receipt-summary-card featured">
-                            <span>Received Food Packs</span>
-                            <strong>{displayReceivedPacks}</strong>
-                            <small>Distributed packs</small>
+                          <div className="rrf-receipt-summary-grid">
+                            <div className="rrf-receipt-summary-card featured">
+                              <span>
+                                {receiptPanelSummary.showingReleasedForConfirmation
+                                  ? 'Released Food Packs'
+                                : 'Received Food Packs'}
+                            </span>
+                            <strong>{receiptPanelSummary.totalFoodPacks}</strong>
+                            <small>
+                              {receiptPanelSummary.showingReleasedForConfirmation
+                                ? 'Packs awaiting confirmation'
+                                : 'Distributed packs'}
+                            </small>
                           </div>
 
                           <div className="rrf-receipt-summary-card">
                             <span>Total Quantity</span>
-                            <strong>{Number(receivedSummary.totalQuantity || 0)}</strong>
-                            <small>Units received</small>
-                          </div>
+                            <strong>{Number(receiptPanelSummary.totalQuantity || 0)}</strong>
+                            <small>
+                              {receiptPanelSummary.showingReleasedForConfirmation
+                                ? 'Units prepared for delivery'
+                                : 'Units received'}
+                              </small>
+                            </div>
 
-                          <div className="rrf-receipt-summary-card">
-                            <span>Total Amount</span>
-                            <strong>PHP {Number(receivedSummary.totalAmount || 0).toFixed(2)}</strong>
-                            <small>Monetary value</small>
+                            <div className="rrf-receipt-summary-card">
+                              <span>
+                                {receiptPanelSummary.showingReleasedForConfirmation
+                                  ? 'Released Appliances'
+                                  : 'Received Appliances'}
+                              </span>
+                              <strong>{Number(receiptPanelSummary.totalApplianceUnits || 0)}</strong>
+                              <small>
+                                {receiptPanelSummary.showingReleasedForConfirmation
+                                  ? 'Appliance units for delivery'
+                                  : 'Appliance units accepted'}
+                              </small>
+                            </div>
+
+                            <div className="rrf-receipt-summary-card">
+                              <span>Total Amount</span>
+                              <strong>
+                                PHP {Number(receiptPanelSummary.totalAmount || 0).toFixed(2)}
+                              </strong>
+                              <small>
+                              {receiptPanelSummary.showingReleasedForConfirmation
+                                ? 'Monetary release value'
+                                : 'Monetary value'}
+                            </small>
                           </div>
 
                           <div className="rrf-receipt-summary-card">
                             <span>Item Lines</span>
-                            <strong>{Number(receivedSummary.itemLines || 0)}</strong>
-                            <small>Accepted items</small>
-                          </div>
+                            <strong>{Number(receiptPanelSummary.itemLines || 0)}</strong>
+                            <small>
+                              {receiptPanelSummary.showingReleasedForConfirmation
+                                ? 'Release item lines'
+                                : 'Accepted items'}
+                            </small>
+                            </div>
 
-                          <div className="rrf-receipt-summary-card">
-                            <span>Last Received</span>
-                            <strong>{formatDateTime(receivedSummary.latestReceivedAt)}</strong>
-                            <small>Latest confirmation</small>
+                            <div className="rrf-receipt-summary-card rrf-receipt-summary-card-date">
+                              <span>
+                                {receiptPanelSummary.showingReleasedForConfirmation
+                                  ? 'Last Released'
+                                  : 'Last Received'}
+                            </span>
+                            <strong>{formatDateTime(receiptPanelSummary.latestActivityAt)}</strong>
+                            <small>
+                              {receiptPanelSummary.showingReleasedForConfirmation
+                                ? 'Latest release activity'
+                                : 'Latest confirmation'}
+                            </small>
                           </div>
                         </div>
 
                         <div className="rrf-unified-items-panel">
                           <div className="rrf-unified-items-head">
                             <div>
-                              <span className="rrf-subsection-kicker">Accepted Items</span>
-                              <h3>Delivered Item Breakdown</h3>
+                              <span className="rrf-subsection-kicker">
+                                {isReceiptConfirmed ? 'Accepted Items' : 'Release Items'}
+                              </span>
+                              <h3>
+                                {isReceiptConfirmed
+                                  ? 'Delivered Item Breakdown'
+                                  : 'Release Item Breakdown'}
+                              </h3>
                             </div>
                           </div>
 
-                          {receivedItems.length ? (
+                          {displayDeliveryItems.length ? (
                             <div className="rrf-table-wrapper rrf-unified-items-scroll">
                               <table className="rrf-table rrf-unified-items-table">
                                 <thead>
@@ -2166,13 +3118,13 @@ export default function ReliefRequestForm() {
                                     <th>Category</th>
                                     <th>Quantity / Amount</th>
                                     <th>Unit</th>
-                                    <th>Received Date</th>
+                                    <th>{isReceiptConfirmed ? 'Received Date' : 'Release Date'}</th>
                                     <th>Remarks</th>
                                   </tr>
                                 </thead>
 
                                 <tbody>
-                                  {receivedItems.map((item, index) => (
+                                  {displayDeliveryItems.map((item, index) => (
                                     <tr key={item.key || index}>
                                       <td>{index + 1}</td>
                                       <td className="rrf-left-cell">
@@ -2198,10 +3150,15 @@ export default function ReliefRequestForm() {
                                 <FaExclamationTriangle />
                               </div>
                               <div>
-                                <h4>No received item lines yet</h4>
+                                <h4>
+                                  {isReceiptConfirmed
+                                    ? 'No received item lines yet'
+                                    : 'No released item lines yet'}
+                                </h4>
                                 <p>
-                                  Delivery information will appear here once DRRMO releases goods and the
-                                  barangay confirms receipt.
+                                  {isReceiptConfirmed
+                                    ? 'Delivery information will appear here once the barangay confirms receipt.'
+                                    : 'Release information will appear here once DRRMO sends goods or monetary support for this request.'}
                                 </p>
                               </div>
                             </div>
@@ -2232,9 +3189,10 @@ export default function ReliefRequestForm() {
                 ) : null}
               </div>
 
-              {confirmState.open ? (
-                <div className="rrf-modal-backdrop">
-                  <div className="rrf-modal-card">
+              {confirmState.open && typeof document !== 'undefined'
+                ? createPortal(
+                <div className="rrf-modal-backdrop" onClick={closeConfirmation}>
+                  <div className="rrf-modal-card" onClick={(e) => e.stopPropagation()}>
                     <h3>{confirmState.title}</h3>
                     <p>{confirmState.message}</p>
 
@@ -2263,7 +3221,8 @@ export default function ReliefRequestForm() {
                       </button>
                     </div>
                   </div>
-                </div>
+                </div>,
+                document.body
               ) : null}
             </>
           )}

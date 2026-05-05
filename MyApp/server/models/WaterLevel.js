@@ -45,5 +45,4 @@ const waterLevelSchema = new mongoose.Schema(
 
 waterLevelSchema.index({ camera_id: 1, timestamp: -1 });
 waterLevelSchema.index({ camera_id: 1, createdAt: -1 });
-
 module.exports = mongoose.model("WaterLevel", waterLevelSchema);

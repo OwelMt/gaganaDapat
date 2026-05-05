@@ -14,6 +14,56 @@ import sunwhite from "../../assets/images/sunwhite.png";
 import nightgreen from "../../assets/images/nightgreen.png";
 
 const BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
+const SIDEBAR_COUNT_CACHE_KEY = "sidebar:barangay:counts";
+let sidebarCountMemoryCache = {
+  notifications: 0,
+  relief: 0,
+  evacuation: 0,
+};
+
+const readCachedCounts = () => {
+  const fallback = { ...sidebarCountMemoryCache };
+
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(SIDEBAR_COUNT_CACHE_KEY);
+    if (!raw) {
+      return fallback;
+    }
+
+    const parsed = JSON.parse(raw);
+
+    const next = {
+      notifications: Number(parsed?.notifications || 0),
+      relief: Number(parsed?.relief || 0),
+      evacuation: Number(parsed?.evacuation || 0),
+    };
+    sidebarCountMemoryCache = next;
+    return next;
+  } catch {
+    return fallback;
+  }
+};
+
+const writeCachedCounts = (counts) => {
+  sidebarCountMemoryCache = {
+    notifications: Number(counts?.notifications || 0),
+    relief: Number(counts?.relief || 0),
+    evacuation: Number(counts?.evacuation || 0),
+  };
+
+  if (typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.setItem(
+      SIDEBAR_COUNT_CACHE_KEY,
+      JSON.stringify(sidebarCountMemoryCache)
+    );
+  } catch {}
+};
 
 const getNotificationCount = async (moduleName) => {
   const res = await fetch(
@@ -46,10 +96,51 @@ export default function SidebarBarangay({
   const navScrollRef = useRef(null);
   const SIDEBAR_SCROLL_KEY = "sidebar:barangay:scrollTop";
   const PAGE_SCROLL_KEY = "sidebar:barangay:pageScrollY";
+  const cachedCountsRef = useRef(readCachedCounts());
 
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [reliefUnreadCount, setReliefUnreadCount] = useState(0);
-  const [evacUnreadCount, setEvacUnreadCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(
+    cachedCountsRef.current.notifications
+  );
+  const [reliefUnreadCount, setReliefUnreadCount] = useState(
+    cachedCountsRef.current.relief
+  );
+  const [evacUnreadCount, setEvacUnreadCount] = useState(
+    cachedCountsRef.current.evacuation
+  );
+  const [badgePulses, setBadgePulses] = useState({});
+  const badgeTimersRef = useRef({});
+  const previousCountsRef = useRef(cachedCountsRef.current);
+  const hasCompletedInitialFetchRef = useRef(false);
+
+  const triggerBadgePulse = useCallback((key) => {
+    if (!key) return;
+
+    setBadgePulses((prev) => ({
+      ...prev,
+      [key]: true,
+    }));
+
+    if (badgeTimersRef.current[key]) {
+      clearTimeout(badgeTimersRef.current[key]);
+    }
+
+    badgeTimersRef.current[key] = window.setTimeout(() => {
+      setBadgePulses((prev) => ({
+        ...prev,
+        [key]: false,
+      }));
+      delete badgeTimersRef.current[key];
+    }, 2200);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      Object.values(badgeTimersRef.current).forEach((timerId) =>
+        clearTimeout(timerId)
+      );
+      badgeTimersRef.current = {};
+    };
+  }, [triggerBadgePulse]);
 
   useEffect(() => {
     let isMounted = true;
@@ -69,20 +160,45 @@ export default function SidebarBarangay({
           const allData = await allRes.json();
 
           if (isMounted) {
-            setUnreadCount(Number(allData.unreadCount || 0));
+            const nextUnreadCount = Number(allData.unreadCount || 0);
+            const nextReliefCount = Number(reliefCount || 0);
+            const nextEvacuationCount = Number(evacuationCount || 0);
+            const previousCounts = previousCountsRef.current;
+
+            if (
+              hasCompletedInitialFetchRef.current &&
+              nextUnreadCount > previousCounts.notifications
+            ) {
+              triggerBadgePulse("notifications");
+            }
+            if (
+              hasCompletedInitialFetchRef.current &&
+              nextReliefCount > previousCounts.relief
+            ) {
+              triggerBadgePulse("relief");
+            }
+            if (
+              hasCompletedInitialFetchRef.current &&
+              nextEvacuationCount > previousCounts.evacuation
+            ) {
+              triggerBadgePulse("evacuation");
+            }
+
+            previousCountsRef.current = {
+              notifications: nextUnreadCount,
+              relief: nextReliefCount,
+              evacuation: nextEvacuationCount,
+            };
+            writeCachedCounts(previousCountsRef.current);
+            hasCompletedInitialFetchRef.current = true;
+
+            setUnreadCount(nextUnreadCount);
+            setReliefUnreadCount(nextReliefCount);
+            setEvacUnreadCount(nextEvacuationCount);
           }
         }
-
-        if (isMounted) {
-          setReliefUnreadCount(Number(reliefCount || 0));
-          setEvacUnreadCount(Number(evacuationCount || 0));
-        }
       } catch (err) {
-        if (isMounted) {
-          setUnreadCount(0);
-          setReliefUnreadCount(0);
-          setEvacUnreadCount(0);
-        }
+        // Keep the last known counts on navigation or transient fetch issues.
       }
     };
 
@@ -101,7 +217,7 @@ export default function SidebarBarangay({
       clearInterval(interval);
       window.removeEventListener("focus", handleFocus);
     };
-  }, []);
+  }, [triggerBadgePulse]);
 
   useEffect(() => {
     const saved = Number(sessionStorage.getItem(SIDEBAR_SCROLL_KEY) || 0);
@@ -141,6 +257,7 @@ export default function SidebarBarangay({
           label: "Relief Request",
           icon: dark ? reliefwhite : reliefgreen,
           badge: reliefUnreadCount,
+          badgeKey: "relief",
         },
       ],
     },
@@ -152,6 +269,7 @@ export default function SidebarBarangay({
           label: "Evacuation Centers",
           icon: dark ? evacuationwhite : evacuationgreen,
           badge: evacUnreadCount,
+          badgeKey: "evacuation",
         },
       ],
     },
@@ -163,6 +281,7 @@ export default function SidebarBarangay({
       label: "Notifications",
       Icon: FaBell,
       badge: unreadCount,
+      badgeKey: "notifications",
     },
   ];
 
@@ -170,7 +289,7 @@ export default function SidebarBarangay({
   const themeLabel = dark ? "Light mode" : "Dark mode";
   const logoutIcon = dark ? logoutwhite : logoutgreen;
 
-  const renderBadge = (badge, collapsedMode = false) => {
+  const renderBadge = (badge, collapsedMode = false, badgeKey = "") => {
     const count = Number(badge || 0);
 
     if (count <= 0) return null;
@@ -179,8 +298,12 @@ export default function SidebarBarangay({
       <span
         className={
           collapsedMode
-            ? "sidebar-badge sidebar-badge-collapsed"
-            : "sidebar-badge"
+            ? `sidebar-badge sidebar-badge-collapsed ${
+                badgePulses[badgeKey] ? "sidebar-badge-pulse" : ""
+              }`
+            : `sidebar-badge ${
+                badgePulses[badgeKey] ? "sidebar-badge-pulse" : ""
+              }`
         }
       >
         {count > 99 ? "99+" : count}
@@ -250,6 +373,9 @@ export default function SidebarBarangay({
 
               {group.items.map((item) => {
                 const badge = Number(item.badge || 0);
+                const pulseClass = badgePulses[item.badgeKey]
+                  ? " sidebar-link-has-update"
+                  : "";
 
                 return (
                   <NavLink
@@ -259,7 +385,9 @@ export default function SidebarBarangay({
                     onClick={handleSidebarNavigate}
                     title={collapsed ? item.label : undefined}
                     className={({ isActive }) =>
-                      "sidebar-link" + (isActive ? " active" : "")
+                      "sidebar-link" +
+                      pulseClass +
+                      (isActive ? " active" : "")
                     }
                   >
                     <img src={item.icon} className="sidebar-icon" alt="" />
@@ -267,11 +395,11 @@ export default function SidebarBarangay({
                     {!collapsed && (
                       <>
                         <span className="sidebar-link-label">{item.label}</span>
-                        {renderBadge(badge)}
+                        {renderBadge(badge, false, item.badgeKey)}
                       </>
                     )}
 
-                    {collapsed && renderBadge(badge, true)}
+                    {collapsed && renderBadge(badge, true, item.badgeKey)}
                   </NavLink>
                 );
               })}
@@ -284,6 +412,9 @@ export default function SidebarBarangay({
             {utilityLinks.map((item) => {
               const Icon = item.Icon;
               const badge = Number(item.badge || 0);
+              const pulseClass = badgePulses[item.badgeKey]
+                ? " sidebar-link-has-update"
+                : "";
 
               return (
                 <NavLink
@@ -294,6 +425,7 @@ export default function SidebarBarangay({
                   title={collapsed ? item.label : undefined}
                   className={({ isActive }) =>
                     "sidebar-link sidebar-link-notification" +
+                    pulseClass +
                     (isActive ? " active" : "")
                   }
                 >
@@ -302,11 +434,11 @@ export default function SidebarBarangay({
                   {!collapsed && (
                     <>
                       <span className="sidebar-link-label">{item.label}</span>
-                      {renderBadge(badge)}
+                      {renderBadge(badge, false, item.badgeKey)}
                     </>
                   )}
 
-                  {collapsed && renderBadge(badge, true)}
+                  {collapsed && renderBadge(badge, true, item.badgeKey)}
                 </NavLink>
               );
             })}

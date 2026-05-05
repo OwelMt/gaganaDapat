@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  FaArrowDown,
+  FaArrowUp,
   FaBell,
   FaCloudSun,
   FaEdit,
@@ -15,6 +17,7 @@ import {
   FaSms,
   FaTimes,
   FaTrash,
+  FaUpload,
   FaMap,
   FaHome,
   FaCheckCircle,
@@ -38,7 +41,12 @@ const JAEN_COORDS = {
   longitude: 120.9192,
 };
 
-const heroImages = [hero2, hero1, hero3];
+const fallbackHeroImages = [hero2, hero1, hero3].map((fileUrl, index) => ({
+  _id: `fallback-hero-${index + 1}`,
+  fileUrl,
+  fileName: `Default hero image ${index + 1}`,
+  caption: "",
+}));
 
 const DEFAULT_SITE_CONTENT = {
   hero: {
@@ -106,6 +114,7 @@ const DEFAULT_SITE_CONTENT = {
     email: "jaenmdrrmo@example.com",
     facebook: "https://facebook.com/",
   },
+  heroImages: [],
   incidentFeedMode: "all",
 };
 
@@ -220,6 +229,17 @@ function normalizeSitePayload(payload) {
       ...DEFAULT_SITE_CONTENT.office,
       ...(payload?.office || {}),
     },
+    heroImages: Array.isArray(payload?.heroImages)
+      ? payload.heroImages
+          .map((item, index) => ({
+            _id: item?._id || `hero-${index + 1}`,
+            fileName: item?.fileName || `Landing image ${index + 1}`,
+            fileUrl: item?.fileUrl || "",
+            public_id: item?.public_id || "",
+            caption: item?.caption || "",
+          }))
+          .filter((item) => item.fileUrl)
+      : [],
     incidentFeedMode:
       payload?.incidentFeedMode === "resolved-only" ? "resolved-only" : "all",
   };
@@ -288,6 +308,7 @@ export default function Dashboard() {
 
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingHeroImage, setIsUploadingHeroImage] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [userRole, setUserRole] = useState("");
   const [isVisitorMode, setIsVisitorMode] = useState(false);
@@ -297,12 +318,14 @@ export default function Dashboard() {
   const [mapError, setMapError] = useState("");
   const [selectedPublicPlaceId, setSelectedPublicPlaceId] = useState(null);
   const [publicBarangayFilter, setPublicBarangayFilter] = useState("all");
+  const [publicBarangayBounds, setPublicBarangayBounds] = useState([]);
 
   const [publicIncidents, setPublicIncidents] = useState([]);
   const [incidentsLoading, setIncidentsLoading] = useState(true);
   const [incidentsError, setIncidentsError] = useState("");
 
   const observerRef = useRef(null);
+  const heroImageInputRef = useRef(null);
   const navigate = useNavigate();
 
   const isPrivilegedUser = useMemo(() => {
@@ -313,7 +336,11 @@ export default function Dashboard() {
   const isInlineEditing = canEdit && isEditorOpen;
   const pageContent = isInlineEditing ? draftContent : siteContent;
 
-  const heroBg = heroImages[currentHero] || null;
+  const activeHeroImages = useMemo(() => {
+    return pageContent.heroImages?.length ? pageContent.heroImages : fallbackHeroImages;
+  }, [pageContent.heroImages]);
+
+  const heroBg = activeHeroImages[currentHero]?.fileUrl || null;
   const topWeather = weather?.current || null;
 
   const todaySummary = useMemo(() => {
@@ -465,17 +492,30 @@ export default function Dashboard() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentHero((prev) => (prev + 1) % heroImages.length);
+      setCurrentHero((prev) =>
+        activeHeroImages.length ? (prev + 1) % activeHeroImages.length : 0
+      );
     }, 5000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [activeHeroImages.length]);
 
   useEffect(() => {
     if (!canEdit && isEditorOpen) {
       setIsEditorOpen(false);
     }
   }, [canEdit, isEditorOpen]);
+
+  useEffect(() => {
+    if (!activeHeroImages.length) {
+      setCurrentHero(0);
+      return;
+    }
+
+    if (currentHero >= activeHeroImages.length) {
+      setCurrentHero(0);
+    }
+  }, [activeHeroImages, currentHero]);
 
   useEffect(() => {
     if (!filteredPublicPlaces.length) {
@@ -756,6 +796,24 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchPublicBarangayBounds = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/api/barangays/bounds`, {
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to load barangay boundaries.");
+      }
+
+      const data = await res.json();
+      setPublicBarangayBounds(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("fetchPublicBarangayBounds error:", err);
+      setPublicBarangayBounds([]);
+    }
+  }, []);
+
   async function fetchPublicIncidents() {
     setIncidentsLoading(true);
     setIncidentsError("");
@@ -787,8 +845,9 @@ export default function Dashboard() {
     detectRole();
     fetchWeather();
     fetchPublicPlaces();
+    fetchPublicBarangayBounds();
     fetchPublicIncidents();
-  }, [fetchPublicPlaces]);
+  }, [fetchPublicBarangayBounds, fetchPublicPlaces]);
 
   function updateDraft(path, value) {
     setDraftContent((prev) => {
@@ -920,6 +979,13 @@ export default function Dashboard() {
         email: draftContent.office?.email?.slice(0, 80) || "",
         facebook: draftContent.office?.facebook?.slice(0, 120) || "",
       },
+      heroImages: (draftContent.heroImages || []).map((item) => ({
+        _id: item?._id,
+        fileName: item?.fileName?.slice(0, 200) || "",
+        fileUrl: item?.fileUrl || "",
+        public_id: item?.public_id || "",
+        caption: item?.caption?.slice(0, 80) || "",
+      })),
     });
 
     try {
@@ -951,6 +1017,135 @@ export default function Dashboard() {
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function applyPublicSiteUpdate(nextContent, message) {
+    const normalized = normalizeSitePayload(nextContent);
+    setSiteContent(normalized);
+    setDraftContent(normalized);
+    localStorage.setItem("publicSiteContent", JSON.stringify(normalized));
+    setSaveMessage(message || "");
+  }
+
+  async function handleHeroImageUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file || !canEdit) return;
+
+    const formData = new FormData();
+    formData.append("image", file);
+
+    setIsUploadingHeroImage(true);
+    setSaveMessage("");
+
+    try {
+      const res = await fetch(`${BASE_URL}/api/public-site/hero-images`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(result.message || "Failed to upload landing image.");
+      }
+
+      applyPublicSiteUpdate(result?.data || siteContent, "Landing image uploaded.");
+    } catch (err) {
+      setSaveMessage(err.message || "Failed to upload landing image.");
+    } finally {
+      setIsUploadingHeroImage(false);
+      if (heroImageInputRef.current) {
+        heroImageInputRef.current.value = "";
+      }
+    }
+  }
+
+  async function handleRemoveHeroImage(imageId) {
+    if (!canEdit || !imageId) return;
+
+    setIsUploadingHeroImage(true);
+    setSaveMessage("");
+
+    try {
+      const res = await fetch(`${BASE_URL}/api/public-site/hero-images/${imageId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(result.message || "Failed to remove landing image.");
+      }
+
+      applyPublicSiteUpdate(result?.data || siteContent, "Landing image removed.");
+    } catch (err) {
+      setSaveMessage(err.message || "Failed to remove landing image.");
+    } finally {
+      setIsUploadingHeroImage(false);
+    }
+  }
+
+  async function handleMoveHeroImage(index, direction) {
+    const currentImages = draftContent.heroImages || [];
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+
+    if (
+      !canEdit ||
+      index < 0 ||
+      targetIndex < 0 ||
+      targetIndex >= currentImages.length
+    ) {
+      return;
+    }
+
+    const reordered = [...currentImages];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(targetIndex, 0, moved);
+
+    setIsUploadingHeroImage(true);
+    setSaveMessage("");
+
+    try {
+      const res = await fetch(`${BASE_URL}/api/public-site/hero-images/reorder`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          imageIds: reordered.map((item) => item._id),
+        }),
+      });
+
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(result.message || "Failed to reorder landing images.");
+      }
+
+      applyPublicSiteUpdate(
+        result?.data || { ...siteContent, heroImages: reordered },
+        "Landing image order updated."
+      );
+    } catch (err) {
+      setSaveMessage(err.message || "Failed to reorder landing images.");
+    } finally {
+      setIsUploadingHeroImage(false);
+    }
+  }
+
+  function updateHeroImageCaption(index, value) {
+    setDraftContent((prev) => {
+      const nextImages = [...(prev.heroImages || [])];
+      if (!nextImages[index]) return prev;
+
+      nextImages[index] = {
+        ...nextImages[index],
+        caption: value,
+      };
+
+      return {
+        ...prev,
+        heroImages: nextImages,
+      };
+    });
   }
 
   function getHotlineIcon(type) {
@@ -1301,6 +1496,107 @@ export default function Dashboard() {
                     </button>
                   </div>
 
+                  {isInlineEditing && (
+                    <div className="landing-hero-image-manager">
+                      <div className="landing-hero-image-manager-head">
+                        <div>
+                          <strong>Hero Images</strong>
+                          <span>Upload, remove, and reorder the landing visuals.</span>
+                        </div>
+
+                        <div className="landing-hero-image-manager-actions">
+                          <input
+                            ref={heroImageInputRef}
+                            type="file"
+                            accept="image/*"
+                            className="landing-image-input-hidden"
+                            onChange={handleHeroImageUpload}
+                            disabled={isUploadingHeroImage}
+                          />
+
+                          <button
+                            type="button"
+                            className="landing-hero-image-upload-btn"
+                            onClick={() => heroImageInputRef.current?.click()}
+                            disabled={isUploadingHeroImage}
+                          >
+                            <FaUpload />
+                            {isUploadingHeroImage ? "Uploading..." : "Upload Image"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {draftContent.heroImages?.length ? (
+                        <div className="landing-hero-image-grid">
+                          {draftContent.heroImages.map((image, index) => (
+                            <div className="landing-hero-image-card" key={image._id}>
+                              <div
+                                className="landing-hero-image-preview"
+                                style={{ backgroundImage: `url(${image.fileUrl})` }}
+                              />
+
+                              <div className="landing-hero-image-copy">
+                                <strong>{image.fileName || `Image ${index + 1}`}</strong>
+                                <span>Slide {index + 1}</span>
+                              </div>
+
+                              <label className="inline-edit-label">Caption</label>
+                              <input
+                                type="text"
+                                className="landing-inline-input"
+                                value={image.caption || ""}
+                                maxLength={80}
+                                onChange={(e) =>
+                                  updateHeroImageCaption(index, e.target.value)
+                                }
+                                placeholder="Optional caption"
+                              />
+
+                              <div className="landing-hero-image-card-actions">
+                                <button
+                                  type="button"
+                                  className="landing-hero-card-btn"
+                                  onClick={() => handleMoveHeroImage(index, "up")}
+                                  disabled={index === 0 || isUploadingHeroImage}
+                                  title="Move image up"
+                                >
+                                  <FaArrowUp />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="landing-hero-card-btn"
+                                  onClick={() => handleMoveHeroImage(index, "down")}
+                                  disabled={
+                                    index === (draftContent.heroImages?.length || 0) - 1 ||
+                                    isUploadingHeroImage
+                                  }
+                                  title="Move image down"
+                                >
+                                  <FaArrowDown />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="landing-hero-card-btn danger"
+                                  onClick={() => handleRemoveHeroImage(image._id)}
+                                  disabled={isUploadingHeroImage}
+                                  title="Remove image"
+                                >
+                                  <FaTrash />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="landing-hero-image-empty">
+                          Upload a custom hero image to replace the default landing visuals.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="hero-highlights">
                     <div className="hero-highlight-card">
                       <FaCloudSun />
@@ -1418,7 +1714,7 @@ export default function Dashboard() {
               </div>
 
               <div className="hero-slide-indicators" aria-hidden="true">
-                {heroImages.map((_, index) => (
+                {activeHeroImages.map((_, index) => (
                   <span
                     key={`hero-dot-${index}`}
                     className={`hero-slide-dot ${
@@ -1605,6 +1901,7 @@ export default function Dashboard() {
                         <div className="landing-map-stage map-dominant-stage">
                           <EvacMap
                             places={filteredPublicPlaces}
+                            barangayBounds={publicBarangayBounds}
                             selectedPlaceId={selectedPublicPlaceId}
                             onSelectPlace={setSelectedPublicPlaceId}
                             readOnly

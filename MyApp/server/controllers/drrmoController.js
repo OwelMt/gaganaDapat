@@ -4,6 +4,16 @@ const Audit = require("../models/Audit");
 const FoodPackTemplate = require("../models/FoodPackTemplate");
 const InventoryItem = require("../models/InventoryItem");
 const createNotification = require("../utils/createNotification");
+const {
+  SUPPORT_TYPE_APPLIANCE,
+  SUPPORT_TYPE_FOODPACKS,
+  SUPPORT_TYPE_MONETARY,
+  deriveLegacyRequestType,
+  getSupportTypesFromRequest,
+  getSupportTypeLabel,
+  hasSupportType,
+  normalizeSupportTypes,
+} = require("../utils/reliefSupportTypes");
 
 const normalizeString = (value) => {
   if (value === undefined || value === null) return "";
@@ -22,24 +32,12 @@ const ACTIVE_QUEUE_STATUSES = [
   "partially_released",
   "released",
 ];
-const REQUEST_TYPE_FOODPACKS = "foodpacks";
-const REQUEST_TYPE_MONETARY = "monetary";
-const REQUEST_TYPE_BOTH = "both";
-const VALID_REQUEST_TYPES = [
-  REQUEST_TYPE_FOODPACKS,
-  REQUEST_TYPE_MONETARY,
-  REQUEST_TYPE_BOTH,
-];
 
 const COMPLETED_QUEUE_STATUSES = ["received", "cancelled"];
 const HISTORY_QUEUE_STATUSES = ["rejected", "received", "cancelled"];
 
-const normalizeRequestType = (value) => {
-  const normalized = normalizeString(value).toLowerCase();
-  return VALID_REQUEST_TYPES.includes(normalized)
-    ? normalized
-    : REQUEST_TYPE_FOODPACKS;
-};
+const normalizeRequestType = (value, supportTypes = []) =>
+  deriveLegacyRequestType(normalizeSupportTypes(supportTypes, value));
 
 const formatMonetaryAmount = (value) =>
   toNumber(value).toLocaleString("en-PH", {
@@ -48,16 +46,26 @@ const formatMonetaryAmount = (value) =>
   });
 
 const buildDemandSummaryLabel = (request = {}) => {
-  const requestType = normalizeRequestType(request.requestType);
+  const supportTypes = getSupportTypesFromRequest(request);
   const totals = request.totals || {};
   const parts = [];
 
-  if ([REQUEST_TYPE_FOODPACKS, REQUEST_TYPE_BOTH].includes(requestType)) {
+  if (hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS)) {
     parts.push(`${toNumber(totals.requestedFoodPacks)} food pack(s)`);
   }
 
-  if ([REQUEST_TYPE_MONETARY, REQUEST_TYPE_BOTH].includes(requestType)) {
+  if (hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY)) {
     parts.push(`PHP ${formatMonetaryAmount(totals.requestedMonetaryAmount)}`);
+  }
+
+  if (hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE)) {
+    const requestedApplianceQuantity = Array.isArray(request.requestedAppliances)
+      ? request.requestedAppliances.reduce(
+          (sum, item) => sum + toNumber(item.quantityRequested),
+          0
+        )
+      : toNumber(request?.totals?.requestedApplianceQuantity);
+    parts.push(`${requestedApplianceQuantity} appliance unit(s)`);
   }
 
   return parts.join(" and ") || "No quantified support";
@@ -218,23 +226,52 @@ const enrichRequestForQueue = (request) => {
 
   return {
     ...requestObj,
-    requestType: normalizeRequestType(requestObj.requestType),
+    supportTypes: getSupportTypesFromRequest(requestObj),
+    requestType: normalizeRequestType(
+      requestObj.requestType,
+      getSupportTypesFromRequest(requestObj)
+    ),
     demandSummaryLabel: buildDemandSummaryLabel(requestObj),
     totals: {
       ...(requestObj.totals || {}),
+      requestedFoodPacks: toNumber(requestObj?.totals?.requestedFoodPacks),
       requestedMonetaryAmount: toNumber(
         requestObj?.totals?.requestedMonetaryAmount
       ),
+      requestedApplianceQuantity:
+        Array.isArray(requestObj?.requestedAppliances) &&
+        requestObj.requestedAppliances.length > 0
+          ? requestObj.requestedAppliances.reduce(
+              (sum, item) => sum + toNumber(item.quantityRequested),
+              0
+            )
+          : toNumber(requestObj?.totals?.requestedApplianceQuantity),
     },
     fulfillment: {
       ...(requestObj.fulfillment || {}),
+      releasedFoodPacks: toNumber(requestObj?.fulfillment?.releasedFoodPacks),
       releasedMonetaryAmount: toNumber(
         requestObj?.fulfillment?.releasedMonetaryAmount
       ),
+      releasedApplianceQuantity: toNumber(
+        requestObj?.fulfillment?.releasedApplianceQuantity
+      ),
+      receivedFoodPacks: toNumber(requestObj?.fulfillment?.receivedFoodPacks),
       receivedMonetaryAmount: toNumber(
         requestObj?.fulfillment?.receivedMonetaryAmount
       ),
+      receivedApplianceQuantity: toNumber(
+        requestObj?.fulfillment?.receivedApplianceQuantity
+      ),
     },
+    requestedAppliances: Array.isArray(requestObj?.requestedAppliances)
+      ? requestObj.requestedAppliances.map((item) => ({
+          itemName: normalizeString(item.itemName),
+          category: normalizeString(item.category),
+          quantityRequested: toNumber(item.quantityRequested),
+          remarks: normalizeString(item.remarks),
+        }))
+      : [],
     currentStage: normalizedStage,
     prioritySnapshot,
     priorityLevel: getPriorityLevel(prioritySnapshot, requestObj.totals || {}),
@@ -258,6 +295,9 @@ const summarizeInventoryByCategory = async () => {
   const goodsItems = inventoryItems.filter(
     (item) => normalizeString(item.type).toLowerCase() === "goods"
   );
+  const applianceItems = inventoryItems.filter(
+    (item) => normalizeString(item.type).toLowerCase() === "appliance"
+  );
   const monetaryItems = inventoryItems.filter(
     (item) => normalizeString(item.type).toLowerCase() === "monetary"
   );
@@ -279,8 +319,13 @@ const summarizeInventoryByCategory = async () => {
 
   return {
     totalGoodsEntries: goodsItems.length,
+    totalApplianceEntries: applianceItems.length,
     totalMonetaryEntries: monetaryItems.length,
     totalStockUnits,
+    totalApplianceUnits: applianceItems.reduce(
+      (sum, item) => sum + toNumber(item.quantity),
+      0
+    ),
     totalMonetaryAmount: monetaryItems.reduce(
       (sum, item) => sum + toNumber(item.amount),
       0
@@ -505,11 +550,17 @@ const getRequestFeasibility = async (req, res) => {
     res.json({
       requestNo: enrichedRequest.requestNo,
       barangayName: enrichedRequest.barangayName,
+      supportTypes: enrichedRequest.supportTypes,
+      supportTypeLabel: getSupportTypeLabel(enrichedRequest.supportTypes),
       requestType: enrichedRequest.requestType,
       requestedFoodPacks: toNumber(enrichedRequest.totals?.requestedFoodPacks),
       requestedMonetaryAmount: toNumber(
         enrichedRequest.totals?.requestedMonetaryAmount
       ),
+      requestedApplianceQuantity: toNumber(
+        enrichedRequest.totals?.requestedApplianceQuantity
+      ),
+      requestedAppliances: enrichedRequest.requestedAppliances || [],
       totalAffected: toNumber(enrichedRequest.prioritySnapshot?.totalAffected),
       vulnerableCount: toNumber(
         enrichedRequest.prioritySnapshot?.vulnerableCount
@@ -616,6 +667,12 @@ const updateReliefStatus = async (req, res) => {
     }
 
     if (action === "reject" || action === "cancel") {
+      if (!remarks) {
+        return res.status(400).json({
+          message: "Rejection reason is required.",
+        });
+      }
+
       request.status = "rejected";
       request.currentStage = "rejected";
       request.rejectedBy = String(username);

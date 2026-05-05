@@ -8,7 +8,42 @@ const incidentSchema = new mongoose.Schema(
     description: String,
     latitude: Number,
     longitude: Number,
-    status: { type: String, default: "reported" },
+
+    status: {
+      type: String,
+      default: "reported",
+    },
+
+    // ✅ Reporter identity.
+    // Needed so the original user can receive approval notifications.
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    reporterUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    // ✅ Public visibility flags.
+    // Needed so admin approval can make the incident visible on mobile/public map.
+    isPublic: {
+      type: Boolean,
+      default: false,
+    },
+
+    approvedByMDRRMO: {
+      type: Boolean,
+      default: false,
+    },
+
+    forceApproved: {
+      type: Boolean,
+      default: false,
+    },
 
     image: {
       fileName: String,
@@ -28,19 +63,19 @@ const incidentSchema = new mongoose.Schema(
       status: {
         type: String,
         enum: ["approved", "pending", "rejected"],
-        default: "pending"
+        default: "pending",
       },
 
       confidence: Number,
 
-      labels: [String],          // all detected labels
-      matchedLabels: [String],   // labels relevant to incident type
+      labels: [String],
+      matchedLabels: [String],
 
-      isMatch: Boolean,          // whether labels matched rules
+      isMatch: Boolean,
 
-      score: Number,             // 🔥 weighted score (labels + metadata)
+      score: Number,
 
-      reasoning: String,         // 🔥 human-friendly explanation
+      reasoning: String,
 
       metadata: {
         hasGPS: Boolean,
@@ -50,21 +85,22 @@ const incidentSchema = new mongoose.Schema(
         width: Number,
         height: Number,
         timestamp: Number,
-      }
+      },
     },
 
-    usernames: { 
-      type: String, 
-      ref: "User" 
+    usernames: {
+      type: String,
+      ref: "User",
     },
 
-    phone: { 
-      type: String, 
-      ref: "User" 
-    }
+    phone: {
+      type: String,
+      ref: "User",
+    },
   },
   { timestamps: true }
 );
 
 const IncidentModel = mongoose.model("Incident", incidentSchema);
+
 module.exports = IncidentModel;

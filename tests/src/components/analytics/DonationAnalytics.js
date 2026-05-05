@@ -227,6 +227,15 @@ export default function DonationAnalytics() {
   });
 
   const [recentTrend, setRecentTrend] = useState([]);
+  const [donationAi, setDonationAi] = useState({
+    severity: "success",
+    source: "rule_based_fallback",
+    model: "local_rules",
+    summary: "Donation analytics are loading.",
+    priorityActions: [],
+    insights: [],
+    fallbackReason: "",
+  });
 
   const [donationActivity, setDonationActivity] = useState({
     today: {
@@ -283,7 +292,14 @@ export default function DonationAnalytics() {
     }
 
     try {
-      const [inventoryRes, summaryRes, sourceRes, trendRes, donationActivityRes] =
+      const [
+        inventoryRes,
+        summaryRes,
+        sourceRes,
+        trendRes,
+        donationActivityRes,
+        donationAiRes,
+      ] =
         await Promise.allSettled([
           axios.get(`${BASE_URL}/api/inventory`, {
             withCredentials: true,
@@ -298,6 +314,9 @@ export default function DonationAnalytics() {
             withCredentials: true,
           }),
           axios.get(`${BASE_URL}/api/inventory/analytics/donation-activity`, {
+            withCredentials: true,
+          }),
+          axios.get(`${BASE_URL}/api/inventory/analytics/donation-ai-insights`, {
             withCredentials: true,
           }),
         ]);
@@ -374,6 +393,22 @@ export default function DonationAnalytics() {
           topDonatedCategories: Array.isArray(data.topDonatedCategories)
             ? data.topDonatedCategories
             : [],
+        });
+      }
+
+      if (donationAiRes.status === "fulfilled") {
+        const data = donationAiRes.value?.data || {};
+
+        setDonationAi({
+          severity: String(data.overallSeverity || "success").toLowerCase(),
+          source: String(data.source || "rule_based_fallback").toLowerCase(),
+          model: data.model || "local_rules",
+          summary:
+            data.executiveSummary ||
+            "Donation analytics show usable donor rankings, contribution totals, and source distribution.",
+          priorityActions: Array.isArray(data.priorityActions) ? data.priorityActions : [],
+          insights: Array.isArray(data.insights) ? data.insights : [],
+          fallbackReason: data.fallbackReason || "",
         });
       }
     } catch (error) {
@@ -530,78 +565,6 @@ export default function DonationAnalytics() {
       text: issues.join(" • "),
     };
   }, [donationActivity, inventorySummary, namedDonorCount]);
-
-  const donationAi = useMemo(() => {
-    const insights = [];
-
-    if (namedMonetaryDonors.length > 0) {
-      insights.push({
-        severity: "success",
-        title: "Named monetary donors are identifiable",
-        message: `${namedMonetaryDonors.length} named donor${
-          namedMonetaryDonors.length === 1 ? "" : "s"
-        } can be ranked by monetary support.`,
-        action: "Prioritize acknowledgement and reporting for high-value named monetary donors.",
-      });
-    }
-
-    if (namedGoodsDonors.length > 0) {
-      insights.push({
-        severity: "success",
-        title: "Goods donor ranking is available",
-        message: `${namedGoodsDonors.length} named donor${
-          namedGoodsDonors.length === 1 ? "" : "s"
-        } contributed measurable goods quantities.`,
-        action: "Use goods donor rankings when preparing transparency reports.",
-      });
-    }
-
-    if (repeatNamedDonors > 0) {
-      insights.push({
-        severity: "info",
-        title: "Repeat donors are present",
-        message: `${repeatNamedDonors} named donor${
-          repeatNamedDonors === 1 ? "" : "s"
-        } donated more than once.`,
-        action: "Maintain communication with repeat donors because they show reliable support.",
-      });
-    }
-
-    if (safeNumber(donationActivity.donationsThisWeek) === 0) {
-      insights.push({
-        severity: "warning",
-        title: "No donation intake this week",
-        message: "There are no donation records for the current week.",
-        action: "Check if recent donations were encoded or coordinate donation intake updates.",
-      });
-    }
-
-    if (!insights.length) {
-      insights.push({
-        severity: "success",
-        title: "Donation data looks stable",
-        message: "Donation records are available and no urgent donor data issue was detected.",
-        action: "Continue monitoring donor activity, source mix, and recurring support.",
-      });
-    }
-
-    const priorityActions = insights.slice(0, 3).map((item) => item.action);
-
-    return {
-      severity: insights.some((item) => item.severity === "warning") ? "warning" : "success",
-      summary:
-        insights.some((item) => item.severity === "warning")
-          ? "Donation analytics are available, but recent intake or named donor visibility needs review."
-          : "Donation analytics show usable donor rankings, contribution totals, and source distribution.",
-      priorityActions,
-      insights: insights.slice(0, 4),
-    };
-  }, [
-    namedMonetaryDonors,
-    namedGoodsDonors,
-    repeatNamedDonors,
-    donationActivity,
-  ]);
 
   const commonChartOptions = useMemo(() => {
     return {
@@ -868,7 +831,13 @@ export default function DonationAnalytics() {
               <span className={`donation-severity donation-severity--${donationAi.severity}`}>
                 {titleCase(donationAi.severity)}
               </span>
-              <span className="donation-source-badge">Local AI Rules</span>
+              <span className="donation-source-badge">
+                {donationAi.source === "gemini"
+                  ? "Gemini AI"
+                  : donationAi.source === "bedrock"
+                  ? "AWS Bedrock"
+                  : "Local AI Rules"}
+              </span>
             </div>
           </div>
 
@@ -918,6 +887,7 @@ export default function DonationAnalytics() {
               </div>
             ))}
           </div>
+
         </div>
       </section>
 

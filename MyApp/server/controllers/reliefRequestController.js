@@ -17,6 +17,16 @@ const {
   ensurePdfPageSpace,
   formatPdfDateValue,
 } = require("../utils/pdfTheme");
+const {
+  SUPPORT_TYPE_APPLIANCE,
+  SUPPORT_TYPE_FOODPACKS,
+  SUPPORT_TYPE_MONETARY,
+  normalizeSupportTypes,
+  deriveLegacyRequestType,
+  getSupportTypesFromRequest,
+  hasSupportType,
+  getSupportTypeLabel,
+} = require("../utils/reliefSupportTypes");
 
 const ACTIVE_REQUEST_STATUSES = ["pending", "approved", "partially_released", "released"];
 const VIEWABLE_REQUEST_STATUSES = [
@@ -31,15 +41,6 @@ const VIEWABLE_REQUEST_STATUSES = [
   "canceled",
 ];
 const FINAL_REQUEST_STATUSES = ["received", "cancelled", "canceled", "rejected", "completed"];
-const REQUEST_TYPE_FOODPACKS = "foodpacks";
-const REQUEST_TYPE_MONETARY = "monetary";
-const REQUEST_TYPE_BOTH = "both";
-const VALID_REQUEST_TYPES = [
-  REQUEST_TYPE_FOODPACKS,
-  REQUEST_TYPE_MONETARY,
-  REQUEST_TYPE_BOTH,
-];
-
 const generateRequestNo = async () => {
   const year = new Date().getFullYear();
   const prefix = `RR-${year}`;
@@ -67,12 +68,6 @@ const normalizeString = (value) => {
 };
 
 const normalizeStatus = (value) => normalizeString(value).toLowerCase();
-const normalizeRequestType = (value) => {
-  const normalized = normalizeString(value).toLowerCase();
-  return VALID_REQUEST_TYPES.includes(normalized)
-    ? normalized
-    : REQUEST_TYPE_FOODPACKS;
-};
 
 const toNumber = (value) => {
   if (value === undefined || value === null || value === "") return 0;
@@ -86,38 +81,63 @@ const formatMonetaryAmount = (value) =>
     maximumFractionDigits: 2,
   });
 
-const requiresFoodPackFulfillment = (requestType) =>
-  [REQUEST_TYPE_FOODPACKS, REQUEST_TYPE_BOTH].includes(
-    normalizeRequestType(requestType)
-  );
+const requiresFoodPackFulfillment = (request = {}) =>
+  hasSupportType(getSupportTypesFromRequest(request), SUPPORT_TYPE_FOODPACKS);
 
-const requiresMonetaryFulfillment = (requestType) =>
-  [REQUEST_TYPE_MONETARY, REQUEST_TYPE_BOTH].includes(
-    normalizeRequestType(requestType)
-  );
+const requiresMonetaryFulfillment = (request = {}) =>
+  hasSupportType(getSupportTypesFromRequest(request), SUPPORT_TYPE_MONETARY);
+
+const requiresApplianceFulfillment = (request = {}) =>
+  hasSupportType(getSupportTypesFromRequest(request), SUPPORT_TYPE_APPLIANCE);
+
+const getActiveRows = (rows = []) =>
+  (Array.isArray(rows) ? rows : []).filter((row) => row && row.isActiveRow !== false);
 
 const getRequestedFoodPacksFromRows = (rows = []) =>
-  rows.reduce((sum, row) => sum + toNumber(row.requestedFoodPacks), 0);
+  getActiveRows(rows).reduce((sum, row) => sum + toNumber(row.requestedFoodPacks), 0);
 
 const getRequestedMonetaryAmountInput = (payload = {}) =>
   toNumber(payload.requestedMonetaryAmount ?? payload?.totals?.requestedMonetaryAmount);
 
+const sanitizeRequestedAppliance = (item = {}) => ({
+  itemName: normalizeString(item.itemName),
+  category: normalizeString(item.category),
+  quantityRequested: toNumber(item.quantityRequested),
+  remarks: normalizeString(item.remarks),
+});
+
+const getRequestedAppliances = (request = {}) =>
+  (Array.isArray(request.requestedAppliances) ? request.requestedAppliances : [])
+    .map(sanitizeRequestedAppliance)
+    .filter((item) => item.itemName && item.category && item.quantityRequested > 0);
+
 const getRequestDemandProfile = (request = {}) => {
-  const requestType = normalizeRequestType(request.requestType);
+  const supportTypes = getSupportTypesFromRequest(request);
+  const requestType = deriveLegacyRequestType(supportTypes);
   const totals = request.totals || {};
-  const requestedFoodPacks = requiresFoodPackFulfillment(requestType)
+  const requestedFoodPacks = requiresFoodPackFulfillment({ supportTypes, requestType })
     ? toNumber(totals.requestedFoodPacks)
     : 0;
-  const requestedMonetaryAmount = requiresMonetaryFulfillment(requestType)
+  const requestedMonetaryAmount = requiresMonetaryFulfillment({ supportTypes, requestType })
     ? toNumber(totals.requestedMonetaryAmount)
     : 0;
+  const requestedAppliances = requiresApplianceFulfillment({ supportTypes, requestType })
+    ? getRequestedAppliances(request)
+    : [];
 
   return {
     requestType,
-    requiresFoodPacks: requiresFoodPackFulfillment(requestType),
-    requiresMonetary: requiresMonetaryFulfillment(requestType),
+    supportTypes,
+    requiresFoodPacks: requiresFoodPackFulfillment({ supportTypes, requestType }),
+    requiresMonetary: requiresMonetaryFulfillment({ supportTypes, requestType }),
+    requiresAppliance: requiresApplianceFulfillment({ supportTypes, requestType }),
     requestedFoodPacks,
     requestedMonetaryAmount,
+    requestedAppliances,
+    requestedApplianceQuantity: requestedAppliances.reduce(
+      (sum, item) => sum + toNumber(item.quantityRequested),
+      0
+    ),
   };
 };
 
@@ -133,6 +153,12 @@ const buildRequestDemandLabel = (request = {}) => {
     parts.push(`PHP ${formatMonetaryAmount(demand.requestedMonetaryAmount)}`);
   }
 
+  if (demand.requiresAppliance) {
+    parts.push(
+      `${demand.requestedApplianceQuantity} appliance unit(s) across ${demand.requestedAppliances.length} item(s)`
+    );
+  }
+
   return parts.length ? `Requested ${parts.join(" and ")}` : "No quantified request totals";
 };
 
@@ -141,20 +167,32 @@ const shapeReliefRequestResponse = (request) => {
 
   const requestObject =
     typeof request.toObject === "function" ? request.toObject() : { ...request };
+  const supportTypes = getSupportTypesFromRequest(requestObject);
 
   return {
     ...requestObject,
-    requestType: normalizeRequestType(requestObject.requestType),
+    requestType: deriveLegacyRequestType(supportTypes),
+    supportTypes,
+    requestedAppliances: getRequestedAppliances(requestObject),
     totals: {
       ...(requestObject.totals || {}),
       requestedMonetaryAmount: toNumber(
         requestObject?.totals?.requestedMonetaryAmount
       ),
+      requestedApplianceQuantity: toNumber(
+        requestObject?.totals?.requestedApplianceQuantity
+      ),
     },
     fulfillment: {
       ...(requestObject.fulfillment || {}),
+      releasedApplianceQuantity: toNumber(
+        requestObject?.fulfillment?.releasedApplianceQuantity
+      ),
       releasedMonetaryAmount: toNumber(
         requestObject?.fulfillment?.releasedMonetaryAmount
+      ),
+      receivedApplianceQuantity: toNumber(
+        requestObject?.fulfillment?.receivedApplianceQuantity
       ),
       receivedMonetaryAmount: toNumber(
         requestObject?.fulfillment?.receivedMonetaryAmount
@@ -164,15 +202,28 @@ const shapeReliefRequestResponse = (request) => {
 };
 
 const validateRequestDemand = ({
+  supportTypes,
   requestType,
   rows,
   requestedMonetaryAmount,
+  requestedAppliances,
   remarks,
 }) => {
-  const normalizedRequestType = normalizeRequestType(requestType);
+  const normalizedSupportTypes = normalizeSupportTypes(supportTypes, requestType);
   const requestedFoodPacks = getRequestedFoodPacksFromRows(rows);
-  const requiresFoodPacks = requiresFoodPackFulfillment(normalizedRequestType);
-  const requiresMonetary = requiresMonetaryFulfillment(normalizedRequestType);
+  const applianceItems = getRequestedAppliances({ requestedAppliances });
+  const requiresFoodPacks = hasSupportType(
+    normalizedSupportTypes,
+    SUPPORT_TYPE_FOODPACKS
+  );
+  const requiresMonetary = hasSupportType(
+    normalizedSupportTypes,
+    SUPPORT_TYPE_MONETARY
+  );
+  const requiresAppliance = hasSupportType(
+    normalizedSupportTypes,
+    SUPPORT_TYPE_APPLIANCE
+  );
 
   if (requiresFoodPacks && requestedFoodPacks <= 0) {
     return "Requested food packs must be greater than 0 for this request type.";
@@ -184,6 +235,10 @@ const validateRequestDemand = ({
 
   if (requiresMonetary && !normalizeString(remarks)) {
     return "Remarks are required for monetary requests.";
+  }
+
+  if (requiresAppliance && applianceItems.length === 0) {
+    return "Add at least one requested appliance item.";
   }
 
   return null;
@@ -266,7 +321,9 @@ const validateRows = (rows) => {
 };
 
 const computePrioritySnapshotFromRows = (rows = []) => {
-  const totalAffected = rows.reduce(
+  const activeRows = getActiveRows(rows);
+
+  const totalAffected = activeRows.reduce(
     (sum, row) =>
       sum +
       toNumber(row.male) +
@@ -278,13 +335,13 @@ const computePrioritySnapshotFromRows = (rows = []) => {
     0
   );
 
-  const vulnerableCount = rows.reduce(
+  const vulnerableCount = activeRows.reduce(
     (sum, row) =>
       sum + toNumber(row.pwd) + toNumber(row.pregnant) + toNumber(row.senior),
     0
   );
 
-  const requestedFoodPacks = rows.reduce(
+  const requestedFoodPacks = activeRows.reduce(
     (sum, row) => sum + toNumber(row.requestedFoodPacks),
     0
   );
@@ -307,9 +364,35 @@ const buildFulfillmentFromReleases = (releases = [], currentFulfillment = {}) =>
     0
   );
 
+  const releasedApplianceQuantity = releases.reduce(
+    (sum, release) =>
+      sum +
+      (Array.isArray(release.items)
+        ? release.items
+            .filter((item) => normalizeString(item.itemType || "goods") === "appliance")
+            .reduce((itemSum, item) => itemSum + toNumber(item.quantityReleased), 0)
+        : 0),
+    0
+  );
+
   const receivedFoodPacks = releases
     .filter((release) => release.releaseStatus === "received")
     .reduce((sum, release) => sum + toNumber(release.foodPacksReleased), 0);
+
+  const receivedApplianceQuantity = releases
+    .filter((release) => release.releaseStatus === "received")
+    .reduce(
+      (sum, release) =>
+        sum +
+        (Array.isArray(release.items)
+          ? release.items
+              .filter(
+                (item) => normalizeString(item.itemType || "goods") === "appliance"
+              )
+              .reduce((itemSum, item) => itemSum + toNumber(item.quantityReleased), 0)
+          : 0),
+      0
+    );
 
   const releasedMonetaryAmount = releases.reduce(
     (sum, release) => sum + toNumber(release.releasedMonetaryAmount),
@@ -318,7 +401,14 @@ const buildFulfillmentFromReleases = (releases = [], currentFulfillment = {}) =>
 
   const receivedMonetaryAmount = releases
     .filter((release) => release.releaseStatus === "received")
-    .reduce((sum, release) => sum + toNumber(release.receivedMonetaryAmount), 0);
+    .reduce(
+      (sum, release) =>
+        sum +
+        toNumber(
+          release.receivedMonetaryAmount || release.releasedMonetaryAmount
+        ),
+      0
+    );
 
   const receivedReleases = releases.filter(
     (release) => release.releaseStatus === "received"
@@ -335,7 +425,9 @@ const buildFulfillmentFromReleases = (releases = [], currentFulfillment = {}) =>
   return {
     totalReleases,
     releasedFoodPacks,
+    releasedApplianceQuantity,
     receivedFoodPacks,
+    receivedApplianceQuantity,
     releasedMonetaryAmount:
       releasedMonetaryAmount > 0
         ? releasedMonetaryAmount
@@ -410,6 +502,29 @@ const formatStatusLabel = (status) => {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
+const findBlockingActiveRequest = async (barangayId) => {
+  const candidates = await ReliefRequest.find({
+    barangayId,
+    status: {
+      $in: ACTIVE_REQUEST_STATUSES,
+    },
+    isArchived: false,
+  }).sort({ createdAt: -1 });
+
+  for (const candidate of candidates) {
+    const refreshedCandidate = await refreshRequestProgress(candidate._id);
+    const normalizedStatus = normalizeStatus(
+      refreshedCandidate?.status || candidate.status
+    );
+
+    if (ACTIVE_REQUEST_STATUSES.includes(normalizedStatus)) {
+      return refreshedCandidate || candidate;
+    }
+  }
+
+  return null;
+};
+
 const refreshRequestProgress = async (requestId) => {
   const request = await ReliefRequest.findById(requestId);
   if (!request || request.isArchived) return null;
@@ -434,7 +549,8 @@ const refreshRequestProgress = async (requestId) => {
     isArchived: false,
   }).sort({ createdAt: -1 });
 
-  request.requestType = normalizeRequestType(request.requestType);
+  request.supportTypes = getSupportTypesFromRequest(request);
+  request.requestType = deriveLegacyRequestType(request.supportTypes);
 
   const fulfillment = buildFulfillmentFromReleases(releases, request.fulfillment);
   const demand = getRequestDemandProfile(request);
@@ -445,20 +561,30 @@ const refreshRequestProgress = async (requestId) => {
   const hasAnyFulfillment =
     releases.length > 0 || releasedMonetaryAmount > 0 || receivedMonetaryAmount > 0;
   const hasQuantifiedDemand =
-    demand.requestedFoodPacks > 0 || demand.requestedMonetaryAmount > 0;
+    demand.requestedFoodPacks > 0 ||
+    demand.requestedMonetaryAmount > 0 ||
+    demand.requestedApplianceQuantity > 0;
   const isFullyReleased =
     (!demand.requiresFoodPacks || releasedFoodPacks >= demand.requestedFoodPacks) &&
+    (!demand.requiresAppliance ||
+      toNumber(fulfillment.releasedApplianceQuantity) >=
+        demand.requestedApplianceQuantity) &&
     (!demand.requiresMonetary ||
       releasedMonetaryAmount >= demand.requestedMonetaryAmount);
   const isFullyReceived =
     (!demand.requiresFoodPacks || receivedFoodPacks >= demand.requestedFoodPacks) &&
+    (!demand.requiresAppliance ||
+      toNumber(fulfillment.receivedApplianceQuantity) >=
+        demand.requestedApplianceQuantity) &&
     (!demand.requiresMonetary ||
       receivedMonetaryAmount >= demand.requestedMonetaryAmount);
 
   request.fulfillment = {
     totalReleases: fulfillment.totalReleases,
     releasedFoodPacks: fulfillment.releasedFoodPacks,
+    releasedApplianceQuantity: fulfillment.releasedApplianceQuantity,
     releasedMonetaryAmount: fulfillment.releasedMonetaryAmount,
+    receivedApplianceQuantity: fulfillment.receivedApplianceQuantity,
     receivedMonetaryAmount: fulfillment.receivedMonetaryAmount,
     receivedReleases: fulfillment.receivedReleases,
     pendingReleases: fulfillment.pendingReleases,
@@ -512,13 +638,7 @@ const getReliefRequestBootstrap = async (req, res) => {
       return res.status(404).json({ message: "Barangay not found" });
     }
 
-    const activeRequest = await ReliefRequest.findOne({
-      barangayId: barangay._id,
-      status: {
-        $in: ACTIVE_REQUEST_STATUSES,
-      },
-      isArchived: false,
-    }).sort({ createdAt: -1 });
+    const activeRequest = await findBlockingActiveRequest(barangay._id);
 
     const buildLooseBarangayRegex = (value) => {
       const normalized = String(value || "")
@@ -597,9 +717,14 @@ const submitReliefRequest = async (req, res) => {
     }
 
     const disaster = normalizeString(req.body.disaster);
-    const requestType = normalizeRequestType(req.body.requestType);
+    let supportTypes = normalizeSupportTypes(
+      req.body.supportTypes,
+      req.body.requestType
+    );
+    let requestType = deriveLegacyRequestType(supportTypes);
     const remarks = normalizeString(req.body.remarks);
     const requestedMonetaryAmount = getRequestedMonetaryAmountInput(req.body);
+    const requestedAppliances = getRequestedAppliances(req.body);
     const approvalRemarks = "";
     const releaseNotes = "";
     const requestDate = req.body.requestDate
@@ -635,23 +760,30 @@ const submitReliefRequest = async (req, res) => {
       return res.status(400).json({ message: rowsError });
     }
 
+    supportTypes = getSupportTypesFromRequest({
+      supportTypes,
+      requestType,
+      rows,
+      requestedAppliances,
+      totals: {
+        requestedMonetaryAmount,
+      },
+    });
+    requestType = deriveLegacyRequestType(supportTypes);
+
     const requestDemandError = validateRequestDemand({
+      supportTypes,
       requestType,
       rows,
       requestedMonetaryAmount,
+      requestedAppliances,
       remarks,
     });
     if (requestDemandError) {
       return res.status(400).json({ message: requestDemandError });
     }
 
-    const hasActiveRequest = await ReliefRequest.findOne({
-      barangayId: barangay._id,
-      status: {
-        $in: ACTIVE_REQUEST_STATUSES,
-      },
-      isArchived: false,
-    });
+    const hasActiveRequest = await findBlockingActiveRequest(barangay._id);
 
     if (hasActiveRequest) {
       return res.status(400).json({
@@ -668,8 +800,10 @@ const submitReliefRequest = async (req, res) => {
       barangayName: barangay.barangayName,
       disaster,
       requestType,
+      supportTypes,
       requestDate,
       rows,
+      requestedAppliances,
       totals: {
         requestedMonetaryAmount,
       },
@@ -683,7 +817,9 @@ const submitReliefRequest = async (req, res) => {
       fulfillment: {
         totalReleases: 0,
         releasedFoodPacks: 0,
+        releasedApplianceQuantity: 0,
         releasedMonetaryAmount: 0,
+        receivedApplianceQuantity: 0,
         receivedMonetaryAmount: 0,
         receivedReleases: 0,
         pendingReleases: 0,
@@ -805,7 +941,7 @@ const getMyReliefRequestById = async (req, res) => {
   }
 };
 
-/* EXPORT SINGLE BARANGAY RELIEF REQUEST PDF */
+  /* EXPORT SINGLE BARANGAY RELIEF REQUEST PDF */
 const exportMyReliefRequestPdf = async (req, res) => {
   try {
     if (!req.session?.userId) {
@@ -822,12 +958,13 @@ const exportMyReliefRequestPdf = async (req, res) => {
       return res.status(404).json({ message: "Relief request not found" });
     }
 
-    const decisionRemarks = getDecisionRemarks(request);
-    const totals = request.totals || {};
-    const rows = Array.isArray(request.rows) ? request.rows : [];
+      const decisionRemarks = getDecisionRemarks(request);
+      const totals = request.totals || {};
+      const rows = Array.isArray(request.rows) ? request.rows : [];
+      const demand = getRequestDemandProfile(request);
 
-    const safeRequestNo = normalizeString(request.requestNo || "relief-request")
-      .replace(/[^\w\-]+/g, "_");
+      const safeRequestNo = normalizeString(request.requestNo || "relief-request")
+        .replace(/[^\w\-]+/g, "_");
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
@@ -853,6 +990,11 @@ const exportMyReliefRequestPdf = async (req, res) => {
     drawPdfLabelValue(doc, "Request No", request.requestNo || "-");
     drawPdfLabelValue(doc, "Barangay", request.barangayName || "-");
     drawPdfLabelValue(doc, "Disaster", request.disaster || "-");
+    drawPdfLabelValue(
+      doc,
+      "Request Type",
+      getSupportTypeLabel(getSupportTypesFromRequest(request))
+    );
     drawPdfLabelValue(doc, "Request Date", formatDateValue(request.requestDate));
     drawPdfLabelValue(doc, "Status", formatStatusLabel(request.status));
     drawPdfLabelValue(doc, "Current Stage", formatStatusLabel(request.currentStage));
@@ -884,7 +1026,41 @@ const exportMyReliefRequestPdf = async (req, res) => {
     drawPdfLabelValue(doc, "PWD", String(toNumber(totals.pwd)));
     drawPdfLabelValue(doc, "Pregnant", String(toNumber(totals.pregnant)));
     drawPdfLabelValue(doc, "Senior", String(toNumber(totals.senior)));
-    drawPdfLabelValue(doc, "Requested Food Packs", String(toNumber(totals.requestedFoodPacks)));
+    drawPdfLabelValue(doc, "Requested Food Packs", String(toNumber(demand.requestedFoodPacks)));
+    drawPdfLabelValue(
+      doc,
+      "Requested Monetary Amount",
+      `PHP ${formatMonetaryAmount(demand.requestedMonetaryAmount)}`
+    );
+    drawPdfLabelValue(
+      doc,
+      "Requested Appliance Units",
+      String(toNumber(demand.requestedApplianceQuantity))
+    );
+
+    if (demand.requestedAppliances.length) {
+      drawPdfSectionTitle(doc, "Requested Appliance Details");
+
+      drawPdfTable(
+        doc,
+        [
+          { label: "Item", key: "itemName", width: 150 },
+          { label: "Category", key: "category", width: 110 },
+          { label: "Qty", key: "quantityRequested", width: 45, align: "right" },
+          { label: "Remarks", key: "remarks", width: 180 },
+        ],
+        demand.requestedAppliances.map((item) => ({
+          itemName: normalizeString(item.itemName) || "-",
+          category: normalizeString(item.category) || "-",
+          quantityRequested: toNumber(item.quantityRequested),
+          remarks: normalizeString(item.remarks) || "-",
+        })),
+        {
+          rowHeight: 24,
+          emptyMessage: "No requested appliance items available.",
+        }
+      );
+    }
 
     drawPdfSectionTitle(doc, "Evacuation Center Breakdown");
 
@@ -951,6 +1127,26 @@ const exportMyReliefRequestPdf = async (req, res) => {
       doc,
       "Released Food Packs",
       String(toNumber(request.fulfillment?.releasedFoodPacks))
+    );
+    drawPdfLabelValue(
+      doc,
+      "Released Monetary Amount",
+      `PHP ${formatMonetaryAmount(request.fulfillment?.releasedMonetaryAmount)}`
+    );
+    drawPdfLabelValue(
+      doc,
+      "Released Appliance Units",
+      String(toNumber(request.fulfillment?.releasedApplianceQuantity))
+    );
+    drawPdfLabelValue(
+      doc,
+      "Received Monetary Amount",
+      `PHP ${formatMonetaryAmount(request.fulfillment?.receivedMonetaryAmount)}`
+    );
+    drawPdfLabelValue(
+      doc,
+      "Received Appliance Units",
+      String(toNumber(request.fulfillment?.receivedApplianceQuantity))
     );
     drawPdfLabelValue(
       doc,
@@ -1021,9 +1217,10 @@ const getCurrentReliefJourney = async (req, res) => {
 
     const canEdit = requestStatus === "pending";
     const canCancel = ["pending", "approved"].includes(requestStatus);
-    const canReceiveAnyRelease = releases.some(
-      (release) => release.releaseStatus === "released"
-    );
+    const canReceiveAnyRelease =
+      releases.some((release) => release.releaseStatus === "released") ||
+      ["released", "partially_released"].includes(requestStatus) ||
+      ["released_waiting_receipt", "partially_released"].includes(stage);
     const canRequestAgain = FINAL_REQUEST_STATUSES.includes(requestStatus);
 
     return res.json({
@@ -1093,7 +1290,11 @@ const updateOwnReliefRequest = async (req, res) => {
     }
 
     const disaster = normalizeString(req.body.disaster);
-    const requestType = normalizeRequestType(req.body.requestType || request.requestType);
+    let supportTypes = normalizeSupportTypes(
+      req.body.supportTypes,
+      req.body.requestType !== undefined ? req.body.requestType : request.requestType
+    );
+    let requestType = deriveLegacyRequestType(supportTypes);
     const remarks = normalizeString(req.body.remarks);
     const requestedMonetaryAmount = getRequestedMonetaryAmountInput(
       req.body.requestType !== undefined ||
@@ -1108,6 +1309,9 @@ const updateOwnReliefRequest = async (req, res) => {
     const requestDate = req.body.requestDate
       ? new Date(req.body.requestDate)
       : request.requestDate;
+    const requestedAppliances = Array.isArray(req.body.requestedAppliances)
+      ? getRequestedAppliances(req.body)
+      : getRequestedAppliances(request);
 
     const entryMode = ["manual", "excel_import", "system_bootstrap"].includes(
       normalizeString(req.body.entryMode)
@@ -1138,10 +1342,23 @@ const updateOwnReliefRequest = async (req, res) => {
       return res.status(400).json({ message: rowsError });
     }
 
+    supportTypes = getSupportTypesFromRequest({
+      supportTypes,
+      requestType,
+      rows,
+      requestedAppliances,
+      totals: {
+        requestedMonetaryAmount,
+      },
+    });
+    requestType = deriveLegacyRequestType(supportTypes);
+
     const requestDemandError = validateRequestDemand({
+      supportTypes,
       requestType,
       rows,
       requestedMonetaryAmount,
+      requestedAppliances,
       remarks,
     });
     if (requestDemandError) {
@@ -1150,8 +1367,10 @@ const updateOwnReliefRequest = async (req, res) => {
 
     request.disaster = disaster;
     request.requestType = requestType;
+    request.supportTypes = supportTypes;
     request.requestDate = requestDate;
     request.rows = rows;
+    request.requestedAppliances = requestedAppliances;
     request.totals = {
       ...(request.totals
         ? request.totals.toObject?.() || request.totals
@@ -1164,8 +1383,11 @@ const updateOwnReliefRequest = async (req, res) => {
     request.prioritySnapshot = computePrioritySnapshotFromRows(rows);
     request.isEditedAfterSubmit = true;
     request.lastEditedAt = new Date();
-    request.editCount = Number(request.editCount || 0) + 1;
+    request.editCount = isRejectedResubmission
+      ? Number(request.editCount || 0)
+      : Number(request.editCount || 0) + 1;
     request.lastEditedBy = "barangay";
+    request.lastEditAction = isRejectedResubmission ? "resubmitted" : "updated";
 
     if (isRejectedResubmission) {
       request.status = "pending";
@@ -1345,10 +1567,29 @@ const markReliefRequestReceived = async (req, res) => {
     const releasesToReceive = await ReliefRelease.find({
       reliefRequestId: request._id,
       isArchived: false,
-      releaseStatus: "released",
+      releaseStatus: { $nin: ["received", "cancelled"] },
     });
 
     if (!releasesToReceive.length) {
+      const alreadyReceivedReleases = await ReliefRelease.find({
+        reliefRequestId: request._id,
+        isArchived: false,
+        releaseStatus: "received",
+      });
+
+      const updatedRequest = await refreshRequestProgress(request._id);
+
+      if (
+        alreadyReceivedReleases.length > 0 ||
+        updatedRequest?.receivedAt ||
+        ["received", "completed"].includes(normalizeStatus(updatedRequest?.status))
+      ) {
+        return res.json({
+          message: "Relief deliveries were already marked as received.",
+          request: shapeReliefRequestResponse(updatedRequest || request),
+        });
+      }
+
       return res.status(400).json({
         message: "No released deliveries found for this request.",
       });
@@ -1356,12 +1597,23 @@ const markReliefRequestReceived = async (req, res) => {
 
     const now = new Date();
 
-    for (const release of releasesToReceive) {
-      release.releaseStatus = "received";
-      release.receivedAt = now;
-      release.receivedBy = username;
-      await release.save();
-    }
+      for (const release of releasesToReceive) {
+        release.releaseStatus = "received";
+        release.receivedAt = now;
+        release.receivedBy = username;
+        release.receivedMonetaryAmount = toNumber(
+          release.receivedMonetaryAmount || release.releasedMonetaryAmount
+        );
+        release.items = Array.isArray(release.items)
+          ? release.items.map((item) => ({
+              ...(item.toObject?.() ? item.toObject() : item),
+              quantityReceived: toNumber(
+                item?.quantityReceived || item?.quantityReleased
+              ),
+            }))
+          : [];
+        await release.save();
+      }
 
     const updatedRequest = await refreshRequestProgress(request._id);
 
@@ -1448,6 +1700,64 @@ const markReliefRequestReceived = async (req, res) => {
   }
 };
 
+const reportReliefRequestNotReceived = async (req, res) => {
+  try {
+    if (!req.session?.userId) {
+      return res.status(401).json({ message: "Not logged in" });
+    }
+
+    const request = await ReliefRequest.findOne({
+      _id: req.params.id,
+      barangayId: req.session.userId,
+      isArchived: false,
+    });
+
+    if (!request) {
+      return res.status(404).json({ message: "Relief request not found" });
+    }
+
+    const updatedRequest = await refreshRequestProgress(request._id);
+
+    await Audit.create({
+      barangayId: request.barangayId,
+      barangayName: request.barangayName,
+      category: "relief_request",
+      peopleRange: `Reported undelivered release for request ${request.requestNo}`,
+      status: updatedRequest?.status || request.status,
+      actionBy: "barangay",
+    });
+
+    await createNotification({
+      recipientRole: "drrmo",
+      senderUser: request.barangayId,
+      senderRole: "barangay",
+      senderName: request.barangayName,
+      module: "relief",
+      type: "relief_request_not_received",
+      priority: "high",
+      title: "Relief delivery not received",
+      message: `${request.barangayName} reported that relief request ${request.requestNo} was not received.`,
+      link: "/drrmo/relief-lists",
+      referenceId: request._id,
+      referenceModel: "ReliefRequest",
+      metadata: {
+        requestNo: request.requestNo,
+        barangayName: request.barangayName,
+        disaster: request.disaster,
+        status: updatedRequest?.status || request.status,
+      },
+    });
+
+    return res.json({
+      message: "DRRMO has been notified that this release was not received.",
+      request: shapeReliefRequestResponse(updatedRequest || request),
+    });
+  } catch (err) {
+    console.error("Report Relief Request Not Received Error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   getReliefRequestBootstrap,
   submitReliefRequest,
@@ -1458,5 +1768,6 @@ module.exports = {
   updateOwnReliefRequest,
   cancelOwnReliefRequest,
   markReliefRequestReceived,
+  reportReliefRequestNotReceived,
   refreshRequestProgress,
 };

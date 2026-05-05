@@ -6,6 +6,46 @@ const TimeLog = require('../models/TimeLog');
 const AdminLog = require('../models/AdminLog');
 const UserStaff = require('../models/UserStaff.js');
 
+const CONTROL_AND_MARKUP = /[<>`]/g;
+
+function removeControlChars(value) {
+  return String(value ?? '')
+    .split('')
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code >= 32 && code !== 127;
+    })
+    .join('');
+}
+
+function sanitizeText(value) {
+  return removeControlChars(value).replace(CONTROL_AND_MARKUP, '');
+}
+
+function sanitizeUsername(value) {
+  return sanitizeText(value).replace(/[^a-zA-Z0-9 _.-]/g, '');
+}
+
+function sanitizeEmail(value) {
+  return sanitizeText(value).replace(/\s+/g, '').trim();
+}
+
+function sanitizePhoneNumber(value) {
+  return String(value ?? '').replace(/\D/g, '').slice(0, 11);
+}
+
+function sanitizeHotline(value) {
+  return sanitizeText(value).replace(/[^0-9+\-() extEXT]/g, '');
+}
+
+function sanitizeAddress(value) {
+  return sanitizeText(value).trim();
+}
+
+function sanitizePassword(value) {
+  return removeControlChars(value);
+}
+
 const BARANGAY_OPTIONS = [
   "Calabasa",
   "Don Mariano Marcos",
@@ -78,32 +118,39 @@ const register = async (req, res) => {
       address
     } = req.body;
 
-    if (!role || !password || !username || !phoneNumber || !address) {
+    const cleanRole = String(role || '').toLowerCase().trim();
+    const cleanUsername = sanitizeUsername(username);
+    const cleanEmail = sanitizeEmail(email);
+    const cleanPhoneNumber = sanitizePhoneNumber(phoneNumber);
+    const cleanHotline = sanitizeHotline(hotline);
+    const cleanAddress = sanitizeAddress(address);
+    const cleanPassword = sanitizePassword(password);
+    const cleanBarangay = sanitizeText(barangay).trim();
+
+    if (!cleanRole || !cleanPassword || !cleanUsername || !cleanPhoneNumber || !cleanAddress) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(cleanPassword, 10);
 
     /* BARANGAY ACCOUNT */
-    if (role === 'barangay') {
-      if (!email || !barangay) {
+    if (cleanRole === 'barangay') {
+      if (!cleanEmail || !cleanBarangay) {
         return res.status(400).json({ message: 'Missing barangay details' });
       }
 
-      const normalizedBarangay = String(barangay).trim();
-
-      if (!BARANGAY_OPTIONS.includes(normalizedBarangay)) {
+      if (!BARANGAY_OPTIONS.includes(cleanBarangay)) {
         return res.status(400).json({ message: 'Invalid barangay selected' });
       }
 
-      const existingEmail = await Barangay.findOne({ email });
+      const existingEmail = await Barangay.findOne({ email: cleanEmail });
 
       if (existingEmail) {
         return res.status(400).json({ message: 'Barangay email already exists' });
       }
 
       const existingBarangay = await Barangay.findOne({
-        barangayName: normalizedBarangay,
+        barangayName: cleanBarangay,
         archived: false
       });
 
@@ -114,14 +161,14 @@ const register = async (req, res) => {
       }
 
       const barangayUser = await Barangay.create({
-        username,
-        email,
+        username: cleanUsername,
+        email: cleanEmail,
         password: hashedPassword,
-        barangayName: normalizedBarangay,
+        barangayName: cleanBarangay,
         verified: true,
-        phoneNumber,
-        hotline,
-        address
+        phoneNumber: cleanPhoneNumber,
+        hotline: cleanHotline,
+        address: cleanAddress
       });
 
       await AdminLog.create({
@@ -139,32 +186,32 @@ const register = async (req, res) => {
         barangay: barangayUser.barangayName,
         role: 'barangay',
         verified: barangayUser.verified,
-        phoneNumber,
-        hotline,
-        address
+        phoneNumber: cleanPhoneNumber,
+        hotline: cleanHotline,
+        address: cleanAddress
       });
     }
 
     /* ADMIN / DRRMO ACCOUNT */
-    if (!email) {
+    if (!cleanEmail) {
       return res.status(400).json({ message: 'Email required' });
     }
 
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: cleanEmail });
 
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
     const user = await User.create({
-      username,
-      email,
+      username: cleanUsername,
+      email: cleanEmail,
       password: hashedPassword,
-      role,
+      role: cleanRole,
       verified: true,
-      phoneNumber,
-      hotline,
-      address
+      phoneNumber: cleanPhoneNumber,
+      hotline: cleanHotline,
+      address: cleanAddress
     });
 
     await AdminLog.create({
@@ -180,9 +227,9 @@ const register = async (req, res) => {
       email: user.email,
       role: user.role,
       verified: user.verified,
-      phoneNumber,
-      hotline,
-      address
+      phoneNumber: cleanPhoneNumber,
+      hotline: cleanHotline,
+      address: cleanAddress
     });
   } catch (err) {
     console.error(err);
@@ -209,7 +256,8 @@ const login = async (req, res) => {
 
   try {
 
-    const { email, password } = req.body;
+    const email = sanitizeEmail(req.body?.email);
+    const password = sanitizePassword(req.body?.password);
 
     let account = await UserStaff.findOne({ email });
     let role = account ? account.role : null;
@@ -356,22 +404,35 @@ const updateAccount = async (req, res) => {
     if (!account)
       return res.status(404).json({ message: 'Account not found' });
 
-    const { username, email, phoneNumber, hotline, address, password } = req.body;
+    const {
+      username,
+      email,
+      phoneNumber,
+      hotline,
+      address,
+      password
+    } = req.body;
+    const cleanUsername = username !== undefined ? sanitizeUsername(username) : undefined;
+    const cleanEmail = email !== undefined ? sanitizeEmail(email) : undefined;
+    const cleanPhoneNumber = phoneNumber !== undefined ? sanitizePhoneNumber(phoneNumber) : undefined;
+    const cleanHotline = hotline !== undefined ? sanitizeHotline(hotline) : undefined;
+    const cleanAddress = address !== undefined ? sanitizeAddress(address) : undefined;
+    const cleanPassword = password ? sanitizePassword(password) : '';
 
-    if (username !== undefined) account.username = username;
-    if (email !== undefined) account.email = email;
-    if (phoneNumber !== undefined) account.phoneNumber = phoneNumber;
-    if (hotline !== undefined) account.hotline = hotline;
-    if (address !== undefined) account.address = address;
+    if (cleanUsername !== undefined) account.username = cleanUsername;
+    if (cleanEmail !== undefined) account.email = cleanEmail;
+    if (cleanPhoneNumber !== undefined) account.phoneNumber = cleanPhoneNumber;
+    if (cleanHotline !== undefined) account.hotline = cleanHotline;
+    if (cleanAddress !== undefined) account.address = cleanAddress;
 
-    if (password) {
+    if (cleanPassword) {
 
-      const same = await bcrypt.compare(password, account.password);
+      const same = await bcrypt.compare(cleanPassword, account.password);
 
       if (same)
         return res.status(400).json({ message: 'Password must be different' });
 
-      account.password = await bcrypt.hash(password, 10);
+      account.password = await bcrypt.hash(cleanPassword, 10);
 
     }
 

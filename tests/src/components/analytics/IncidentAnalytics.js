@@ -540,6 +540,30 @@ export default function IncidentAnalytics() {
     },
   ];
 
+  const recordWindowCards = [
+    {
+      label: "This Week",
+      value: summary.thisWeekIncidents,
+      sub: "Incident records created this week",
+      tone: "info",
+      icon: <FaClockRotateLeft />,
+    },
+    {
+      label: "This Month",
+      value: summary.thisMonthIncidents,
+      sub: "Incident records created this month",
+      tone: "notice",
+      icon: <FaChartColumn />,
+    },
+    {
+      label: "This Year",
+      value: summary.thisYearIncidents,
+      sub: "Incident records created this year",
+      tone: "success",
+      icon: <FaRankingStar />,
+    },
+  ];
+
   const primaryInsights = toArray(incidentAi.insights).slice(0, 4);
 
   const topTypes = toArray(overview?.topIncidentTypes).slice(0, 3);
@@ -593,6 +617,32 @@ export default function IncidentAnalytics() {
         {kpis.map((item) => (
           <KpiCard key={item.label} {...item} />
         ))}
+      </section>
+
+      <section className="a-card incident-record-window-card">
+        <div className="incident-panel-head">
+          <div>
+            <div className="incident-panel-kicker">
+              <FaClockRotateLeft /> Record Counts
+            </div>
+            <div className="incident-panel-title">Weekly, Monthly, and Yearly Incident Records</div>
+          </div>
+        </div>
+
+        <div className="incident-record-window-grid">
+          {recordWindowCards.map((item) => (
+            <div key={item.label} className={`incident-record-window-item ${item.tone}`}>
+              <span className="incident-record-window-icon">{item.icon}</span>
+              <div className="incident-record-window-copy">
+                <div className="incident-record-window-label">{item.label}</div>
+                <div className="incident-record-window-value">
+                  {loading ? "—" : formatWhole(item.value)}
+                </div>
+                <div className="incident-record-window-sub">{item.sub}</div>
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="incident-main-grid-clean">

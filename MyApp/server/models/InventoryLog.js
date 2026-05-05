@@ -16,7 +16,7 @@ const inventoryLogSchema = new mongoose.Schema(
 
     itemType: {
       type: String,
-      enum: ['goods', 'monetary'],
+      enum: ['goods', 'monetary', 'appliance'],
       required: true
     },
 
