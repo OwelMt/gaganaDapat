@@ -1,4 +1,6 @@
 const Notification = require("../models/Notification");
+const createAuditEvent = require("./createAuditEvent");
+const { buildAuditEventFromNotification } = require("./auditEventUtils");
 
 const normalizeString = (value) => {
   if (value === undefined || value === null) return "";
@@ -39,6 +41,8 @@ const createNotification = async ({
   referenceModel = "",
   metadata = {},
   expiresAt = null,
+  audit = true,
+  auditPayload = null,
 } = {}) => {
   try {
     const cleanTitle = normalizeString(title);
@@ -72,6 +76,31 @@ const createNotification = async ({
       metadata: metadata || {},
       expiresAt,
     });
+
+    if (audit) {
+      await createAuditEvent(
+        auditPayload ||
+          buildAuditEventFromNotification({
+            recipientRole,
+            recipientUser,
+            recipientUserModel,
+            recipientBarangay,
+            recipientBarangayName,
+            senderUser,
+            senderRole,
+            senderName,
+            module,
+            type,
+            priority,
+            title: cleanTitle,
+            message: cleanMessage,
+            referenceId,
+            referenceModel,
+            metadata,
+            createdAt: notification.createdAt,
+          })
+      );
+    }
 
     return notification;
   } catch (err) {
