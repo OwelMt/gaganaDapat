@@ -1,3 +1,4 @@
+const path = require("path");
 const Barangay = require("../models/Barangay");
 const EvacPlace = require("../models/EvacPlace");
 const ReliefRequest = require("../models/ReliefRequest");
@@ -10,6 +11,7 @@ const {
   drawPdfEmptyState,
   drawPdfFooter,
   drawPdfHeader,
+  drawPdfImageGrid,
   drawPdfLabelValue,
   drawPdfParagraphBlock,
   drawPdfSectionTitle,
@@ -41,6 +43,7 @@ const VIEWABLE_REQUEST_STATUSES = [
   "canceled",
 ];
 const FINAL_REQUEST_STATUSES = ["received", "cancelled", "canceled", "rejected", "completed"];
+const RELIEF_PROOF_UPLOAD_DIR = path.join(__dirname, "..", "uploads", "proofs");
 const generateRequestNo = async () => {
   const year = new Date().getFullYear();
   const prefix = `RR-${year}`;
@@ -73,6 +76,52 @@ const toNumber = (value) => {
   if (value === undefined || value === null || value === "") return 0;
   const parsed = Number(value);
   return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const resolveProofLocalPath = (proofFile = "") => {
+  const normalized = normalizeString(proofFile).replace(/\\/g, "/");
+  if (!normalized) return null;
+
+  if (normalized.startsWith("uploads/proofs/")) {
+    return path.join(__dirname, "..", normalized);
+  }
+
+  if (normalized.startsWith("proofs/")) {
+    return path.join(__dirname, "..", "uploads", normalized);
+  }
+
+  if (normalized.includes("/")) {
+    return path.join(__dirname, "..", normalized);
+  }
+
+  return path.join(RELIEF_PROOF_UPLOAD_DIR, normalized);
+};
+
+const isImageProofPath = (proofFile = "") =>
+  /\.(png|jpe?g|webp|gif)$/i.test(normalizeString(proofFile));
+
+const buildStoredProofPath = (file = {}) => {
+  const rawName = normalizeString(file.filename || file.originalname);
+  if (!rawName) return "";
+  return `uploads/proofs/${rawName.replace(/\\/g, "/")}`;
+};
+
+const collectProofImagesForPdf = (proofFiles = [], options = {}) => {
+  const { maxImages = 3, labelPrefix = "Proof" } = options;
+  const safeFiles = (Array.isArray(proofFiles) ? proofFiles : [])
+    .map((file) => normalizeString(file))
+    .filter(Boolean)
+    .filter(isImageProofPath);
+
+  const images = safeFiles.slice(0, maxImages).map((file, index) => ({
+    path: resolveProofLocalPath(file),
+    caption: `${labelPrefix} ${index + 1}`,
+  }));
+
+  return {
+    images: images.filter((image) => image.path),
+    remainingCount: Math.max(0, safeFiles.length - images.length),
+  };
 };
 
 const formatMonetaryAmount = (value) =>
@@ -162,6 +211,22 @@ const buildRequestDemandLabel = (request = {}) => {
   return parts.length ? `Requested ${parts.join(" and ")}` : "No quantified request totals";
 };
 
+const isMonetaryOnlySupportTypes = (supportTypes = []) =>
+  hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY) &&
+  !hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS) &&
+  !hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE);
+
+const getRequestOwnerRole = (request = {}) =>
+  isMonetaryOnlySupportTypes(getSupportTypesFromRequest(request)) ? "admin" : "drrmo";
+
+const getRequestOwnerLabel = (request = {}) =>
+  getRequestOwnerRole(request) === "admin" ? "Admin" : "DRRMO";
+
+const getRequestQueueLink = (request = {}) =>
+  getRequestOwnerRole(request) === "admin"
+    ? "/admin/relief-lists"
+    : "/drrmo/relief-lists";
+
 const shapeReliefRequestResponse = (request) => {
   if (!request) return request;
 
@@ -229,6 +294,13 @@ const validateRequestDemand = ({
     return "Requested food packs must be greater than 0 for this request type.";
   }
 
+  if (
+    requiresMonetary &&
+    (requiresFoodPacks || requiresAppliance)
+  ) {
+    return "Monetary requests must be submitted separately from food packs or appliances.";
+  }
+
   if (requiresMonetary && requestedMonetaryAmount <= 0) {
     return "Requested monetary amount must be greater than 0 for this request type.";
   }
@@ -276,6 +348,15 @@ const buildRowsFromEvacPlaces = (places = []) =>
     isActiveRow: true,
     rowRemarks: "",
   }));
+
+const sanitizeRowsForSupportTypes = (rows = [], supportTypes = []) => {
+  const allowsFoodPacks = hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS);
+
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    ...row,
+    requestedFoodPacks: allowsFoodPacks ? toNumber(row.requestedFoodPacks) : 0,
+  }));
+};
 
 const isNonNegativeNumber = (value) =>
   typeof value === "number" && !Number.isNaN(value) && value >= 0;
@@ -723,8 +804,8 @@ const submitReliefRequest = async (req, res) => {
     );
     let requestType = deriveLegacyRequestType(supportTypes);
     const remarks = normalizeString(req.body.remarks);
-    const requestedMonetaryAmount = getRequestedMonetaryAmountInput(req.body);
-    const requestedAppliances = getRequestedAppliances(req.body);
+    let requestedMonetaryAmount = getRequestedMonetaryAmountInput(req.body);
+    let requestedAppliances = getRequestedAppliances(req.body);
     const approvalRemarks = "";
     const releaseNotes = "";
     const requestDate = req.body.requestDate
@@ -743,7 +824,7 @@ const submitReliefRequest = async (req, res) => {
       ? normalizeString(req.body.rowSource)
       : "evac_place_snapshot";
 
-    const rows = Array.isArray(req.body.rows)
+    let rows = Array.isArray(req.body.rows)
       ? req.body.rows.map(sanitizeRow)
       : [];
 
@@ -758,6 +839,18 @@ const submitReliefRequest = async (req, res) => {
     const rowsError = validateRows(rows);
     if (rowsError) {
       return res.status(400).json({ message: rowsError });
+    }
+
+    if (!hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS)) {
+      rows = sanitizeRowsForSupportTypes(rows, supportTypes);
+    }
+
+    if (!hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY)) {
+      requestedMonetaryAmount = 0;
+    }
+
+    if (!hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE)) {
+      requestedAppliances = [];
     }
 
     supportTypes = getSupportTypesFromRequest({
@@ -862,34 +955,34 @@ const submitReliefRequest = async (req, res) => {
     });
 
     await createNotification({
-  recipientRole: "drrmo",
-  senderUser: barangay._id,
-  senderRole: "barangay",
-  senderName: barangay.barangayName || barangay.username,
+      recipientRole: getRequestOwnerRole(reliefRequest),
+      senderUser: barangay._id,
+      senderRole: "barangay",
+      senderName: barangay.barangayName || barangay.username,
 
-  module: "relief",
-  type: "relief_request_submitted",
-  priority: "high",
+      module: "relief",
+      type: "relief_request_submitted",
+      priority: "high",
 
-  title: "New relief request submitted",
-  message: `${barangay.barangayName} submitted relief request ${reliefRequest.requestNo} for ${reliefRequest.disaster}.`,
-  link: "/drrmo/relief-lists",
+      title: "New relief request submitted",
+      message: `${barangay.barangayName} submitted relief request ${reliefRequest.requestNo} for ${reliefRequest.disaster}.`,
+      link: getRequestQueueLink(reliefRequest),
 
-  referenceId: reliefRequest._id,
-  referenceModel: "ReliefRequest",
-  audit: false,
-  metadata: {
-    requestNo: reliefRequest.requestNo,
-    barangayName: barangay.barangayName,
-    disaster: reliefRequest.disaster,
-    requestType: reliefRequest.requestType,
-    requestedFoodPacks: reliefRequest.totals?.requestedFoodPacks || 0,
-    requestedMonetaryAmount:
-      reliefRequest.totals?.requestedMonetaryAmount || 0,
-    totalAffected: reliefRequest.prioritySnapshot?.totalAffected || 0,
-    vulnerableCount: reliefRequest.prioritySnapshot?.vulnerableCount || 0,
-  },
-});
+      referenceId: reliefRequest._id,
+      referenceModel: "ReliefRequest",
+      audit: false,
+      metadata: {
+        requestNo: reliefRequest.requestNo,
+        barangayName: barangay.barangayName,
+        disaster: reliefRequest.disaster,
+        requestType: reliefRequest.requestType,
+        requestedFoodPacks: reliefRequest.totals?.requestedFoodPacks || 0,
+        requestedMonetaryAmount:
+          reliefRequest.totals?.requestedMonetaryAmount || 0,
+        totalAffected: reliefRequest.prioritySnapshot?.totalAffected || 0,
+        vulnerableCount: reliefRequest.prioritySnapshot?.vulnerableCount || 0,
+      },
+    });
 
     let emailSent = false;
 
@@ -976,6 +1069,13 @@ const exportMyReliefRequestPdf = async (req, res) => {
     if (!request) {
       return res.status(404).json({ message: "Relief request not found" });
     }
+
+    const releases = await ReliefRelease.find({
+      reliefRequestId: request._id,
+      isArchived: false,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
 
       const decisionRemarks = getDecisionRemarks(request);
       const totals = request.totals || {};
@@ -1183,6 +1283,63 @@ const exportMyReliefRequestPdf = async (req, res) => {
       formatDateValue(request.fulfillment?.lastReleaseAt)
     );
 
+    if (releases.length) {
+      drawPdfSectionTitle(doc, "Release Activity");
+      drawPdfTable(
+        doc,
+        [
+          { label: "Release No", key: "releaseNo", width: 90 },
+          { label: "Status", key: "status", width: 68 },
+          { label: "Food Packs", key: "foodPacks", width: 56, align: "right" },
+          { label: "Monetary", key: "monetary", width: 86, align: "right" },
+          { label: "Proof", key: "proofCount", width: 42, align: "right" },
+          { label: "Released At", key: "releasedAt", width: 118 },
+          { label: "Remarks", key: "remarks", width: 110 },
+        ],
+        releases.map((release) => ({
+          releaseNo: normalizeString(release.releaseNo) || "-",
+          status: formatStatusLabel(release.releaseStatus),
+          foodPacks: toNumber(release.foodPacksReleased),
+          monetary: formatMonetaryAmount(release.releasedMonetaryAmount),
+          proofCount: Array.isArray(release.proofFiles) ? release.proofFiles.length : 0,
+          releasedAt: formatDateValue(release.releasedAt || release.createdAt),
+          remarks: normalizeString(release.remarks) || "-",
+        })),
+        {
+          rowHeight: 26,
+          emptyMessage: "No release activity recorded.",
+        }
+      );
+
+      releases.forEach((release, index) => {
+        const releaseLabel =
+          normalizeString(release.releaseNo) || `Release ${index + 1}`;
+        const releaseProof = collectProofImagesForPdf(release.proofFiles, {
+          maxImages: 3,
+          labelPrefix: `${releaseLabel} Proof`,
+        });
+
+        if (!releaseProof.images.length && releaseProof.remainingCount <= 0) {
+          return;
+        }
+
+        drawPdfSectionTitle(doc, `Release Proof - ${releaseLabel}`);
+        drawPdfImageGrid(doc, releaseProof.images, {
+          columns: 2,
+          imageHeight: 125,
+          emptyMessage: "No proof images attached for this release.",
+        });
+        if (releaseProof.remainingCount > 0) {
+          drawPdfParagraphBlock(
+            doc,
+            "",
+            `+${releaseProof.remainingCount} more proof image(s) not shown in this export.`,
+            { bodyFontSize: 9, spacingAfter: 0.35 }
+          );
+        }
+      });
+    }
+
     drawPdfFooter(doc, { generatedAt: new Date() });
 
     doc.end();
@@ -1315,7 +1472,7 @@ const updateOwnReliefRequest = async (req, res) => {
     );
     let requestType = deriveLegacyRequestType(supportTypes);
     const remarks = normalizeString(req.body.remarks);
-    const requestedMonetaryAmount = getRequestedMonetaryAmountInput(
+    let requestedMonetaryAmount = getRequestedMonetaryAmountInput(
       req.body.requestType !== undefined ||
         req.body.requestedMonetaryAmount !== undefined ||
         req.body?.totals?.requestedMonetaryAmount !== undefined
@@ -1328,7 +1485,7 @@ const updateOwnReliefRequest = async (req, res) => {
     const requestDate = req.body.requestDate
       ? new Date(req.body.requestDate)
       : request.requestDate;
-    const requestedAppliances = Array.isArray(req.body.requestedAppliances)
+    let requestedAppliances = Array.isArray(req.body.requestedAppliances)
       ? getRequestedAppliances(req.body)
       : getRequestedAppliances(request);
 
@@ -1344,7 +1501,7 @@ const updateOwnReliefRequest = async (req, res) => {
       ? normalizeString(req.body.rowSource)
       : request.rowSource || "evac_place_snapshot";
 
-    const rows = Array.isArray(req.body.rows)
+    let rows = Array.isArray(req.body.rows)
       ? req.body.rows.map(sanitizeRow)
       : [];
 
@@ -1359,6 +1516,18 @@ const updateOwnReliefRequest = async (req, res) => {
     const rowsError = validateRows(rows);
     if (rowsError) {
       return res.status(400).json({ message: rowsError });
+    }
+
+    if (!hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS)) {
+      rows = sanitizeRowsForSupportTypes(rows, supportTypes);
+    }
+
+    if (!hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY)) {
+      requestedMonetaryAmount = 0;
+    }
+
+    if (!hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE)) {
+      requestedAppliances = [];
     }
 
     supportTypes = getSupportTypesFromRequest({
@@ -1459,38 +1628,38 @@ const updateOwnReliefRequest = async (req, res) => {
     });
 
     await createNotification({
-  recipientRole: "drrmo",
-  senderUser: request.barangayId,
-  senderRole: "barangay",
-  senderName: request.barangayName,
+      recipientRole: getRequestOwnerRole(request),
+      senderUser: request.barangayId,
+      senderRole: "barangay",
+      senderName: request.barangayName,
 
-  module: "relief",
-  type: isRejectedResubmission
-    ? "relief_request_resubmitted"
-    : "relief_request_updated",
-  priority: isRejectedResubmission ? "high" : "normal",
+      module: "relief",
+      type: isRejectedResubmission
+        ? "relief_request_resubmitted"
+        : "relief_request_updated",
+      priority: isRejectedResubmission ? "high" : "normal",
 
-  title: isRejectedResubmission
-    ? "Relief request resubmitted"
-    : "Relief request updated",
-  message: `${request.barangayName} ${
-    isRejectedResubmission ? "resubmitted" : "updated"
-  } relief request ${request.requestNo}.`,
-  link: "/drrmo/relief-lists",
+      title: isRejectedResubmission
+        ? "Relief request resubmitted"
+        : "Relief request updated",
+      message: `${request.barangayName} ${
+        isRejectedResubmission ? "resubmitted" : "updated"
+      } relief request ${request.requestNo}.`,
+      link: getRequestQueueLink(request),
 
-  referenceId: request._id,
-  referenceModel: "ReliefRequest",
-  audit: false,
-  metadata: {
-    requestNo: request.requestNo,
-    barangayName: request.barangayName,
-    disaster: request.disaster,
-    requestType: request.requestType,
-    requestedFoodPacks: request.totals?.requestedFoodPacks || 0,
-    requestedMonetaryAmount: request.totals?.requestedMonetaryAmount || 0,
-    editCount: request.editCount || 0,
-  },
-});
+      referenceId: request._id,
+      referenceModel: "ReliefRequest",
+      audit: false,
+      metadata: {
+        requestNo: request.requestNo,
+        barangayName: request.barangayName,
+        disaster: request.disaster,
+        requestType: request.requestType,
+        requestedFoodPacks: request.totals?.requestedFoodPacks || 0,
+        requestedMonetaryAmount: request.totals?.requestedMonetaryAmount || 0,
+        editCount: request.editCount || 0,
+      },
+    });
 
     res.json({
       message: isRejectedResubmission
@@ -1561,7 +1730,7 @@ const cancelOwnReliefRequest = async (req, res) => {
     });
 
     await createNotification({
-  recipientRole: "drrmo",
+  recipientRole: getRequestOwnerRole(request),
   senderUser: request.barangayId,
   senderRole: "barangay",
   senderName: request.barangayName,
@@ -1572,7 +1741,7 @@ const cancelOwnReliefRequest = async (req, res) => {
 
   title: "Relief request cancelled",
   message: `${request.barangayName} cancelled relief request ${request.requestNo}.`,
-  link: "/drrmo/relief-lists",
+  link: getRequestQueueLink(request),
 
   referenceId: request._id,
   referenceModel: "ReliefRequest",
@@ -1623,6 +1792,16 @@ const markReliefRequestReceived = async (req, res) => {
       });
     }
 
+    const uploadedReceiptProofFiles = (Array.isArray(req.files) ? req.files : [])
+      .map(buildStoredProofPath)
+      .filter(Boolean);
+
+    if (!uploadedReceiptProofFiles.length) {
+      return res.status(400).json({
+        message: "Attach at least one receipt proof image before confirming receipt.",
+      });
+    }
+
     const releasesToReceive = await ReliefRelease.find({
       reliefRequestId: request._id,
       isArchived: false,
@@ -1660,6 +1839,7 @@ const markReliefRequestReceived = async (req, res) => {
         release.releaseStatus = "received";
         release.receivedAt = now;
         release.receivedBy = username;
+        release.receiptProofFiles = uploadedReceiptProofFiles;
         release.receivedMonetaryAmount = toNumber(
           release.receivedMonetaryAmount || release.releasedMonetaryAmount
         );
@@ -1698,11 +1878,12 @@ const markReliefRequestReceived = async (req, res) => {
         releasedFoodPacks: updatedRequest?.fulfillment?.releasedFoodPacks || 0,
         releasedMonetaryAmount:
           updatedRequest?.fulfillment?.releasedMonetaryAmount || 0,
+        receiptProofCount: uploadedReceiptProofFiles.length,
       },
     });
 
     await createNotification({
-  recipientRole: "drrmo",
+  recipientRole: getRequestOwnerRole(request),
   senderUser: request.barangayId,
   senderRole: "barangay",
   senderName: request.barangayName,
@@ -1713,7 +1894,7 @@ const markReliefRequestReceived = async (req, res) => {
 
   title: "Relief delivery received",
   message: `${request.barangayName} marked relief request ${request.requestNo} as received.`,
-  link: "/drrmo/relief-lists",
+  link: getRequestQueueLink(request),
 
   referenceId: request._id,
   referenceModel: "ReliefRequest",
@@ -1727,6 +1908,7 @@ const markReliefRequestReceived = async (req, res) => {
     releasedFoodPacks: updatedRequest?.fulfillment?.releasedFoodPacks || 0,
     releasedMonetaryAmount:
       updatedRequest?.fulfillment?.releasedMonetaryAmount || 0,
+    receiptProofCount: uploadedReceiptProofFiles.length,
   },
 });
 
@@ -1766,6 +1948,7 @@ const markReliefRequestReceived = async (req, res) => {
             )} still remaining to fulfill this request.`
           : "Relief request marked as received successfully.",
       request: shapeReliefRequestResponse(updatedRequest),
+      receiptProofFiles: uploadedReceiptProofFiles,
     });
   } catch (err) {
     console.error("Mark Relief Request Received Error:", err);
@@ -1814,7 +1997,7 @@ const reportReliefRequestNotReceived = async (req, res) => {
     });
 
     await createNotification({
-      recipientRole: "drrmo",
+      recipientRole: getRequestOwnerRole(request),
       senderUser: request.barangayId,
       senderRole: "barangay",
       senderName: request.barangayName,
@@ -1823,7 +2006,7 @@ const reportReliefRequestNotReceived = async (req, res) => {
       priority: "high",
       title: "Relief delivery not received",
       message: `${request.barangayName} reported that relief request ${request.requestNo} was not received.`,
-      link: "/drrmo/relief-lists",
+      link: getRequestQueueLink(request),
       referenceId: request._id,
       referenceModel: "ReliefRequest",
       audit: false,
@@ -1836,7 +2019,7 @@ const reportReliefRequestNotReceived = async (req, res) => {
     });
 
     return res.json({
-      message: "DRRMO has been notified that this release was not received.",
+      message: `${getRequestOwnerLabel(request)} has been notified that this release was not received.`,
       request: shapeReliefRequestResponse(updatedRequest || request),
     });
   } catch (err) {

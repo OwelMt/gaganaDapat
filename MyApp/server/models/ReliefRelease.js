@@ -177,6 +177,16 @@ const reliefReleaseSchema = new mongoose.Schema(
       trim: true,
     },
 
+    proofFiles: {
+      type: [String],
+      default: [],
+    },
+
+    receiptProofFiles: {
+      type: [String],
+      default: [],
+    },
+
     isArchived: {
       type: Boolean,
       default: false,
@@ -240,6 +250,18 @@ reliefReleaseSchema.pre("validate", function () {
   if (this.remarks) {
     this.remarks = String(this.remarks).trim();
   }
+
+  this.proofFiles = Array.isArray(this.proofFiles)
+    ? this.proofFiles
+        .map((file) => String(file || "").trim())
+        .filter(Boolean)
+    : [];
+
+  this.receiptProofFiles = Array.isArray(this.receiptProofFiles)
+    ? this.receiptProofFiles
+        .map((file) => String(file || "").trim())
+        .filter(Boolean)
+    : [];
 });
 
 reliefReleaseSchema.pre("save", function () {

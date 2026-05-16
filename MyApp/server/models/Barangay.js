@@ -46,6 +46,11 @@ const barangaySchema = new mongoose.Schema(
     phoneNumber: { type: String, required: true, trim: true },
     hotline: { type: String, default: '', trim: true },
     address: { type: String, required: true, trim: true },
+    themePreference: {
+      type: String,
+      enum: ['dark', 'light'],
+      default: 'dark'
+    },
 
     archived: { type: Boolean, default: false },
     archivedAt: { type: Date, default: null }

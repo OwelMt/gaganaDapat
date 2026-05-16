@@ -98,6 +98,12 @@ const uploadProof = multer({
   fileFilter: proofFileFilter,
 });
 
+const uploadReleaseProofImages = multer({
+  storage: proofStorage,
+  limits: { fileSize: 8 * 1024 * 1024, files: 5 },
+  fileFilter: imageOnlyFilter,
+});
+
 // Optional generic local uploader
 const upload = multer({
   storage: localGuidelineStorage,
@@ -188,6 +194,7 @@ module.exports = {
   uploadGuideline,
   uploadAnnouncement,
   uploadProof,
+  uploadReleaseProofImages,
   upload,
   uploadAvatar,
   uploadIncidentImage,

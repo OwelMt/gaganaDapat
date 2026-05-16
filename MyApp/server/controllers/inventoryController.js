@@ -5,6 +5,9 @@ const InventoryLog = require("../models/InventoryLog");
 const Notification = require("../models/Notification");
 const createNotification = require("../utils/createNotification");
 const { callAiAnalyticsProvider } = require("../utils/aiAnalyticsProvider");
+const {
+  validateInventoryExpirationDate,
+} = require("../utils/inventoryExpiryValidation");
 
 const VALID_TYPES = ["goods", "monetary", "appliance"];
 const VALID_SOURCE_TYPES = ["external", "government", "internal"];
@@ -55,6 +58,54 @@ const normalizeString = (value) => {
 const normalizeLower = (value, fallback) => {
   if (value === undefined || value === null || value === "") return fallback;
   return String(value).trim().toLowerCase();
+};
+
+const getSessionRole = (req) => normalizeLower(req?.session?.role, "");
+
+const isRoleAllowedForInventoryType = (role, type) => {
+  if (role === "admin") return type === "monetary";
+  if (role === "drrmo") return type === "goods" || type === "appliance";
+  return false;
+};
+
+const getInventoryRoleAccessError = (req, type) => {
+  const role = getSessionRole(req);
+  if (!role) return "Not authenticated.";
+  if (isRoleAllowedForInventoryType(role, type)) return "";
+  if (role === "admin") {
+    return "Admin can only manage monetary inventory records here.";
+  }
+  if (role === "drrmo") {
+    return "DRRMO can only manage goods and appliance inventory records here.";
+  }
+  return "Inventory access is not allowed for this account.";
+};
+
+const resolveInventoryType = (item = {}) => {
+  const explicitType = normalizeLower(item.type, "");
+
+  if (VALID_TYPES.includes(explicitType)) {
+    return explicitType;
+  }
+
+  if (
+    item.amount !== undefined &&
+    item.amount !== null &&
+    item.amount !== "" &&
+    !Number.isNaN(Number(item.amount))
+  ) {
+    return "monetary";
+  }
+
+  if (normalizeString(item.referenceNumber)) {
+    return "monetary";
+  }
+
+  if (normalizeLower(item.condition, "") || normalizeString(item.usageDuration)) {
+    return "appliance";
+  }
+
+  return "goods";
 };
 
 const toNumber = (value) => {
@@ -162,6 +213,7 @@ const getExpiryMeta = (expirationDate) => {
 
 const attachExpiryMeta = (item) => {
   const plain = item.toObject ? item.toObject() : { ...item };
+  plain.type = resolveInventoryType(plain);
 
   if (plain.type !== "goods") {
     return {
@@ -276,6 +328,13 @@ const validateInventoryData = (body, isUpdate = false, currentItem = null) => {
 
   if (body.expirationDate !== undefined && expirationDate === "INVALID_DATE") {
     errors.push("Invalid expiration date.");
+  }
+
+  if (expirationDate && expirationDate !== "INVALID_DATE") {
+    const expirationDateError = validateInventoryExpirationDate(expirationDate);
+    if (expirationDateError) {
+      errors.push(expirationDateError);
+    }
   }
 
   if (type === "goods") {
@@ -2214,6 +2273,11 @@ const addInventory = async (req, res) => {
       return res.status(400).json({ message: errors[0], errors });
     }
 
+    const roleAccessError = getInventoryRoleAccessError(req, data.type);
+    if (roleAccessError) {
+      return res.status(403).json({ message: roleAccessError });
+    }
+
     let proofFiles = [];
 
     if (Array.isArray(req.files)) {
@@ -2320,6 +2384,10 @@ const updateInventory = async (req, res) => {
     }
 
     const finalType = req.body.type ? normalizeLower(req.body.type, item.type) : item.type;
+    const roleAccessError = getInventoryRoleAccessError(req, finalType);
+    if (roleAccessError) {
+      return res.status(403).json({ message: roleAccessError });
+    }
 
     const mergedBody = {
       name: item.name,
@@ -2447,6 +2515,11 @@ const deleteInventory = async (req, res) => {
       return res.status(404).json({ message: "Item not found" });
     }
 
+    const roleAccessError = getInventoryRoleAccessError(req, item.type);
+    if (roleAccessError) {
+      return res.status(403).json({ message: roleAccessError });
+    }
+
     item.isArchive = true;
     await item.save();
 
@@ -2482,6 +2555,11 @@ const unarchiveInventory = async (req, res) => {
       return res.status(404).json({ message: "Item not found" });
     }
 
+    const roleAccessError = getInventoryRoleAccessError(req, item.type);
+    if (roleAccessError) {
+      return res.status(403).json({ message: roleAccessError });
+    }
+
     item.isArchive = false;
     await item.save();
 
@@ -2502,6 +2580,11 @@ const permanentDeleteInventory = async (req, res) => {
     const item = await InventoryItem.findById(id);
     if (!item) {
       return res.status(404).json({ message: "Item not found" });
+    }
+
+    const roleAccessError = getInventoryRoleAccessError(req, item.type);
+    if (roleAccessError) {
+      return res.status(403).json({ message: roleAccessError });
     }
 
     await InventoryItem.findByIdAndDelete(id);

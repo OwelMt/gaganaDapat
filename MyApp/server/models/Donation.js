@@ -75,6 +75,13 @@ const donationSchema = new mongoose.Schema(
     requiresExpiration: { type: Boolean, default: false },
     paymentMethod: { type: String, default: "", trim: true },
     referenceNumber: { type: String, default: "", trim: true },
+    normalizedReferenceNumber: {
+      type: String,
+      default: "",
+      trim: true,
+      lowercase: true,
+      index: true,
+    },
     gcashReferenceNumber: { type: String, default: "", trim: true },
     gcashSender: { type: String, default: "", trim: true },
     bankName: { type: String, default: "", trim: true },
@@ -163,6 +170,7 @@ donationSchema.pre("validate", function () {
   )
     .trim()
     .toLowerCase();
+  this.normalizedReferenceNumber = referenceNumber;
   const paymentMethod = String(this.paymentMethod || "").trim().toLowerCase();
   const amount = Number(this.amount || 0);
   const quantity = Number(this.quantity || 0);

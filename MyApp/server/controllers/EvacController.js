@@ -45,12 +45,25 @@ const clampNumber = (value, min = 0, max = null) => {
 
 const safeLower = (value) => String(value || "").toLowerCase().trim();
 
+const LIMITED_OCCUPANCY_PERCENT = 75;
+
+const toObjectIdOrNull = (value) => {
+  if (!value) return null;
+
+  const raw = typeof value === "object" && value !== null && value._id ? value._id : value;
+  return mongoose.Types.ObjectId.isValid(String(raw)) ? raw : null;
+};
+
 const deriveCapacityStatus = (currentOccupants, capacityIndividual) => {
   const current = Number(currentOccupants || 0);
   const capacity = Number(capacityIndividual || 0);
+  const occupancyPercent =
+    capacity > 0 ? Math.round((current / capacity) * 100) : 0;
 
   if (capacity > 0 && current >= capacity) return "full";
-  if (current > 0) return "limited";
+  if (capacity > 0 && occupancyPercent >= LIMITED_OCCUPANCY_PERCENT) {
+    return "limited";
+  }
   return "available";
 };
 
@@ -58,8 +71,7 @@ const buildOccupancySummary = (place) => {
   const current = Number(place.currentOccupants || 0);
   const capacity = Number(place.capacityIndividual || 0);
   const remaining = Math.max(0, capacity - current);
-  const percent =
-    capacity > 0 ? Math.min(100, Math.round((current / capacity) * 100)) : 0;
+  const percent = capacity > 0 ? Math.round((current / capacity) * 100) : 0;
 
   return {
     currentOccupants: current,
@@ -109,7 +121,10 @@ const buildHistoryMeta = (
   fallbackBarangayName = ""
 ) => {
   return {
-    barangayId: place?.barangayId || fallbackBarangayId || req.session?.userId || null,
+    barangayId:
+      toObjectIdOrNull(place?.barangayId) ||
+      toObjectIdOrNull(fallbackBarangayId) ||
+      toObjectIdOrNull(req.session?.userId),
     barangayName:
       sanitizeText(place?.barangayName) ||
       sanitizeText(fallbackBarangayName) ||
@@ -173,6 +188,200 @@ const attachResolvedBarangayMeta = (place, barangayMaps) => {
     ...place,
     barangayName: resolvedBarangayName || "",
   };
+};
+
+const ensurePlaceBarangayMeta = async (place, req) => {
+  if (!place) return place;
+
+  const existingBarangayName = sanitizeText(place.barangayName);
+  if (existingBarangayName) {
+    return place;
+  }
+
+  const barangayMaps = await buildBarangayLookupMaps();
+  const resolvedBarangayName =
+    resolvePlaceBarangayName(place, barangayMaps) ||
+    sanitizeText(req.session?.barangayName || req.session?.username || req.session?.name);
+
+  if (resolvedBarangayName) {
+    place.barangayName = resolvedBarangayName;
+  }
+
+  if (!place.barangayId) {
+    const fallbackBarangayId = toObjectIdOrNull(req.session?.userId);
+    if (fallbackBarangayId) {
+      place.barangayId = fallbackBarangayId;
+    }
+  }
+
+  return place;
+};
+
+const getBarangayBoundsData = (entry) => {
+  if (!entry) return null;
+
+  if (entry.type === "FeatureCollection") return entry;
+  if (entry.type === "Feature") return entry;
+
+  if (Array.isArray(entry.features)) {
+    return {
+      type: "FeatureCollection",
+      features: entry.features,
+    };
+  }
+
+  if (entry.geometry) {
+    return {
+      type: "Feature",
+      properties: entry.properties || {},
+      geometry: entry.geometry,
+    };
+  }
+
+  return null;
+};
+
+const getBarangayBoundsLabel = (entry) => {
+  return sanitizeText(
+    entry?.barangayName ||
+      entry?.name ||
+      entry?.properties?.barangayName ||
+      entry?.properties?.name ||
+      entry?.properties?.NAME ||
+      entry?.properties?.adm4_en ||
+      entry?.properties?.barangay ||
+      entry?.features?.[0]?.properties?.barangayName ||
+      entry?.features?.[0]?.properties?.name ||
+      entry?.features?.[0]?.properties?.NAME ||
+      entry?.features?.[0]?.properties?.adm4_en ||
+      entry?.features?.[0]?.properties?.barangay
+  );
+};
+
+const extractPolygonRings = (geometry) => {
+  if (!geometry) return [];
+
+  if (geometry.type === "Polygon") {
+    return Array.isArray(geometry.coordinates) ? [geometry.coordinates] : [];
+  }
+
+  if (geometry.type === "MultiPolygon") {
+    return Array.isArray(geometry.coordinates) ? geometry.coordinates : [];
+  }
+
+  return [];
+};
+
+const isPointOnSegment = (point, start, end) => {
+  const [px, py] = point;
+  const [x1, y1] = start;
+  const [x2, y2] = end;
+  const cross = (py - y1) * (x2 - x1) - (px - x1) * (y2 - y1);
+
+  if (Math.abs(cross) > 1e-10) return false;
+
+  const dot = (px - x1) * (px - x2) + (py - y1) * (py - y2);
+  return dot <= 1e-10;
+};
+
+const isPointInRing = (point, ring = []) => {
+  let inside = false;
+
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const current = ring[i];
+    const previous = ring[j];
+
+    if (!Array.isArray(current) || !Array.isArray(previous)) continue;
+    if (isPointOnSegment(point, current, previous)) return true;
+
+    const xi = Number(current[0]);
+    const yi = Number(current[1]);
+    const xj = Number(previous[0]);
+    const yj = Number(previous[1]);
+
+    const intersects =
+      yi > point[1] !== yj > point[1] &&
+      point[0] <
+        ((xj - xi) * (point[1] - yi)) / ((yj - yi) || Number.EPSILON) + xi;
+
+    if (intersects) inside = !inside;
+  }
+
+  return inside;
+};
+
+const isPointInsideBarangayGeometry = (lng, lat, geometry) => {
+  const polygons = extractPolygonRings(geometry);
+  const point = [lng, lat];
+
+  return polygons.some((polygon) => {
+    const outerRing = polygon?.[0];
+    if (!Array.isArray(outerRing) || !outerRing.length) return false;
+    if (!isPointInRing(point, outerRing)) return false;
+
+    const holes = polygon.slice(1);
+    return !holes.some((hole) => isPointInRing(point, hole));
+  });
+};
+
+const findMatchingBarangayBounds = async (barangayName) => {
+  const normalizedTarget = normalizeBarangayKey(barangayName);
+  if (!normalizedTarget) return null;
+
+  const db = mongoose.connection.db;
+  if (!db) return null;
+
+  const rows = await db.collection("barangaycollections").find({}).limit(100).toArray();
+
+  return (
+    rows.find((entry) => {
+      const label = getBarangayBoundsLabel(entry);
+      return normalizeBarangayKey(label) === normalizedTarget;
+    }) || null
+  );
+};
+
+const ensureBarangayPlacementWithinBounds = async (
+  req,
+  latitude,
+  longitude,
+  fallbackBarangayName = ""
+) => {
+  if (safeLower(req.session?.role) !== "barangay") {
+    return null;
+  }
+
+  const barangayName =
+    sanitizeText(fallbackBarangayName) ||
+    getSessionBarangayCandidates(req)[0] ||
+    "";
+
+  if (!barangayName) {
+    return "Unable to determine your barangay boundary for this evacuation area.";
+  }
+
+  const boundsEntry = await findMatchingBarangayBounds(barangayName);
+  if (!boundsEntry) {
+    return `No saved map boundary was found for ${barangayName}.`;
+  }
+
+  const geoData = getBarangayBoundsData(boundsEntry);
+  const geometry =
+    geoData?.type === "FeatureCollection"
+      ? geoData.features?.[0]?.geometry || null
+      : geoData?.type === "Feature"
+      ? geoData.geometry
+      : geoData;
+
+  if (!geometry) {
+    return `The saved map boundary for ${barangayName} is incomplete.`;
+  }
+
+  if (!isPointInsideBarangayGeometry(Number(longitude), Number(latitude), geometry)) {
+    return `Barangay accounts can only place evacuation areas inside the ${barangayName} boundary.`;
+  }
+
+  return null;
 };
 
 // -----------------------------
@@ -282,7 +491,12 @@ const buildEvacNotificationPayload = ({
   if (eventType === "occupancy") {
     return {
       type: "evac_occupancy_updated",
-      priority: status === "full" ? "critical" : summary.occupancyPercent >= 80 ? "high" : "normal",
+      priority:
+        status === "full"
+          ? "critical"
+          : summary.occupancyPercent >= LIMITED_OCCUPANCY_PERCENT
+            ? "high"
+            : "normal",
       title: "Evacuation occupancy updated",
       message: `${placeName} in ${barangayName} is now at ${summary.currentOccupants}/${summary.capacityIndividual} occupants (${summary.occupancyPercent}%).`,
       alertReason: "occupancy_updated",
@@ -325,8 +539,8 @@ const buildEvacNotificationPayload = ({
     return {
       type: "evac_place_limited",
       priority: "high",
-      title: "Evacuation place now has occupants",
-      message: `${placeName} in ${barangayName} is now limited with ${summary.currentOccupants}/${summary.capacityIndividual} occupants.`,
+      title: "Evacuation place is limited",
+      message: `${placeName} in ${barangayName} reached limited capacity at ${summary.currentOccupants}/${summary.capacityIndividual} occupants (${summary.occupancyPercent}%).`,
       alertReason: "limited",
     };
   }
@@ -335,8 +549,8 @@ const buildEvacNotificationPayload = ({
     return {
       type: "evac_place_high_occupancy",
       priority: "high",
-      title: "Evacuation place nearing full capacity",
-      message: `${placeName} in ${barangayName} is at ${summary.occupancyPercent}% occupancy.`,
+      title: "Evacuation place reached limited threshold",
+      message: `${placeName} in ${barangayName} is at ${summary.occupancyPercent}% occupancy and needs close monitoring.`,
       alertReason: "high_occupancy",
     };
   }
@@ -387,9 +601,9 @@ const createEvacNotificationForRecipientOnce = async ({
     };
 
     if (recipientRole === "barangay") {
-      recipientData.recipientUser = place.barangayId || null;
+      recipientData.recipientUser = toObjectIdOrNull(place.barangayId);
       recipientData.recipientUserModel = "Barangay";
-      recipientData.recipientBarangay = place.barangayId || null;
+      recipientData.recipientBarangay = toObjectIdOrNull(place.barangayId);
       recipientData.recipientBarangayName = place.barangayName || "";
     }
 
@@ -496,7 +710,7 @@ const notifyEvacCapacityRisk = async (req, place, previousStatus = "") => {
       });
     }
 
-    if (summary.occupancyPercent >= 80 && currentStatus !== "full") {
+    if (summary.occupancyPercent >= LIMITED_OCCUPANCY_PERCENT && currentStatus !== "full") {
       await notifyEvacEvent({
         req,
         place,
@@ -702,13 +916,7 @@ const applyHistoryQueryFilters = (baseFilter, req) => {
 const sanitizePublicPlace = (place) => {
   if (!place) return null;
 
-  const currentOccupants = Number(place.currentOccupants || 0);
-  const capacityIndividual = Number(place.capacityIndividual || 0);
-  const remainingIndividualCapacity = Math.max(0, capacityIndividual - currentOccupants);
-  const occupancyPercent =
-    capacityIndividual > 0
-      ? Math.min(100, Math.round((currentOccupants / capacityIndividual) * 100))
-      : 0;
+  const summary = buildOccupancySummary(place);
 
   return {
     _id: place._id,
@@ -718,12 +926,12 @@ const sanitizePublicPlace = (place) => {
     barangayName: place.barangayName || "",
     latitude: place.latitude ?? null,
     longitude: place.longitude ?? null,
-    capacityStatus: place.capacityStatus || "available",
+    capacityStatus: summary.capacityStatus || "available",
 
-    capacityIndividual,
-    currentOccupants,
-    remainingIndividualCapacity,
-    occupancyPercent,
+    capacityIndividual: summary.capacityIndividual,
+    currentOccupants: summary.currentOccupants,
+    remainingIndividualCapacity: summary.remainingIndividualCapacity,
+    occupancyPercent: summary.occupancyPercent,
 
     showOnLanding: place.showOnLanding !== false,
     updatedAt: place.updatedAt || null,
@@ -811,6 +1019,17 @@ const createPlace = async (req, res) => {
       return res.status(400).json({
         message: "Coordinates out of valid range",
       });
+    }
+
+    const boundsError = await ensureBarangayPlacementWithinBounds(
+      req,
+      latNum,
+      lngNum,
+      finalBarangayName
+    );
+
+    if (boundsError) {
+      return res.status(403).json({ message: boundsError });
     }
 
     const individualCapacityNum = toNumber(capacityIndividual, 0);
@@ -1146,8 +1365,7 @@ const exportPlacesPdf = async (req, res) => {
         places.map((place) => {
           const current = Number(place.currentOccupants || 0);
           const capacity = Number(place.capacityIndividual || 0);
-          const percent =
-            capacity > 0 ? Math.min(100, Math.round((current / capacity) * 100)) : 0;
+          const percent = capacity > 0 ? Math.round((current / capacity) * 100) : 0;
 
           return {
             name: sanitizeText(place.name) || "-",
@@ -1278,6 +1496,28 @@ const updatePlace = async (req, res) => {
         return res.status(400).json({ message: "Invalid longitude" });
       }
       existing.longitude = lngNum;
+    }
+
+    const nextLat =
+      existing.latitude === undefined || existing.latitude === null
+        ? null
+        : Number(existing.latitude);
+    const nextLng =
+      existing.longitude === undefined || existing.longitude === null
+        ? null
+        : Number(existing.longitude);
+
+    if (nextLat !== null && nextLng !== null) {
+      const boundsError = await ensureBarangayPlacementWithinBounds(
+        req,
+        nextLat,
+        nextLng,
+        existing.barangayName
+      );
+
+      if (boundsError) {
+        return res.status(403).json({ message: boundsError });
+      }
     }
 
     if (capacityIndividual !== undefined) {
@@ -1576,6 +1816,8 @@ const updateOccupancy = async (req, res) => {
     const previousBeds = Number(existing.occupiedBeds || 0);
     const previousStatus = existing.capacityStatus || "available";
 
+    await ensurePlaceBarangayMeta(existing, req);
+
     existing.currentOccupants = nextOccupants;
     existing.currentFamilies = nextFamilies;
     existing.occupiedBeds = nextBeds;
@@ -1846,7 +2088,10 @@ const getAnalyticsSummary = async (req, res) => {
       .sort((a, b) => a.barangayName.localeCompare(b.barangayName));
 
     const criticalBarangays = barangayBreakdown.filter(
-      (item) => item.full > 0 || item.available === 0 || item.occupancyPercent >= 90
+      (item) =>
+        item.full > 0 ||
+        item.available === 0 ||
+        item.occupancyPercent >= LIMITED_OCCUPANCY_PERCENT
     );
 
     return res.json({

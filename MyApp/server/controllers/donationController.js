@@ -4,6 +4,10 @@ const InventoryItem = require("../models/InventoryItem");
 const mongoose = require("mongoose");
 const cloudinary = require("../config/cloudinary");
 const createNotification = require("../utils/createNotification");
+const {
+  hasNormalizedDonationReference,
+  normalizeDonationReferenceNumber,
+} = require("../utils/donationReferenceUtils");
 
 const VALID_STATUSES = [
   "pending",
@@ -44,6 +48,27 @@ function toObjectIdOrNull(value) {
 
 function normalizeDonationStatus(value) {
   return sanitizeText(value, 40).toLowerCase();
+}
+
+function getSessionRole(req) {
+  return sanitizeText(req?.session?.role, 40).toLowerCase();
+}
+
+function isRoleAllowedForDonation(role, inventoryType) {
+  if (role === "admin") return inventoryType === "monetary";
+  if (role === "drrmo") return inventoryType !== "monetary";
+  return true;
+}
+
+function getDonationAccessError(role, inventoryType) {
+  if (isRoleAllowedForDonation(role, inventoryType)) return "";
+  if (role === "admin") {
+    return "Admin can only manage monetary donations in this queue.";
+  }
+  if (role === "drrmo") {
+    return "DRRMO can only manage goods and appliance donations in this queue.";
+  }
+  return "Donation queue access is not allowed for this account.";
 }
 
 function normalizeSourceType(value) {
@@ -156,6 +181,60 @@ function normalizeDonationForResponse(donationDoc) {
   }
 
   return donation;
+}
+
+function buildReferenceNumberFilter(referenceNumber) {
+  const normalizedReferenceNumber =
+    normalizeDonationReferenceNumber(referenceNumber);
+
+  if (!normalizedReferenceNumber) {
+    return null;
+  }
+
+  return {
+    $or: [
+      { normalizedReferenceNumber },
+      { referenceNumber: new RegExp(`^${normalizedReferenceNumber.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
+      { gcashReferenceNumber: new RegExp(`^${normalizedReferenceNumber.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
+      { transferReferenceNumber: new RegExp(`^${normalizedReferenceNumber.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
+    ],
+  };
+}
+
+async function findDuplicateReferenceDonations(referenceNumber, excludeId = null) {
+  const filter = buildReferenceNumberFilter(referenceNumber);
+  if (!filter) return [];
+
+  if (excludeId) {
+    filter._id = { $ne: excludeId };
+  }
+
+  return Donation.find(filter).sort({ createdAt: -1 });
+}
+
+async function attachDuplicateReferenceMetadata(donationDoc) {
+  const normalizedDonation = normalizeDonationForResponse(donationDoc);
+  const referenceNumber =
+    normalizedDonation?.referenceNumber ||
+    normalizedDonation?.gcashReferenceNumber ||
+    normalizedDonation?.transferReferenceNumber ||
+    "";
+
+  if (!hasNormalizedDonationReference(referenceNumber)) {
+    return {
+      ...normalizedDonation,
+      duplicateCount: 1,
+      groupedDonationIds: normalizedDonation?._id ? [normalizedDonation._id] : [],
+    };
+  }
+
+  const duplicates = await findDuplicateReferenceDonations(referenceNumber);
+
+  return {
+    ...normalizedDonation,
+    duplicateCount: Math.max(1, duplicates.length),
+    groupedDonationIds: duplicates.map((item) => item._id),
+  };
 }
 
 async function uploadPhoto(file) {
@@ -477,6 +556,20 @@ async function createDonation(req, res) {
       return res.status(400).json({ message: errors[0], errors });
     }
 
+    if (hasNormalizedDonationReference(payload.referenceNumber)) {
+      const duplicates = await findDuplicateReferenceDonations(
+        payload.referenceNumber
+      );
+
+      if (duplicates.length > 0) {
+        return res.status(409).json({
+          message:
+            "A donation with this reference number already exists. Duplicate reference numbers are not allowed.",
+          duplicateDonationId: duplicates[0]?._id || null,
+        });
+      }
+    }
+
     const files = collectUploadedFiles(req);
     const photos = await Promise.all(files.slice(0, 4).map(uploadPhoto));
 
@@ -513,11 +606,22 @@ async function createDonation(req, res) {
 async function getDonations(req, res) {
   try {
     const filter = {};
+    const sessionRole = getSessionRole(req);
     const typeFilter = normalizeLower(req.query.type, 40);
-    if (VALID_INVENTORY_TYPES.includes(typeFilter)) {
-      filter.inventoryType = typeFilter;
-    } else if (["monetary", "non_monetary"].includes(typeFilter)) {
-      filter.donationType = typeFilter;
+    const isValidationQueueScope =
+      normalizeLower(req.query.scope, 60) === "validation_queue";
+    const roleScopedType =
+      isValidationQueueScope && sessionRole === "admin"
+        ? "monetary"
+        : isValidationQueueScope && sessionRole === "drrmo"
+        ? "non_monetary"
+        : "";
+
+    const effectiveTypeFilter = roleScopedType || typeFilter;
+    if (VALID_INVENTORY_TYPES.includes(effectiveTypeFilter)) {
+      filter.inventoryType = effectiveTypeFilter;
+    } else if (["monetary", "non_monetary"].includes(effectiveTypeFilter)) {
+      filter.donationType = effectiveTypeFilter;
     }
 
     if (req.query.category) filter.category = normalizeLower(req.query.category, 80);
@@ -563,7 +667,15 @@ async function getDonationById(req, res) {
   try {
     const donation = await Donation.findById(req.params.id).populate("matchedNeedIds");
     if (!donation) return res.status(404).json({ message: "Donation not found." });
-    res.json(normalizeDonationForResponse(donation));
+    const normalizedDonation = normalizeDonationForResponse(donation);
+    const roleAccessError = getDonationAccessError(
+      getSessionRole(req),
+      normalizedDonation.inventoryType
+    );
+    if (roleAccessError) {
+      return res.status(403).json({ message: roleAccessError });
+    }
+    res.json(await attachDuplicateReferenceMetadata(donation));
   } catch (err) {
     res.status(500).json({ message: "Failed to fetch donation." });
   }
@@ -578,51 +690,101 @@ async function updateDonationStatus(req, res) {
 
     const donation = await Donation.findById(req.params.id);
     if (!donation) return res.status(404).json({ message: "Donation not found." });
+    const normalizedDonation = normalizeDonationForResponse(donation);
+    const roleAccessError = getDonationAccessError(
+      getSessionRole(req),
+      normalizedDonation.inventoryType
+    );
+    if (roleAccessError) {
+      return res.status(403).json({ message: roleAccessError });
+    }
+
+    const groupedDonations = hasNormalizedDonationReference(donation.referenceNumber)
+      ? await findDuplicateReferenceDonations(donation.referenceNumber)
+      : [];
+    const donationGroup = groupedDonations.length
+      ? [
+          donation,
+          ...groupedDonations.filter(
+            (item) => String(item._id) !== String(donation._id)
+          ),
+        ]
+      : [donation];
 
     if (status === "received") {
-      if (String(donation.status || "").toLowerCase() === "received" && donation.inventoryItemId) {
-        return res.json(donation);
+      const alreadyReceived = donationGroup.find(
+        (item) =>
+          String(item.status || "").toLowerCase() === "received" &&
+          item.inventoryItemId
+      );
+
+      if (alreadyReceived && donationGroup.every((item) => String(item.status || "").toLowerCase() === "received")) {
+        return res.json(await attachDuplicateReferenceMetadata(alreadyReceived));
       }
 
       const username = sanitizeText(req.session?.username, 120) || "drrmo";
-      await createInventoryFromDonationIfNeeded(donation, username);
+      const inventoryItemId =
+        alreadyReceived?.inventoryItemId ||
+        (await createInventoryFromDonationIfNeeded(donation, username))._id;
 
-      donation.status = "received";
-      donation.receivedBy = username;
-      donation.receivedAt = new Date();
-      donation.notReceivedBy = "";
-      donation.notReceivedAt = null;
-      donation.adminNotes = sanitizeText(req.body.adminNotes ?? donation.adminNotes, 1000);
-      donation.history.push({
-        status: "received",
-        message:
-          sanitizeText(req.body.message, 240) ||
-          "Donation marked as received and added to inventory.",
-        createdAt: new Date(),
-        actorId: toObjectIdOrNull(getRequestUserId(req)),
-      });
+      const historyMessage =
+        sanitizeText(req.body.message, 240) ||
+        "Donation marked as received and added to inventory.";
+      const now = new Date();
+      for (const groupedDonation of donationGroup) {
+        groupedDonation.status = "received";
+        groupedDonation.inventoryItemId =
+          inventoryItemId || groupedDonation.inventoryItemId || null;
+        groupedDonation.receivedBy = username;
+        groupedDonation.receivedAt = now;
+        groupedDonation.notReceivedBy = "";
+        groupedDonation.notReceivedAt = null;
+        groupedDonation.adminNotes = sanitizeText(
+          req.body.adminNotes ?? groupedDonation.adminNotes,
+          1000
+        );
+        groupedDonation.history.push({
+          status: "received",
+          message: historyMessage,
+          createdAt: now,
+          actorId: toObjectIdOrNull(getRequestUserId(req)),
+        });
+        await groupedDonation.save();
+      }
     }
 
     if (status === "not_received") {
-      donation.status = "not_received";
-      donation.notReceivedBy = sanitizeText(req.session?.username, 120) || "drrmo";
-      donation.notReceivedAt = new Date();
-      donation.receivedBy = "";
-      donation.receivedAt = null;
-      donation.adminNotes = sanitizeText(req.body.adminNotes ?? donation.adminNotes, 1000);
-      donation.history.push({
-        status: "not_received",
-        message:
-          sanitizeText(req.body.message, 240) || "Donation marked as not received.",
-        createdAt: new Date(),
-        actorId: toObjectIdOrNull(getRequestUserId(req)),
-      });
+      const username = sanitizeText(req.session?.username, 120) || "drrmo";
+      const historyMessage =
+        sanitizeText(req.body.message, 240) || "Donation marked as not received.";
+      const now = new Date();
+      for (const groupedDonation of donationGroup) {
+        groupedDonation.status = "not_received";
+        groupedDonation.notReceivedBy = username;
+        groupedDonation.notReceivedAt = now;
+        groupedDonation.receivedBy = "";
+        groupedDonation.receivedAt = null;
+        groupedDonation.inventoryItemId = null;
+        groupedDonation.adminNotes = sanitizeText(
+          req.body.adminNotes ?? groupedDonation.adminNotes,
+          1000
+        );
+        groupedDonation.history.push({
+          status: "not_received",
+          message: historyMessage,
+          createdAt: now,
+          actorId: toObjectIdOrNull(getRequestUserId(req)),
+        });
+        await groupedDonation.save();
+      }
     }
-
-    await donation.save();
     await notifyDonationReceiptDecision(donation, req, status);
 
-    res.json(donation);
+    res.json({
+      ...(await attachDuplicateReferenceMetadata(donation)),
+      groupedDonationIds: donationGroup.map((item) => item._id),
+      duplicateCount: donationGroup.length,
+    });
   } catch (err) {
     console.error("Update donation status error:", err);
     res.status(500).json({ message: err.message || "Failed to update donation status." });
@@ -641,6 +803,21 @@ async function resubmitDonation(req, res) {
     const { payload, errors } = buildDonationPayload(req.body, donation);
     if (errors.length > 0) {
       return res.status(400).json({ message: errors[0], errors });
+    }
+
+    if (hasNormalizedDonationReference(payload.referenceNumber)) {
+      const duplicates = await findDuplicateReferenceDonations(
+        payload.referenceNumber,
+        donation._id
+      );
+
+      if (duplicates.length > 0) {
+        return res.status(409).json({
+          message:
+            "A donation with this reference number already exists. Duplicate reference numbers are not allowed.",
+          duplicateDonationId: duplicates[0]?._id || null,
+        });
+      }
     }
 
     const files = collectUploadedFiles(req);

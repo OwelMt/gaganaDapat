@@ -348,6 +348,76 @@ const drawPdfFooter = (doc, options = {}) => {
     });
 };
 
+const drawPdfImageGrid = (doc, images = [], options = {}) => {
+  const {
+    columns = 2,
+    imageHeight = 120,
+    gap = 14,
+    captionHeight = 28,
+    emptyMessage = "No images available.",
+  } = options;
+
+  const safeImages = Array.isArray(images) ? images.filter(Boolean) : [];
+  if (!safeImages.length) {
+    drawPdfEmptyState(doc, emptyMessage, { fontSize: 10 });
+    return;
+  }
+
+  const availableWidth = getPageWidth(doc);
+  const columnCount = Math.max(1, columns);
+  const imageWidth = (availableWidth - gap * (columnCount - 1)) / columnCount;
+  const blockHeight = imageHeight + captionHeight;
+
+  for (let index = 0; index < safeImages.length; index += columnCount) {
+    const rowImages = safeImages.slice(index, index + columnCount);
+    ensurePdfPageSpace(doc, blockHeight + 12);
+
+    const startX = doc.page.margins.left;
+    const startY = doc.y;
+
+    rowImages.forEach((image, columnIndex) => {
+      const x = startX + columnIndex * (imageWidth + gap);
+      const y = startY;
+
+      doc
+        .roundedRect(x, y, imageWidth, imageHeight, 8)
+        .fillAndStroke("#f8faf8", PDF_THEME.lineSoft);
+
+      try {
+        doc.image(image.path, x + 4, y + 4, {
+          fit: [imageWidth - 8, imageHeight - 8],
+          align: "center",
+          valign: "center",
+        });
+      } catch (error) {
+        doc
+          .fillColor(PDF_THEME.emptyText)
+          .font("Helvetica-Oblique")
+          .fontSize(9)
+          .text("Image unavailable", x + 10, y + imageHeight / 2 - 6, {
+            width: imageWidth - 20,
+            align: "center",
+          })
+          .fillColor(PDF_THEME.text);
+      }
+
+      const caption = image.caption || image.label || `Image ${index + columnIndex + 1}`;
+      doc
+        .fillColor(PDF_THEME.textMuted)
+        .font("Helvetica")
+        .fontSize(8.5)
+        .text(caption, x, y + imageHeight + 6, {
+          width: imageWidth,
+          align: "center",
+        })
+        .fillColor(PDF_THEME.text);
+    });
+
+    doc.y = startY + blockHeight;
+    doc.moveDown(0.3);
+  }
+};
+
 module.exports = {
   PDF_THEME,
   createPdfDocument,
@@ -355,6 +425,7 @@ module.exports = {
   drawPdfEmptyState,
   drawPdfFooter,
   drawPdfHeader,
+  drawPdfImageGrid,
   drawPdfLabelValue,
   drawPdfParagraphBlock,
   drawPdfSectionTitle,

@@ -1,10 +1,16 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const User = require('../models/UserStaff.js');
 const Barangay = require('../models/Barangay.js');
 const ArchivedAccount = require('../models/ArchivedAccount.js');
+const AccountApprovalRequest = require('../models/AccountApprovalRequest.js');
+const AccountUpdateApprovalRequest = require('../models/AccountUpdateApprovalRequest.js');
 const TimeLog = require('../models/TimeLog');
 const AdminLog = require('../models/AdminLog');
 const UserStaff = require('../models/UserStaff.js');
+const sendAccountApprovalEmail = require('../utils/sendAccountApprovalEmail');
+const sendAccountUpdateApprovalEmail = require('../utils/sendAccountUpdateApprovalEmail');
+const createAuditEvent = require('../utils/createAuditEvent');
 
 const CONTROL_AND_MARKUP = /[<>`]/g;
 
@@ -46,6 +52,11 @@ function sanitizePassword(value) {
   return removeControlChars(value);
 }
 
+function sanitizeThemePreference(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'light' ? 'light' : 'dark';
+}
+
 const BARANGAY_OPTIONS = [
   "Calabasa",
   "Don Mariano Marcos",
@@ -73,6 +84,187 @@ const BARANGAY_OPTIONS = [
   "Santo Tomas South",
   "Ulanin Pitak"
 ];
+
+const ACCOUNT_APPROVAL_TTL_MS = 24 * 60 * 60 * 1000;
+const ACCOUNT_UPDATE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function hashApprovalToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
+function buildApprovalLink(req, token) {
+  const baseUrl =
+    process.env.PUBLIC_API_URL?.trim() ||
+    `${req.protocol}://${req.get('host')}`;
+
+  return `${baseUrl}/api/auth/approve-account/${token}`;
+}
+
+function buildUpdateApprovalLink(req, token) {
+  const baseUrl =
+    process.env.PUBLIC_API_URL?.trim() ||
+    `${req.protocol}://${req.get('host')}`;
+
+  return `${baseUrl}/api/auth/approve-account-update/${token}`;
+}
+
+async function markExpiredApprovalRequest(doc) {
+  if (!doc) return null;
+
+  if (doc.status === 'pending' && doc.approvalExpiresAt <= new Date()) {
+    doc.status = 'expired';
+    await doc.save();
+  }
+
+  return doc;
+}
+
+async function findPendingApprovalByEmail(email) {
+  const pending = await AccountApprovalRequest.findOne({
+    email,
+    status: 'pending'
+  });
+
+  return markExpiredApprovalRequest(pending);
+}
+
+async function findPendingApprovalByBarangay(barangayName) {
+  if (!barangayName) return null;
+
+  const pending = await AccountApprovalRequest.findOne({
+    barangayName,
+    role: 'barangay',
+    status: 'pending'
+  });
+
+  return markExpiredApprovalRequest(pending);
+}
+
+async function markExpiredUpdateApprovalRequest(doc) {
+  if (!doc) return null;
+
+  if (doc.status === 'pending' && doc.approvalExpiresAt <= new Date()) {
+    doc.status = 'expired';
+    await doc.save();
+  }
+
+  return doc;
+}
+
+async function findPendingUpdateApprovalByAccount(accountId) {
+  const pending = await AccountUpdateApprovalRequest.findOne({
+    accountId,
+    status: 'pending'
+  });
+
+  return markExpiredUpdateApprovalRequest(pending);
+}
+
+async function createAccountFromApprovalRequest(approvalRequest) {
+  if (approvalRequest.role === 'barangay') {
+    return Barangay.create({
+      username: approvalRequest.username,
+      email: approvalRequest.email,
+      password: approvalRequest.password,
+      barangayName: approvalRequest.barangayName,
+      verified: true,
+      phoneNumber: approvalRequest.phoneNumber,
+      hotline: approvalRequest.hotline,
+      address: approvalRequest.address,
+      themePreference: approvalRequest.themePreference || 'dark'
+    });
+  }
+
+  return User.create({
+    username: approvalRequest.username,
+    email: approvalRequest.email,
+    password: approvalRequest.password,
+    role: approvalRequest.role,
+    verified: true,
+    phoneNumber: approvalRequest.phoneNumber,
+    hotline: approvalRequest.hotline,
+    address: approvalRequest.address,
+    themePreference: approvalRequest.themePreference || 'dark'
+  });
+}
+
+function renderApprovalPage({
+  title,
+  message,
+  success = false
+}) {
+  const accent = success ? '#166534' : '#b42318';
+  const soft = success ? '#edf8ef' : '#fff4f4';
+  const border = success ? '#c4e0ca' : '#efc9c9';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${title}</title>
+  </head>
+  <body style="margin:0; font-family:Arial, sans-serif; background:#edf5ef; color:#173122;">
+    <div style="min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;">
+      <div style="width:min(560px, 100%); background:#ffffff; border:1px solid ${border}; border-radius:24px; box-shadow:0 24px 60px rgba(15,23,42,0.14); overflow:hidden;">
+        <div style="padding:28px 28px 20px; background:linear-gradient(135deg, #ffffff 0%, #f7fbf8 100%); border-bottom:1px solid ${border};">
+          <div style="display:inline-flex; align-items:center; min-height:30px; padding:0 12px; border-radius:999px; background:${soft}; color:${accent}; font-size:12px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase;">SAGIP BAYAN</div>
+          <h1 style="margin:14px 0 0; font-size:30px; line-height:1.1; color:${accent};">${title}</h1>
+        </div>
+        <div style="padding:24px 28px 28px;">
+          <p style="margin:0; font-size:15px; line-height:1.7; color:#476152;">${message}</p>
+          <p style="margin:18px 0 0; font-size:13px; color:#607667;">You can now log in to your account.</p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>`;
+}
+
+function buildUpdateSummary({
+  account,
+  username,
+  phoneNumber,
+  hotline,
+  address,
+  hasPasswordChange
+}) {
+  const summary = [];
+
+  if (username !== account.username) {
+    summary.push({ label: 'Username', value: `${account.username} -> ${username}` });
+  }
+
+  if (phoneNumber !== (account.phoneNumber || '')) {
+    summary.push({
+      label: 'Phone Number',
+      value: `${account.phoneNumber || '-'} -> ${phoneNumber || '-'}`
+    });
+  }
+
+  if ((hotline || '') !== (account.hotline || '')) {
+    summary.push({
+      label: 'Hotline',
+      value: `${account.hotline || '-'} -> ${hotline || '-'}`
+    });
+  }
+
+  if (address !== (account.address || '')) {
+    summary.push({
+      label: 'Address',
+      value: `${account.address || '-'} -> ${address || '-'}`
+    });
+  }
+
+  if (hasPasswordChange) {
+    summary.push({
+      label: 'Password',
+      value: 'Password will be replaced after approval'
+    });
+  }
+
+  return summary;
+}
 
 /* INIT ADMIN */
 const initAdmin = async (req, res) => {
@@ -131,24 +323,40 @@ const register = async (req, res) => {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    const hashedPassword = await bcrypt.hash(cleanPassword, 10);
+    if (!['barangay', 'drrmo'].includes(cleanRole)) {
+      return res.status(400).json({ message: 'Invalid account role' });
+    }
 
-    /* BARANGAY ACCOUNT */
+    if (!cleanEmail) {
+      return res.status(400).json({ message: 'Email required' });
+    }
+
     if (cleanRole === 'barangay') {
-      if (!cleanEmail || !cleanBarangay) {
+      if (!cleanBarangay) {
         return res.status(400).json({ message: 'Missing barangay details' });
       }
 
       if (!BARANGAY_OPTIONS.includes(cleanBarangay)) {
         return res.status(400).json({ message: 'Invalid barangay selected' });
       }
+    }
 
-      const existingEmail = await Barangay.findOne({ email: cleanEmail });
+    const existingStaffEmail = await User.findOne({ email: cleanEmail });
+    const existingBarangayEmail = await Barangay.findOne({ email: cleanEmail });
 
-      if (existingEmail) {
-        return res.status(400).json({ message: 'Barangay email already exists' });
-      }
+    if (existingStaffEmail || existingBarangayEmail) {
+      return res.status(400).json({ message: 'Email already exists' });
+    }
 
+    const pendingEmailRequest = await findPendingApprovalByEmail(cleanEmail);
+
+    if (pendingEmailRequest?.status === 'pending') {
+      return res.status(400).json({
+        message: 'An account approval email is already pending for this address'
+      });
+    }
+
+    if (cleanRole === 'barangay') {
       const existingBarangay = await Barangay.findOne({
         barangayName: cleanBarangay,
         archived: false
@@ -160,76 +368,93 @@ const register = async (req, res) => {
         });
       }
 
-      const barangayUser = await Barangay.create({
-        username: cleanUsername,
-        email: cleanEmail,
-        password: hashedPassword,
-        barangayName: cleanBarangay,
-        verified: true,
-        phoneNumber: cleanPhoneNumber,
-        hotline: cleanHotline,
-        address: cleanAddress
-      });
+      const pendingBarangayRequest = await findPendingApprovalByBarangay(cleanBarangay);
 
-      await AdminLog.create({
-        adminId: req.session.userId,
-        adminUsername: req.session.username,
-        action: "create",
-        targetUserId: barangayUser._id,
-        targetUsername: barangayUser.username,
-        barangay: barangayUser.barangayName
-      });
-
-      return res.json({
-        username: barangayUser.username,
-        email: barangayUser.email,
-        barangay: barangayUser.barangayName,
-        role: 'barangay',
-        verified: barangayUser.verified,
-        phoneNumber: cleanPhoneNumber,
-        hotline: cleanHotline,
-        address: cleanAddress
-      });
+      if (pendingBarangayRequest?.status === 'pending') {
+        return res.status(400).json({
+          message: 'An approval request for this barangay is already pending'
+        });
+      }
     }
 
-    /* ADMIN / DRRMO ACCOUNT */
-    if (!cleanEmail) {
-      return res.status(400).json({ message: 'Email required' });
-    }
+    const hashedPassword = await bcrypt.hash(cleanPassword, 10);
+    const approvalToken = crypto.randomBytes(32).toString('hex');
+    const approvalTokenHash = hashApprovalToken(approvalToken);
+    const approvalExpiresAt = new Date(Date.now() + ACCOUNT_APPROVAL_TTL_MS);
 
-    const existingUser = await User.findOne({ email: cleanEmail });
-
-    if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
-    }
-
-    const user = await User.create({
+    const approvalRequest = await AccountApprovalRequest.create({
+      role: cleanRole,
       username: cleanUsername,
       email: cleanEmail,
       password: hashedPassword,
-      role: cleanRole,
-      verified: true,
+      barangayName: cleanRole === 'barangay' ? cleanBarangay : null,
       phoneNumber: cleanPhoneNumber,
       hotline: cleanHotline,
-      address: cleanAddress
+      address: cleanAddress,
+      approvalTokenHash,
+      approvalExpiresAt,
+      requestedBy: {
+        adminId: req.session.userId || null,
+        adminUsername: req.session.username || '',
+        adminRole: req.session.role || 'admin'
+      }
+    });
+
+    const approvalLink = buildApprovalLink(req, approvalToken);
+
+    await sendAccountApprovalEmail({
+      email: cleanEmail,
+      approvalLink,
+      role: cleanRole,
+      username: cleanUsername,
+      barangayName: cleanRole === 'barangay' ? cleanBarangay : '',
+      requestedBy: req.session.username || 'Administrator'
     });
 
     await AdminLog.create({
       adminId: req.session.userId,
       adminUsername: req.session.username,
-      action: "create",
-      targetUserId: user._id,
-      targetUsername: user.username
+      action: 'request_create',
+      targetUserId: approvalRequest._id,
+      targetUsername: cleanUsername
     });
 
-    res.json({
-      username: user.username,
-      email: user.email,
-      role: user.role,
-      verified: user.verified,
+    await createAuditEvent({
+      module: 'account',
+      type: 'invite_requested',
+      priority: 'normal',
+      title: 'Account approval requested',
+      message:
+        cleanRole === 'barangay'
+          ? `${req.session.username || 'Admin'} requested email approval for barangay account ${cleanUsername} (${cleanBarangay}).`
+          : `${req.session.username || 'Admin'} requested email approval for DRRMO account ${cleanUsername}.`,
+      actorId: req.session.userId || null,
+      actorName: req.session.username || 'Admin',
+      actorRole: req.session.role || 'admin',
+      recipientRole: cleanRole,
+      status: 'pending',
+      referenceId: approvalRequest._id,
+      referenceModel: 'AccountApprovalRequest',
+      targetLabel: cleanUsername,
+      phoneNumber: cleanPhoneNumber,
+      metadata: {
+        email: cleanEmail,
+        barangayName: cleanRole === 'barangay' ? cleanBarangay : '',
+        approvalExpiresAt
+      }
+    });
+
+    res.status(202).json({
+      message: 'Approval email sent. The account will be created after the recipient approves it.',
+      pending: true,
+      username: cleanUsername,
+      email: cleanEmail,
+      role: cleanRole,
+      barangay: cleanRole === 'barangay' ? cleanBarangay : undefined,
       phoneNumber: cleanPhoneNumber,
       hotline: cleanHotline,
-      address: cleanAddress
+      address: cleanAddress,
+      approvalExpiresAt
     });
   } catch (err) {
     console.error(err);
@@ -246,7 +471,342 @@ const register = async (req, res) => {
       });
     }
 
+    if (err.code === 11000 && err.keyPattern?.approvalTokenHash) {
+      return res.status(500).json({
+        message: 'Failed to generate approval token. Please try again.'
+      });
+    }
+
     res.status(500).json({ message: err.message });
+  }
+};
+
+const approveAccountRequest = async (req, res) => {
+  try {
+    const token = String(req.params?.token || '').trim();
+
+    if (!token) {
+      return res
+        .status(400)
+        .send(
+          renderApprovalPage({
+            title: 'Invalid approval link',
+            message: 'This account approval link is missing or invalid.'
+          })
+        );
+    }
+
+    const approvalRequest = await AccountApprovalRequest.findOne({
+      approvalTokenHash: hashApprovalToken(token)
+    });
+
+    if (!approvalRequest) {
+      return res
+        .status(404)
+        .send(
+          renderApprovalPage({
+            title: 'Approval link not found',
+            message: 'This account approval link is invalid or has already been removed.'
+          })
+        );
+    }
+
+    if (approvalRequest.status === 'approved') {
+      return res
+        .status(200)
+        .send(
+          renderApprovalPage({
+            title: 'Account already approved',
+            message: 'This account request was already approved earlier. You can now log in using the approved account.',
+            success: true
+          })
+        );
+    }
+
+    if (approvalRequest.status !== 'pending') {
+      return res
+        .status(400)
+        .send(
+          renderApprovalPage({
+            title: 'Approval no longer available',
+            message: `This account request is already marked as ${approvalRequest.status}.`
+          })
+        );
+    }
+
+    if (approvalRequest.approvalExpiresAt <= new Date()) {
+      approvalRequest.status = 'expired';
+      await approvalRequest.save();
+
+      return res
+        .status(400)
+        .send(
+          renderApprovalPage({
+            title: 'Approval link expired',
+            message: 'This approval link has expired. Ask the administrator to send a new account approval email.'
+          })
+        );
+    }
+
+    const [existingStaffEmail, existingBarangayEmail] = await Promise.all([
+      User.findOne({ email: approvalRequest.email }),
+      Barangay.findOne({ email: approvalRequest.email })
+    ]);
+
+    if (existingStaffEmail || existingBarangayEmail) {
+      approvalRequest.status = 'cancelled';
+      await approvalRequest.save();
+
+      return res
+        .status(409)
+        .send(
+          renderApprovalPage({
+            title: 'Account already exists',
+            message: 'An account using this email already exists, so this approval request can no longer be completed.'
+          })
+        );
+    }
+
+    if (approvalRequest.role === 'barangay') {
+      const activeBarangay = await Barangay.findOne({
+        barangayName: approvalRequest.barangayName,
+        archived: false
+      });
+
+      if (activeBarangay) {
+        approvalRequest.status = 'cancelled';
+        await approvalRequest.save();
+
+        return res
+          .status(409)
+          .send(
+            renderApprovalPage({
+              title: 'Barangay already assigned',
+              message: 'An active account for this barangay already exists, so this approval request can no longer be completed.'
+            })
+          );
+      }
+    }
+
+    const createdAccount = await createAccountFromApprovalRequest(approvalRequest);
+
+    approvalRequest.status = 'approved';
+    approvalRequest.approvedAt = new Date();
+    approvalRequest.approvedByEmail = approvalRequest.email;
+    approvalRequest.createdAccountId = createdAccount._id;
+    approvalRequest.createdAccountModel =
+      approvalRequest.role === 'barangay' ? 'Barangay' : 'UserStaff';
+    await approvalRequest.save();
+
+    await AdminLog.create({
+      adminId: approvalRequest.requestedBy?.adminId || null,
+      adminUsername: approvalRequest.requestedBy?.adminUsername || 'system',
+      action: 'approve_create',
+      targetUserId: createdAccount._id,
+      targetUsername: createdAccount.username
+    });
+
+    await createAuditEvent({
+      module: 'account',
+      type: 'invite_approved',
+      priority: 'normal',
+      title: 'Account approval completed',
+      message:
+        approvalRequest.role === 'barangay'
+          ? `${approvalRequest.email} approved barangay account ${createdAccount.username} (${approvalRequest.barangayName}).`
+          : `${approvalRequest.email} approved DRRMO account ${createdAccount.username}.`,
+      actorId: null,
+      actorName: approvalRequest.email,
+      actorRole: 'external',
+      recipientRole: approvalRequest.role,
+      status: 'approved',
+      referenceId: approvalRequest._id,
+      referenceModel: 'AccountApprovalRequest',
+      targetLabel: createdAccount.username,
+      metadata: {
+        email: approvalRequest.email,
+        createdAccountId: createdAccount._id,
+        createdAccountModel:
+          approvalRequest.role === 'barangay' ? 'Barangay' : 'UserStaff',
+        barangayName: approvalRequest.barangayName || ''
+      }
+    });
+
+    return res
+      .status(200)
+      .send(
+        renderApprovalPage({
+          title: 'Account approved',
+          message: 'Your account approval was successful. The administrator-created account is now active and ready to use.',
+          success: true
+        })
+      );
+  } catch (err) {
+    console.error(err);
+    return res
+      .status(500)
+      .send(
+        renderApprovalPage({
+          title: 'Approval failed',
+          message: 'Something went wrong while approving this account. Please try again later or contact the administrator.'
+        })
+      );
+  }
+};
+
+const approveAccountUpdateRequest = async (req, res) => {
+  try {
+    const token = String(req.params?.token || '').trim();
+
+    if (!token) {
+      return res
+        .status(400)
+        .send(
+          renderApprovalPage({
+            title: 'Invalid approval link',
+            message: 'This account update approval link is missing or invalid.'
+          })
+        );
+    }
+
+    const approvalRequest = await AccountUpdateApprovalRequest.findOne({
+      approvalTokenHash: hashApprovalToken(token)
+    });
+
+    if (!approvalRequest) {
+      return res
+        .status(404)
+        .send(
+          renderApprovalPage({
+            title: 'Approval link not found',
+            message: 'This account update approval link is invalid or has already been removed.'
+          })
+        );
+    }
+
+    if (approvalRequest.status === 'approved') {
+      return res
+        .status(200)
+        .send(
+          renderApprovalPage({
+            title: 'Update already approved',
+            message: 'This account update request was already approved earlier.',
+            success: true
+          })
+        );
+    }
+
+    if (approvalRequest.status !== 'pending') {
+      return res
+        .status(400)
+        .send(
+          renderApprovalPage({
+            title: 'Approval no longer available',
+            message: `This account update request is already marked as ${approvalRequest.status}.`
+          })
+        );
+    }
+
+    if (approvalRequest.approvalExpiresAt <= new Date()) {
+      approvalRequest.status = 'expired';
+      await approvalRequest.save();
+
+      return res
+        .status(400)
+        .send(
+          renderApprovalPage({
+            title: 'Approval link expired',
+            message: 'This update approval link has expired. Ask the administrator to send a new account update approval email.'
+          })
+        );
+    }
+
+    const account =
+      approvalRequest.accountModel === 'Barangay'
+        ? await Barangay.findById(approvalRequest.accountId)
+        : await User.findById(approvalRequest.accountId);
+
+    if (!account) {
+      approvalRequest.status = 'cancelled';
+      await approvalRequest.save();
+
+      return res
+        .status(404)
+        .send(
+          renderApprovalPage({
+            title: 'Account not found',
+            message: 'This account is no longer available, so the pending update cannot be applied.'
+          })
+        );
+    }
+
+    account.username = approvalRequest.pendingUsername;
+    account.phoneNumber = approvalRequest.pendingPhoneNumber;
+    account.hotline = approvalRequest.pendingHotline;
+    account.address = approvalRequest.pendingAddress;
+
+    if (approvalRequest.pendingPasswordHash) {
+      account.password = approvalRequest.pendingPasswordHash;
+    }
+
+    await account.save();
+
+    approvalRequest.status = 'approved';
+    approvalRequest.approvedAt = new Date();
+    approvalRequest.approvedByEmail = approvalRequest.email;
+    await approvalRequest.save();
+
+    await AdminLog.create({
+      adminId: approvalRequest.requestedBy?.adminId || null,
+      adminUsername: approvalRequest.requestedBy?.adminUsername || 'system',
+      action: 'approve_update',
+      targetUserId: account._id,
+      targetUsername: account.username
+    });
+
+    await createAuditEvent({
+      module: 'account',
+      type: 'update_approved',
+      priority: 'normal',
+      title: 'Account update approved',
+      message:
+        approvalRequest.role === 'barangay'
+          ? `${approvalRequest.email} approved updates for barangay account ${account.username}.`
+          : `${approvalRequest.email} approved updates for DRRMO account ${account.username}.`,
+      actorId: null,
+      actorName: approvalRequest.email,
+      actorRole: 'external',
+      recipientRole: approvalRequest.role,
+      status: 'approved',
+      referenceId: approvalRequest._id,
+      referenceModel: 'AccountUpdateApprovalRequest',
+      targetLabel: account.username,
+      metadata: {
+        accountId: account._id,
+        accountModel: approvalRequest.accountModel,
+        email: approvalRequest.email
+      }
+    });
+
+    return res
+      .status(200)
+      .send(
+        renderApprovalPage({
+          title: 'Account update approved',
+          message: 'Your account update was approved successfully. The administrator-requested changes are now active.',
+          success: true
+        })
+      );
+  } catch (err) {
+    console.error(err);
+    return res
+      .status(500)
+      .send(
+        renderApprovalPage({
+          title: 'Approval failed',
+          message: 'Something went wrong while approving this account update. Please try again later or contact the administrator.'
+        })
+      );
   }
 };
 
@@ -294,6 +854,7 @@ req.session.role = role;
 req.session.isAuthenticated = true;
 req.session.username = account.username;
 req.session.barangayName = barangayName || account.barangayName || "";
+req.session.themePreference = sanitizeThemePreference(account.themePreference);
 
 console.log("SESSION BEFORE SAVE:", req.session);
 
@@ -314,15 +875,23 @@ console.log("SESSION BEFORE SAVE:", req.session);
   });
 
   res.json({
+    userId: account._id,
     username: account.username,
     email: account.email,
     role,
     verified: account.verified,
+    themePreference: sanitizeThemePreference(account.themePreference),
     ...(role === 'barangay' && { barangay: barangayName })
   });
 });
 
   } catch (err) {
+
+    if (err.code === 11000 && err.keyPattern?.accountId) {
+      return res.status(400).json({
+        message: 'An account update approval email is already pending for this account'
+      });
+    }
 
     res.status(500).json({ message: err.message });
 
@@ -404,26 +973,34 @@ const updateAccount = async (req, res) => {
     if (!account)
       return res.status(404).json({ message: 'Account not found' });
 
-    const {
-      username,
-      email,
-      phoneNumber,
-      hotline,
-      address,
-      password
-    } = req.body;
+    const { username, phoneNumber, hotline, address, password } = req.body;
     const cleanUsername = username !== undefined ? sanitizeUsername(username) : undefined;
-    const cleanEmail = email !== undefined ? sanitizeEmail(email) : undefined;
     const cleanPhoneNumber = phoneNumber !== undefined ? sanitizePhoneNumber(phoneNumber) : undefined;
     const cleanHotline = hotline !== undefined ? sanitizeHotline(hotline) : undefined;
     const cleanAddress = address !== undefined ? sanitizeAddress(address) : undefined;
     const cleanPassword = password ? sanitizePassword(password) : '';
 
-    if (cleanUsername !== undefined) account.username = cleanUsername;
-    if (cleanEmail !== undefined) account.email = cleanEmail;
-    if (cleanPhoneNumber !== undefined) account.phoneNumber = cleanPhoneNumber;
-    if (cleanHotline !== undefined) account.hotline = cleanHotline;
-    if (cleanAddress !== undefined) account.address = cleanAddress;
+    if (!cleanUsername || !cleanPhoneNumber || !cleanAddress) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+
+    const pendingRequest = await findPendingUpdateApprovalByAccount(account._id);
+
+    if (pendingRequest?.status === 'pending') {
+      return res.status(400).json({
+        message: 'An account update approval email is already pending for this account'
+      });
+    }
+
+    const hasFieldChanges =
+      cleanUsername !== account.username ||
+      cleanPhoneNumber !== (account.phoneNumber || '') ||
+      cleanHotline !== (account.hotline || '') ||
+      cleanAddress !== (account.address || '');
+
+    if (!hasFieldChanges && !cleanPassword) {
+      return res.status(400).json({ message: 'No changes detected' });
+    }
 
     if (cleanPassword) {
 
@@ -432,21 +1009,89 @@ const updateAccount = async (req, res) => {
       if (same)
         return res.status(400).json({ message: 'Password must be different' });
 
-      account.password = await bcrypt.hash(cleanPassword, 10);
-
     }
 
-    await account.save();
+    const pendingPasswordHash = cleanPassword
+      ? await bcrypt.hash(cleanPassword, 10)
+      : '';
+    const approvalToken = crypto.randomBytes(32).toString('hex');
+    const approvalTokenHash = hashApprovalToken(approvalToken);
+    const approvalExpiresAt = new Date(Date.now() + ACCOUNT_UPDATE_TTL_MS);
+    const changeSummary = buildUpdateSummary({
+      account,
+      username: cleanUsername,
+      phoneNumber: cleanPhoneNumber,
+      hotline: cleanHotline,
+      address: cleanAddress,
+      hasPasswordChange: Boolean(cleanPassword)
+    });
+
+    const updateRequest = await AccountUpdateApprovalRequest.create({
+      accountId: account._id,
+      accountModel: account instanceof Barangay ? 'Barangay' : 'UserStaff',
+      role: account instanceof Barangay ? 'barangay' : account.role,
+      email: account.email,
+      currentUsername: account.username,
+      pendingUsername: cleanUsername,
+      pendingPhoneNumber: cleanPhoneNumber,
+      pendingHotline: cleanHotline,
+      pendingAddress: cleanAddress,
+      pendingPasswordHash,
+      approvalTokenHash,
+      approvalExpiresAt,
+      requestedBy: {
+        adminId: req.session.userId || null,
+        adminUsername: req.session.username || '',
+        adminRole: req.session.role || 'admin'
+      }
+    });
+
+    await sendAccountUpdateApprovalEmail({
+      email: account.email,
+      approvalLink: buildUpdateApprovalLink(req, approvalToken),
+      role: account instanceof Barangay ? 'barangay' : account.role,
+      currentUsername: account.username,
+      requestedBy: req.session.username || 'Administrator',
+      changeSummary
+    });
 
     await AdminLog.create({
       adminId: req.session.userId,
       adminUsername: req.session.username,
-      action: "update",
-      targetUserId: account._id,
+      action: "request_update",
+      targetUserId: updateRequest._id,
       targetUsername: account.username
     });
 
-    res.json(account);
+    await createAuditEvent({
+      module: 'account',
+      type: 'update_requested',
+      priority: 'normal',
+      title: 'Account update requested',
+      message:
+        account instanceof Barangay
+          ? `${req.session.username || 'Admin'} requested email approval to update barangay account ${account.username}.`
+          : `${req.session.username || 'Admin'} requested email approval to update DRRMO account ${account.username}.`,
+      actorId: req.session.userId || null,
+      actorName: req.session.username || 'Admin',
+      actorRole: req.session.role || 'admin',
+      recipientRole: account instanceof Barangay ? 'barangay' : account.role,
+      status: 'pending',
+      referenceId: updateRequest._id,
+      referenceModel: 'AccountUpdateApprovalRequest',
+      targetLabel: account.username,
+      metadata: {
+        email: account.email,
+        approvalExpiresAt,
+        changeSummary
+      }
+    });
+
+    res.status(202).json({
+      message: 'Approval email sent. The account will be updated after the recipient approves it.',
+      pending: true,
+      approvalExpiresAt
+    });
 
   } catch (err) {
 
@@ -487,6 +1132,7 @@ const archiveAccount = async (req, res) => {
       email: account.email,
       password: account.password,
       barangayName: account.barangayName,
+      themePreference: account.themePreference || 'dark',
       phoneNumber: account.phoneNumber,
       hotline: account.hotline,
       address: account.address
@@ -539,6 +1185,7 @@ const restoreAccount = async (req, res) => {
         phoneNumber: archived.phoneNumber,
         hotline: archived.hotline,
         address: archived.address,
+        themePreference: archived.themePreference || 'dark',
         role: archived.role   // FIXED HERE
 
       });
@@ -554,6 +1201,7 @@ const restoreAccount = async (req, res) => {
         hotline: archived.hotline,
         address: archived.address,
         barangayName: archived.barangayName,
+        themePreference: archived.themePreference || 'dark',
         verified: true
 
       });
@@ -600,6 +1248,52 @@ const getArchivedAccounts = async (req, res) => {
 
     res.status(500).json({ message: err.message });
 
+  }
+};
+
+const deleteArchivedAccount = async (req, res) => {
+  try {
+    const archiveId = req.params.id;
+    const archived = await ArchivedAccount.findById(archiveId);
+
+    if (!archived) {
+      return res.status(404).json({ message: 'Archived account not found' });
+    }
+
+    await archived.deleteOne();
+
+    await AdminLog.create({
+      adminId: req.session.userId,
+      adminUsername: req.session.username,
+      action: 'delete_archived',
+      targetUserId: archived.originalId,
+      targetUsername: archived.username
+    });
+
+    await createAuditEvent({
+      module: 'account',
+      type: 'archived_delete',
+      priority: 'normal',
+      title: 'Archived account deleted',
+      message: `${req.session.username || 'Admin'} permanently deleted archived account ${archived.username}.`,
+      actorId: req.session.userId || null,
+      actorName: req.session.username || 'Admin',
+      actorRole: req.session.role || 'admin',
+      recipientRole: archived.role || '',
+      status: 'deleted',
+      referenceId: archived._id,
+      referenceModel: 'ArchivedAccount',
+      targetLabel: archived.username,
+      metadata: {
+        email: archived.email || '',
+        role: archived.role || ''
+      }
+    });
+
+    res.json({ message: 'Archived account deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -653,12 +1347,27 @@ const getAvailableBarangays = async (req, res) => {
   "Ulanin Pitak"
     ];
 
-    const existingBarangays = await Barangay.find(
-      { archived: false },
-      'barangayName'
-    ).lean();
+    const [existingBarangays, pendingBarangayApprovals] = await Promise.all([
+      Barangay.find(
+        { archived: false },
+        'barangayName'
+      ).lean(),
+      AccountApprovalRequest.find(
+        {
+          role: 'barangay',
+          status: 'pending',
+          approvalExpiresAt: { $gt: new Date() }
+        },
+        'barangayName'
+      ).lean()
+    ]);
 
-    const usedBarangays = existingBarangays.map(item => item.barangayName);
+    const usedBarangays = [
+      ...existingBarangays.map(item => item.barangayName),
+      ...pendingBarangayApprovals
+        .map(item => item.barangayName)
+        .filter(Boolean)
+    ];
 
     const availableBarangays = BARANGAY_OPTIONS.filter(
       name => !usedBarangays.includes(name)
@@ -675,6 +1384,43 @@ const getAvailableBarangays = async (req, res) => {
   }
 };
 
+const updateThemePreference = async (req, res) => {
+  try {
+    const role = String(req.session?.role || '').toLowerCase();
+    const userId = req.session?.userId;
+
+    if (!userId || !role) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+
+    const themePreference = sanitizeThemePreference(req.body?.themePreference);
+    const Model = role === 'barangay' ? Barangay : UserStaff;
+
+    const account = await Model.findByIdAndUpdate(
+      userId,
+      { themePreference },
+      { new: true, fields: 'themePreference username role barangayName' }
+    );
+
+    if (!account) {
+      return res.status(404).json({ message: 'Account not found' });
+    }
+
+    req.session.themePreference = themePreference;
+
+    return res.json({
+      message: 'Theme preference updated',
+      themePreference,
+      role,
+      username: account.username,
+      barangayName: account.barangayName || ''
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: err.message });
+  }
+};
+
 
 module.exports = {
 
@@ -687,7 +1433,11 @@ module.exports = {
   archiveAccount,
   restoreAccount,
   getArchivedAccounts,
+  deleteArchivedAccount,
   getAdminLogs,
-  getAvailableBarangays
+  getAvailableBarangays,
+  approveAccountRequest,
+  approveAccountUpdateRequest,
+  updateThemePreference
 
 };

@@ -75,9 +75,10 @@ const getEvacStatusKey = (place) => {
 
   const current = toNumber(place?.currentOccupants);
   const capacity = toNumber(place?.capacityIndividual);
+  const occupancyPercent = capacity > 0 ? Math.round((current / capacity) * 100) : 0;
 
   if (capacity > 0 && current >= capacity) return "full";
-  if (current > 0) return "limited";
+  if (capacity > 0 && occupancyPercent >= 75) return "limited";
   return "available";
 };
 

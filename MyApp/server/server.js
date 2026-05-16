@@ -9,6 +9,8 @@ const fs = require("fs");
 
 dotenv.config();
 
+mongoose.set("bufferCommands", false);
+
 // --------------------
 // Routes
 // --------------------
@@ -27,6 +29,7 @@ const timeInOutRoutes = require("./routes/timeInOutRoutes");
 const editRoutes = require("./routes/editRoutes");
 const inventoryRoutes = require("./routes/inventoryRoutes");
 const reliefRequestRoutes = require("./routes/reliefRequestRoutes");
+const reliefDistributionRoutes = require("./routes/reliefDistributionRoutes");
 const reliefReleaseRoutes = require("./routes/reliefReleaseRoutes");
 const foodPackRoutes = require("./routes/foodPackRoutes");
 const publicSiteRoutes = require("./routes/publicSiteRoutes");
@@ -39,6 +42,8 @@ const overviewAnalyticsRoutes = require("./routes/overviewAnalysticsRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const waterLevelRoutes = require("./routes/waterLevelRoutes");
 const yoloRoutes = require("./routes/yoloRoutes");
+const UserStaff = require("./models/UserStaff");
+const Barangay = require("./models/Barangay");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -165,6 +170,7 @@ app.use("/api/timeinout", timeInOutRoutes);
 app.use("/api/edit", editRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/relief-requests", reliefRequestRoutes);
+app.use("/api/relief-distributions", reliefDistributionRoutes);
 app.use("/api/relief-releases", reliefReleaseRoutes);
 app.use("/api/food-pack-templates", foodPackRoutes);
 app.use("/api/public-site", publicSiteRoutes);
@@ -215,13 +221,30 @@ app.get("/api/tryserver", (req, res) => {
   res.json({ message: "Server is working!" });
 });
 
-app.get("/api/debug-session", (req, res) => {
-  res.json({
-    session: req.session,
-    username: req.session?.username || null,
-    userId: req.session?.userId || null,
-    role: req.session?.role || null,
-  });
+app.get("/api/debug-session", async (req, res) => {
+  try {
+    const role = String(req.session?.role || "").toLowerCase();
+    const userId = req.session?.userId || null;
+    let themePreference = req.session?.themePreference || null;
+
+    if (userId && role && !themePreference) {
+      const Model = role === "barangay" ? Barangay : UserStaff;
+      const account = await Model.findById(userId).select("themePreference").lean();
+      themePreference = account?.themePreference || "dark";
+      req.session.themePreference = themePreference;
+    }
+
+    res.json({
+      session: req.session,
+      username: req.session?.username || null,
+      userId,
+      role: req.session?.role || null,
+      themePreference: themePreference || "dark",
+    });
+  } catch (error) {
+    console.error("Debug session error:", error);
+    res.status(500).json({ message: "Failed to read session" });
+  }
 });
 
 app.get("/", (req, res) => {
@@ -241,24 +264,41 @@ if (process.env.NODE_ENV === "production") {
 }
 
 // --------------------
-// MongoDB
+// MongoDB / Server startup
 // --------------------
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Atlas connected"))
-  .catch((err) => console.error("MongoDB connection error:", err));
+async function startServer() {
+  const mongoUri = process.env.MONGO_URI?.trim();
 
-mongoose.connection.once("open", async () => {
-  console.log("Connected DB:", mongoose.connection.name);
+  if (!mongoUri) {
+    console.error(
+      "MongoDB startup error: MONGO_URI is missing in MyApp/server/.env"
+    );
+    process.exit(1);
+  }
 
-  const collections = await mongoose.connection.db.listCollections().toArray();
-  console.log("Collections:", collections.map((c) => c.name));
-});
+  try {
+    await mongoose.connect(mongoUri, {
+      serverSelectionTimeoutMS: 10000,
+    });
+    console.log("MongoDB Atlas connected");
 
-// --------------------
-// Start server
-// --------------------
-const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+    mongoose.connection.once("open", async () => {
+      console.log("Connected DB:", mongoose.connection.name);
+
+      const collections = await mongoose.connection.db
+        .listCollections()
+        .toArray();
+      console.log("Collections:", collections.map((c) => c.name));
+    });
+
+    const PORT = process.env.PORT || 8000;
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  } catch (err) {
+    console.error("MongoDB connection error:", err.message || err);
+    process.exit(1);
+  }
+}
+
+startServer();

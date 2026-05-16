@@ -7,6 +7,26 @@ const normalizeString = (value) => {
 
 const normalizeRole = (value) => normalizeString(value).toLowerCase();
 
+const ROLE_ALLOWED_MODULES = {
+  admin: ["evacuation", "inventory", "announcement", "account", "analytics", "system"],
+  drrmo: [
+    "relief",
+    "inventory",
+    "donation",
+    "evacuation",
+    "announcement",
+    "incident",
+    "guidelines",
+    "system",
+  ],
+  barangay: ["relief", "evacuation", "system"],
+};
+
+const getAllowedModulesForRole = (role) => {
+  const normalizedRole = normalizeRole(role);
+  return ROLE_ALLOWED_MODULES[normalizedRole] || ["system"];
+};
+
 const escapeRegex = (value) => {
   return normalizeString(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 };
@@ -76,6 +96,7 @@ const buildNotificationQuery = (req) => {
   const role = session.role;
   const userId = session.userId;
   const barangayName = session.barangayName || session.username;
+  const allowedModules = getAllowedModulesForRole(role);
 
   const visibilityOr = [
     {
@@ -150,6 +171,11 @@ const buildNotificationQuery = (req) => {
         $or: visibilityOr,
       },
       {
+        module: {
+          $in: allowedModules,
+        },
+      },
+      {
         archivedBy: {
           $not: {
             $elemMatch: {
@@ -211,6 +237,7 @@ const getNotifications = async (req, res) => {
 
     const moduleFilter = normalizeString(req.query.module).toLowerCase();
     const statusFilter = normalizeString(req.query.status).toLowerCase();
+    const allowedModules = getAllowedModulesForRole(session.role);
 
     const finalQuery = {
       ...query,
@@ -218,6 +245,9 @@ const getNotifications = async (req, res) => {
     };
 
     if (moduleFilter && moduleFilter !== "all") {
+      if (!allowedModules.includes(moduleFilter)) {
+        return res.status(200).json(getEmptyNotificationPayload(page, limit));
+      }
       finalQuery.module = moduleFilter;
     }
 

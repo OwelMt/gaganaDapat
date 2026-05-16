@@ -15,6 +15,11 @@ const UserSchema = new mongoose.Schema({
   phoneNumber: { type: String, required: true },
   hotline: String,
   address: { type: String, required: true },
+  themePreference: {
+    type: String,
+    enum: ['dark', 'light'],
+    default: 'dark'
+  },
 
   archived: { type: Boolean, default: false },
   archivedAt: { type: Date }

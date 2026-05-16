@@ -1,11 +1,15 @@
 const mongoose = require("mongoose");
 
+const LIMITED_OCCUPANCY_PERCENT = 75;
+
 const deriveCapacityStatus = (currentOccupants, capacityIndividual) => {
   const current = Number(currentOccupants || 0);
   const capacity = Number(capacityIndividual || 0);
+  const occupancyPercent =
+    capacity > 0 ? Math.round((current / capacity) * 100) : 0;
 
   if (capacity > 0 && current >= capacity) return "full";
-  if (current > 0) return "limited";
+  if (capacity > 0 && occupancyPercent >= LIMITED_OCCUPANCY_PERCENT) return "limited";
   return "available";
 };
 
@@ -188,7 +192,7 @@ EvacPlaceSchema.virtual("occupancyPercent").get(function () {
 
   if (capacity <= 0) return 0;
 
-  return Math.min(100, Math.round((current / capacity) * 100));
+  return Math.round((current / capacity) * 100);
 });
 
 /*

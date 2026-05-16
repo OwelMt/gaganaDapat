@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const controller = require("../controllers/reliefReleaseController");
+const { uploadReleaseProofImages } = require("../middleware/upload");
 const {
   requireLogin,
   requireAdminOrDrrmo,
@@ -17,6 +18,7 @@ router.post(
   "/",
   requireLogin,
   requireAdminOrDrrmo,
+  uploadReleaseProofImages.array("proofFiles", 5),
   controller.createReliefRelease
 );
 

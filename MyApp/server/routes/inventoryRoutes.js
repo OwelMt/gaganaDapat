@@ -34,6 +34,8 @@ router.get(
 // =========================
 router.post(
   "/",
+  requireLogin,
+  requireAdminOrDrrmo,
   uploadProof.array("proofFiles", 5),
   inventoryController.addInventory
 );
@@ -48,10 +50,12 @@ router.delete("/archived/:id/permanent", requireAdminOrDrrmo, inventoryControlle
 
 router.put(
   "/:id",
+  requireLogin,
+  requireAdminOrDrrmo,
   uploadProof.array("proofFiles", 5),
   inventoryController.updateInventory
 );
 
-router.delete("/:id", inventoryController.deleteInventory);
+router.delete("/:id", requireLogin, requireAdminOrDrrmo, inventoryController.deleteInventory);
 
 module.exports = router;

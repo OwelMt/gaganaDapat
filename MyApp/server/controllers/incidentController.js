@@ -1,4 +1,5 @@
 const PDFDocument = require("pdfkit");
+const axios = require("axios");
 const IncidentModel = require("../models/Incident");
 const HistoryModel = require("../models/History");
 const Notification = require("../models/Notification");
@@ -8,6 +9,8 @@ const cloudinary = require("../config/cloudinary");
 const exif = require("exif-parser");
 const { verifyIncidentImage } = require("../utils/verifyIncidentImage");
 const INCIDENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const AUTO_VERIFY_INTERVAL_MS = 2 * 60 * 1000;
+const AUTO_VERIFY_BATCH_SIZE = 5;
 
 const normalizeString = (value) => {
   if (value === undefined || value === null) return "";
@@ -87,6 +90,172 @@ const generateReasoning = (v) => {
 
   return `Pending: Partial match (${v.confidence}%) — needs manual review.`;
 };
+
+const buildStoredVerification = (verification) => {
+  if (!verification) return undefined;
+
+  return {
+    status: verification.status || "pending",
+    confidence: verification.confidence || 0,
+    labels: verification.labels || [],
+    matchedLabels: verification.matchedLabels || [],
+    isMatch: verification.isMatch || false,
+    score: verification.confidence || 0,
+    reasoning: generateReasoning(verification),
+    metadata: {
+      hasGPS: verification.metadataFlags?.hasLocation || false,
+      isRecent: verification.metadataFlags?.isRecent || false,
+      isWithinArea: verification.metadataFlags?.isWithinArea || false,
+      device: verification.metadata?.device || null,
+      width: verification.metadata?.width || null,
+      height: verification.metadata?.height || null,
+      timestamp: verification.metadata?.timestamp || null,
+    },
+  };
+};
+
+const applyVerificationOutcome = (incident, verificationResult) => {
+  if (!incident || !verificationResult) return incident;
+
+  incident.verification = buildStoredVerification(verificationResult);
+
+  const status = normalizeString(incident.verification?.status).toLowerCase();
+
+  if (status === "approved") {
+    incident.set("isPublic", true);
+    incident.set("approvedByMDRRMO", true);
+    incident.set("forceApproved", true);
+  } else if (status === "rejected") {
+    incident.set("isPublic", false);
+    incident.set("approvedByMDRRMO", false);
+    incident.set("forceApproved", false);
+
+    if (normalizeString(incident.status).toLowerCase() === "approved") {
+      incident.status = "reported";
+    }
+  } else {
+    incident.set("isPublic", false);
+    incident.set("approvedByMDRRMO", false);
+    incident.set("forceApproved", false);
+  }
+
+  return incident;
+};
+
+const hasVerificationEvidence = (verification = {}) => {
+  if (!verification || typeof verification !== "object") return false;
+
+  const labels = Array.isArray(verification.labels) ? verification.labels : [];
+  const matchedLabels = Array.isArray(verification.matchedLabels)
+    ? verification.matchedLabels
+    : [];
+  const metadata = verification.metadata || {};
+
+  return Boolean(
+    normalizeString(verification.reasoning) ||
+      verification.confidence !== undefined ||
+      verification.score !== undefined ||
+      labels.length ||
+      matchedLabels.length ||
+      metadata.timestamp ||
+      metadata.device ||
+      metadata.hasGPS !== undefined ||
+      metadata.isRecent !== undefined ||
+      metadata.isWithinArea !== undefined
+  );
+};
+
+const needsIncidentAutoVerification = (incident = {}) => {
+  if (!incident?.image?.fileUrl) return false;
+
+  const verification = incident.verification || null;
+  if (!verification) return true;
+
+  const status = normalizeString(verification.status).toLowerCase();
+  if (!status) return true;
+  if (status === "approved" || status === "rejected") return false;
+
+  return !hasVerificationEvidence(verification);
+};
+
+const verifyIncidentFromImageUrl = async (incident) => {
+  if (!incident?.image?.fileUrl) return null;
+
+  const response = await axios.get(incident.image.fileUrl, {
+    responseType: "arraybuffer",
+  });
+
+  const buffer = Buffer.from(response.data);
+  return verifyIncidentImage(buffer, incident.type);
+};
+
+let pendingIncidentVerifierStarted = false;
+let pendingIncidentVerifierRunning = false;
+
+const verifyPendingIncidentsBatch = async () => {
+  if (pendingIncidentVerifierRunning) return;
+  pendingIncidentVerifierRunning = true;
+
+  try {
+    const incidents = await IncidentModel.find({
+      "image.fileUrl": { $exists: true, $ne: "" },
+      $or: [
+        { verification: { $exists: false } },
+        { "verification.reasoning": { $exists: false } },
+        { "verification.reasoning": "" },
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .limit(AUTO_VERIFY_BATCH_SIZE);
+
+    for (const incident of incidents) {
+      if (!needsIncidentAutoVerification(incident)) continue;
+
+      try {
+        const verificationResult = await verifyIncidentFromImageUrl(incident);
+        if (!verificationResult) continue;
+
+        applyVerificationOutcome(incident, verificationResult);
+        await incident.save();
+
+        if (normalizeString(incident.verification?.status).toLowerCase() === "approved") {
+          await notifyReporterIncidentApprovedOnce({
+            req: { session: {}, body: {} },
+            incident,
+          });
+        }
+      } catch (error) {
+        console.error("Background incident auto-verification error:", {
+          incidentId: String(incident?._id || ""),
+          message: error?.message || error,
+        });
+      }
+    }
+  } catch (error) {
+    console.error("Pending incident verifier batch failed:", error);
+  } finally {
+    pendingIncidentVerifierRunning = false;
+  }
+};
+
+const ensurePendingIncidentVerifier = () => {
+  if (pendingIncidentVerifierStarted) return;
+  pendingIncidentVerifierStarted = true;
+
+  setTimeout(() => {
+    verifyPendingIncidentsBatch().catch((error) => {
+      console.error("Initial pending incident verifier failed:", error);
+    });
+  }, 15 * 1000);
+
+  setInterval(() => {
+    verifyPendingIncidentsBatch().catch((error) => {
+      console.error("Scheduled pending incident verifier failed:", error);
+    });
+  }, AUTO_VERIFY_INTERVAL_MS);
+};
+
+ensurePendingIncidentVerifier();
 
 // -----------------------------
 // NOTIFICATION HELPERS
@@ -357,6 +526,10 @@ const buildIncidentHistoryMetadata = (req, incident, extra = {}) => ({
 // ✅ Get all incidents
 const getIncidents = async (req, res) => {
   try {
+    verifyPendingIncidentsBatch().catch((error) => {
+      console.error("Incident fetch auto-verification trigger failed:", error);
+    });
+
     const incidents = await IncidentModel.find().sort({ createdAt: -1 });
     res.json(incidents);
   } catch (err) {
@@ -440,27 +613,12 @@ usernames: req.body.usernames || req.session?.username || null,
 phone: req.body.phone || null,
 status: "reported",
 expiresAt: new Date(Date.now() + INCIDENT_TTL_MS),
-      verification: verification
-        ? {
-            status: verification.status,
-            confidence: verification.confidence,
-            labels: verification.labels,
-            matchedLabels: verification.matchedLabels,
-            isMatch: verification.isMatch,
-            score: verification.confidence,
-            reasoning: generateReasoning(verification),
-            metadata: {
-              hasGPS: verification.metadataFlags?.hasLocation || false,
-              isRecent: verification.metadataFlags?.isRecent || false,
-              isWithinArea: verification.metadataFlags?.isWithinArea || false,
-              device: verification.metadata?.device || null,
-              width: verification.metadata?.width || null,
-              height: verification.metadata?.height || null,
-              timestamp: verification.metadata?.timestamp || null,
-            },
-          }
-        : undefined,
+      verification: verification ? buildStoredVerification(verification) : undefined,
     });
+
+    if (verification) {
+      applyVerificationOutcome(newIncident, verification);
+    }
 
     const incident = await newIncident.save();
 
@@ -480,6 +638,10 @@ expiresAt: new Date(Date.now() + INCIDENT_TTL_MS),
       incident,
       eventType: "created",
     });
+
+    if (normalizeString(incident.verification?.status).toLowerCase() === "approved") {
+      await notifyReporterIncidentApprovedOnce({ req, incident });
+    }
 
     return res.status(201).json({
       message: "Incident created successfully",
@@ -940,15 +1102,7 @@ const reverifyIncident = async (req, res) => {
       return res.status(404).json({ message: "Incident or image not found" });
     }
 
-    const axios = require("axios");
-
-    const response = await axios.get(incident.image.fileUrl, {
-      responseType: "arraybuffer",
-    });
-
-    const buffer = Buffer.from(response.data);
-
-    const verification = await verifyIncidentImage(buffer, incident.type);
+    const verification = await verifyIncidentFromImageUrl(incident);
 
     console.log("=== AI VERIFICATION RESULT ===");
     console.log("Status:", verification?.status);
@@ -969,24 +1123,7 @@ const reverifyIncident = async (req, res) => {
     );
     console.log("==============================");
 
-    incident.verification = {
-      status: verification?.status || "pending",
-      confidence: verification?.confidence || 0,
-      labels: verification?.labels || [],
-      matchedLabels: verification?.matchedLabels || [],
-      isMatch: verification?.isMatch || false,
-      score: verification?.confidence || 0,
-      reasoning: generateReasoning(verification),
-      metadata: {
-        hasGPS: verification?.metadataFlags?.hasLocation || false,
-        isRecent: verification?.metadataFlags?.isRecent || false,
-        isWithinArea: verification?.metadataFlags?.isWithinArea || false,
-        device: verification?.metadata?.device || null,
-        width: verification?.metadata?.width || null,
-        height: verification?.metadata?.height || null,
-        timestamp: verification?.metadata?.timestamp || null,
-      },
-    };
+    applyVerificationOutcome(incident, verification);
 
     await incident.save();
 
@@ -1010,6 +1147,10 @@ const reverifyIncident = async (req, res) => {
       eventType: "reverified",
       status: incident.verification.status,
     });
+
+    if (normalizeString(incident.verification?.status).toLowerCase() === "approved") {
+      await notifyReporterIncidentApprovedOnce({ req, incident });
+    }
 
     res.json({
       message: "Reverification complete",

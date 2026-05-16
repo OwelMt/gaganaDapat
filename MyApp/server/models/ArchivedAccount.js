@@ -11,6 +11,11 @@ const ArchivedAccountSchema = new mongoose.Schema({
   address: String,
   password: String,
   barangayName: String,
+  themePreference: {
+    type: String,
+    enum: ['dark', 'light'],
+    default: 'dark'
+  },
   archivedAt: { type: Date, default: Date.now },
 });
 

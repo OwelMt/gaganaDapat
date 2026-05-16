@@ -1,3 +1,5 @@
+const fs = require("fs/promises");
+const path = require("path");
 const mongoose = require("mongoose");
 const ReliefRequest = require("../models/ReliefRequest");
 const ReliefRelease = require("../models/ReliefRelease");
@@ -11,6 +13,7 @@ const {
   drawPdfEmptyState,
   drawPdfFooter,
   drawPdfHeader,
+  drawPdfImageGrid,
   drawPdfLabelValue,
   drawPdfParagraphBlock,
   drawPdfSectionTitle,
@@ -26,6 +29,8 @@ const {
   getSupportTypesFromRequest,
   hasSupportType,
 } = require("../utils/reliefSupportTypes");
+
+const RELIEF_PROOF_UPLOAD_DIR = path.join(__dirname, "..", "uploads", "proofs");
 
 const normalizeString = (value) => {
   if (value === undefined || value === null) return "";
@@ -44,6 +49,82 @@ const toNumber = (value) => {
   if (value === undefined || value === null || value === "") return 0;
   const parsed = Number(value);
   return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const parseIncomingReleaseBody = (body = {}) => {
+  if (body?.payload && typeof body.payload === "string") {
+    const parsed = JSON.parse(body.payload);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  }
+
+  return body && typeof body === "object" ? body : {};
+};
+
+const escapeRegExp = (value) =>
+  String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const removeUploadedProofFiles = async (files = []) => {
+  const uploadedFiles = Array.isArray(files) ? files : [];
+  if (!uploadedFiles.length) return;
+
+  await Promise.allSettled(
+    uploadedFiles
+      .map((file) => file?.path)
+      .filter(Boolean)
+      .map((filePath) => fs.unlink(filePath))
+  );
+};
+
+const buildStoredProofPath = (fileName = "") => {
+  const normalized = normalizeString(fileName).replace(/^\/+/, "");
+  if (!normalized) return "";
+  return `uploads/proofs/${normalized}`;
+};
+
+const resolveProofLocalPath = (proofFile = "") => {
+  const normalized = normalizeString(proofFile).replace(/\\/g, "/");
+  if (!normalized) return null;
+
+  if (normalized.startsWith("uploads/proofs/")) {
+    return path.join(__dirname, "..", normalized);
+  }
+
+  if (normalized.startsWith("proofs/")) {
+    return path.join(__dirname, "..", "uploads", normalized);
+  }
+
+  if (normalized.includes("/")) {
+    return path.join(__dirname, "..", normalized);
+  }
+
+  return path.join(RELIEF_PROOF_UPLOAD_DIR, normalized);
+};
+
+const isImageProofPath = (proofFile = "") =>
+  /\.(png|jpe?g|webp|gif)$/i.test(normalizeString(proofFile));
+
+const collectProofImagesForPdf = (proofFiles = [], options = {}) => {
+  const { maxImages = 3, labelPrefix = "Proof" } = options;
+  const safeFiles = (Array.isArray(proofFiles) ? proofFiles : [])
+    .map((file) => normalizeString(file))
+    .filter(Boolean)
+    .filter(isImageProofPath);
+
+  const resolved = [];
+
+  for (let index = 0; index < safeFiles.length && resolved.length < maxImages; index += 1) {
+    const localPath = resolveProofLocalPath(safeFiles[index]);
+    if (!localPath) continue;
+    resolved.push({
+      path: localPath,
+      caption: `${labelPrefix} ${resolved.length + 1}`,
+    });
+  }
+
+  return {
+    images: resolved,
+    remainingCount: Math.max(0, safeFiles.length - resolved.length),
+  };
 };
 
 const formatMonetaryAmount = (value) =>
@@ -96,6 +177,32 @@ const getRequestDemandProfile = (request = {}) => {
       : 0,
   };
 };
+
+const isMonetaryOnlyRequest = (request = {}) => {
+  const supportTypes = getSupportTypesFromRequest(request);
+  return (
+    hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY) &&
+    !hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS) &&
+    !hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE)
+  );
+};
+
+const canRoleManageReleaseRequest = (role = "", request = {}) => {
+  const normalizedRole = normalizeLower(role);
+  if (normalizedRole === "admin") {
+    return isMonetaryOnlyRequest(request);
+  }
+  if (normalizedRole === "drrmo") {
+    return !hasSupportType(getSupportTypesFromRequest(request), SUPPORT_TYPE_MONETARY);
+  }
+  return false;
+};
+
+const getRequestOwnerRole = (request = {}) =>
+  isMonetaryOnlyRequest(request) ? "admin" : "drrmo";
+
+const getRequestOwnerLabel = (request = {}) =>
+  getRequestOwnerRole(request) === "admin" ? "Admin" : "DRRMO";
 
 const formatDateValue = formatPdfDateValue;
 
@@ -249,13 +356,13 @@ const allocateInventoryForReleaseItem = async (item, session) => {
     const signatureMatches = await InventoryItem.find({
       isArchive: false,
       type: normalizedSignature.itemType === "appliance" ? "appliance" : "goods",
-      name: new RegExp(`^${normalizedSignature.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"),
+      name: new RegExp(`^${escapeRegExp(normalizedSignature.name)}$`, "i"),
       category: normalizedSignature.category,
       ...(normalizedSignature.itemType === "appliance"
         ? {}
         : {
             unit: new RegExp(
-              `^${normalizedSignature.unit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+              `^${escapeRegExp(normalizedSignature.unit)}$`,
               "i"
             ),
           }),
@@ -662,13 +769,14 @@ const refreshRequestProgress = async (requestId, session = null) => {
 /* GET REQUESTS READY FOR RELEASE */
 const getApprovedRequestsForRelease = async (req, res) => {
   try {
+    const sessionRole = normalizeLower(req.session?.role);
     const requests = await ReliefRequest.find({
       status: { $in: ["approved", "partially_released"] },
       isArchived: false,
     }).sort({ createdAt: -1 });
 
     res.json(
-      requests.map((request) => ({
+      requests.filter((request) => canRoleManageReleaseRequest(sessionRole, request)).map((request) => ({
         ...(request.toObject?.() || request),
         supportTypes: getSupportTypesFromRequest(request),
         requestType: normalizeRequestType(
@@ -726,9 +834,14 @@ const getApprovedRequestsForRelease = async (req, res) => {
 /* CREATE RELEASE AND DEDUCT INVENTORY */
 const createReliefRelease = async (req, res) => {
   const session = await mongoose.startSession();
+  const uploadedProofFiles = Array.isArray(req.files) ? req.files : [];
+  let shouldCleanupUploadedProofFiles = uploadedProofFiles.length > 0;
+  let transactionStarted = false;
 
   try {
     const username = String(req.session?.username || req.session?.userId || "");
+    const sessionRole = normalizeLower(req.session?.role);
+    const body = parseIncomingReleaseBody(req.body);
     const {
       reliefRequestId,
       items,
@@ -736,18 +849,18 @@ const createReliefRelease = async (req, res) => {
       foodPackTemplateId,
       releaseMode,
       isFinalRelease,
-    } = req.body;
+    } = body;
 
     const incomingFoodPackCount = toNumber(
-      req.body.foodPacksToRelease ??
-        req.body.foodPacksReleased ??
-        req.body.foodPacks ??
+      body.foodPacksToRelease ??
+        body.foodPacksReleased ??
+        body.foodPacks ??
         0
     );
     const incomingMonetaryAmount = toNumber(
-      req.body.releasedMonetaryAmount ??
-        req.body.monetaryAmountToRelease ??
-        req.body.monetaryAmount ??
+      body.releasedMonetaryAmount ??
+        body.monetaryAmountToRelease ??
+        body.monetaryAmount ??
         0
     );
 
@@ -755,7 +868,14 @@ const createReliefRelease = async (req, res) => {
       return res.status(400).json({ message: "Relief request ID is required." });
     }
 
+    if (uploadedProofFiles.length === 0) {
+      return res.status(400).json({
+        message: "Attach at least one release proof image before submitting.",
+      });
+    }
+
     session.startTransaction();
+    transactionStarted = true;
 
     const reliefRequest = await ReliefRequest.findById(reliefRequestId).session(
       session
@@ -764,6 +884,16 @@ const createReliefRelease = async (req, res) => {
     if (!reliefRequest || reliefRequest.isArchived) {
       await session.abortTransaction();
       return res.status(404).json({ message: "Relief request not found." });
+    }
+
+    if (!canRoleManageReleaseRequest(sessionRole, reliefRequest)) {
+      await session.abortTransaction();
+      return res.status(403).json({
+        message:
+          sessionRole === "admin"
+            ? "Admin can only release standalone monetary requests."
+            : "DRRMO can only release food pack or appliance requests.",
+      });
     }
 
     if (!["approved", "partially_released"].includes(reliefRequest.status)) {
@@ -834,6 +964,20 @@ const createReliefRelease = async (req, res) => {
       await session.abortTransaction();
       return res.status(400).json({
         message: "Add at least one support item or amount to release.",
+      });
+    }
+
+    if (sessionRole === "admin" && (isReleasingFoodPacks || isReleasingAppliances)) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        message: "Admin release planning only supports monetary assistance.",
+      });
+    }
+
+    if (sessionRole === "drrmo" && isReleasingMonetary) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        message: "DRRMO can no longer release monetary assistance requests.",
       });
     }
 
@@ -1120,6 +1264,9 @@ const createReliefRelease = async (req, res) => {
 
     const releaseNo = await generateReleaseNo(session);
     const releaseIsFinal = Boolean(isFinalRelease);
+    const proofPaths = uploadedProofFiles.map((file) =>
+      buildStoredProofPath(file.filename)
+    );
 
     const [reliefRelease] = await ReliefRelease.create(
       [
@@ -1154,6 +1301,7 @@ const createReliefRelease = async (req, res) => {
           receivedAt: null,
           receivedBy: "",
           remarks: normalizeString(remarks),
+          proofFiles: proofPaths,
           isFinalRelease: releaseIsFinal,
           releaseSummary: {
             totalLineItems: preparedItems.length,
@@ -1185,7 +1333,7 @@ const createReliefRelease = async (req, res) => {
         message: `${username} released support for request ${reliefRequest.requestNo}.`,
         actorId: req.session?.userId || null,
         actorName: username,
-        actorRole: "drrmo",
+        actorRole: sessionRole || "drrmo",
         barangayId: reliefRequest.barangayId,
         barangayName: reliefRequest.barangayName,
         requestNo: reliefRequest.requestNo,
@@ -1206,12 +1354,15 @@ const createReliefRelease = async (req, res) => {
             0
           ),
           isFinalRelease: releaseIsFinal,
+          proofCount: proofPaths.length,
         },
       },
       { session }
     );
 
     await session.commitTransaction();
+    transactionStarted = false;
+    shouldCleanupUploadedProofFiles = false;
 
 const updatedRequest = await ReliefRequest.findById(reliefRequest._id);
 const updatedRelease = await ReliefRelease.findById(reliefRelease._id);
@@ -1224,7 +1375,7 @@ await createNotification({
   recipientBarangayName: reliefRequest.barangayName,
 
   senderUser: req.session?.userId || null,
-  senderRole: "drrmo",
+  senderRole: sessionRole || "drrmo",
   senderName: username,
 
   module: "relief",
@@ -1232,7 +1383,7 @@ await createNotification({
   priority: "high",
 
   title: "Relief release prepared",
-  message: `DRRMO released support for your request ${
+  message: `${getRequestOwnerLabel(reliefRequest)} released support for your request ${
     reliefRequest.requestNo
   }. ${[
     demand.requiresFoodPacks
@@ -1276,10 +1427,20 @@ await createNotification({
       request: updatedRequest,
     });
   } catch (err) {
-    await session.abortTransaction();
+    if (transactionStarted) {
+      await session.abortTransaction();
+    }
     console.error("Create Relief Release Error:", err);
-    res.status(500).json({ message: err.message });
+    const isPayloadParseError =
+      err instanceof SyntaxError && typeof req.body?.payload === "string";
+
+    res
+      .status(isPayloadParseError ? 400 : 500)
+      .json({ message: isPayloadParseError ? "Invalid release payload." : err.message });
   } finally {
+    if (shouldCleanupUploadedProofFiles) {
+      await removeUploadedProofFiles(uploadedProofFiles);
+    }
     session.endSession();
   }
 };
@@ -1398,6 +1559,25 @@ const exportReliefReleasePdf = async (req, res) => {
 
     drawPdfSectionTitle(doc, "Remarks");
     drawPdfParagraphBlock(doc, "", normalizeString(reliefRelease.remarks) || "None");
+
+    drawPdfSectionTitle(doc, "Release Proof");
+    const releaseProof = collectProofImagesForPdf(reliefRelease.proofFiles, {
+      maxImages: 3,
+      labelPrefix: "Release Proof",
+    });
+    drawPdfImageGrid(doc, releaseProof.images, {
+      columns: 2,
+      imageHeight: 130,
+      emptyMessage: "No release proof images attached.",
+    });
+    if (releaseProof.remainingCount > 0) {
+      drawPdfParagraphBlock(
+        doc,
+        "",
+        `+${releaseProof.remainingCount} more proof image(s) not shown in this export.`,
+        { bodyFontSize: 9, spacingAfter: 0.35 }
+      );
+    }
 
     drawPdfSectionTitle(doc, "Released Item Breakdown");
 
@@ -1594,7 +1774,7 @@ const updatedRequest = await ReliefRequest.findById(
 );
 
 await createNotification({
-  recipientRole: "drrmo",
+  recipientRole: getRequestOwnerRole(updatedRequest || {}),
 
   senderUser: req.session?.userId || null,
   senderRole: role || "barangay",
@@ -1608,7 +1788,10 @@ await createNotification({
   message: `${updatedRelease?.barangayName || "Barangay"} confirmed receipt of release ${
     updatedRelease?.releaseNo || ""
   } for request ${updatedRequest?.requestNo || ""}.`,
-  link: "/drrmo/relief-lists",
+  link:
+    getRequestOwnerRole(updatedRequest || {}) === "admin"
+      ? "/admin/relief-lists"
+      : "/drrmo/relief-lists",
 
   referenceId: updatedRelease?._id || reliefRelease._id,
   referenceModel: "ReliefRelease",
