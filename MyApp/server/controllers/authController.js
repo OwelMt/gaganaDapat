@@ -402,14 +402,28 @@ const register = async (req, res) => {
 
     const approvalLink = buildApprovalLink(req, approvalToken);
 
-    await sendAccountApprovalEmail({
-      email: cleanEmail,
-      approvalLink,
-      role: cleanRole,
-      username: cleanUsername,
-      barangayName: cleanRole === 'barangay' ? cleanBarangay : '',
-      requestedBy: req.session.username || 'Administrator'
-    });
+    try {
+      await sendAccountApprovalEmail({
+        email: cleanEmail,
+        approvalLink,
+        role: cleanRole,
+        username: cleanUsername,
+        barangayName: cleanRole === 'barangay' ? cleanBarangay : '',
+        requestedBy: req.session.username || 'Administrator'
+      });
+    } catch (mailErr) {
+      await approvalRequest.deleteOne();
+      console.error('Account approval email send failed:', {
+        email: cleanEmail,
+        role: cleanRole,
+        message: mailErr.message,
+        code: mailErr.code || ''
+      });
+      return res.status(500).json({
+        message:
+          'Failed to send the approval email. Check deployed EMAIL_USER, EMAIL_PASS, and Gmail App Password settings.'
+      });
+    }
 
     await AdminLog.create({
       adminId: req.session.userId,
@@ -1046,14 +1060,28 @@ const updateAccount = async (req, res) => {
       }
     });
 
-    await sendAccountUpdateApprovalEmail({
-      email: account.email,
-      approvalLink: buildUpdateApprovalLink(req, approvalToken),
-      role: account instanceof Barangay ? 'barangay' : account.role,
-      currentUsername: account.username,
-      requestedBy: req.session.username || 'Administrator',
-      changeSummary
-    });
+    try {
+      await sendAccountUpdateApprovalEmail({
+        email: account.email,
+        approvalLink: buildUpdateApprovalLink(req, approvalToken),
+        role: account instanceof Barangay ? 'barangay' : account.role,
+        currentUsername: account.username,
+        requestedBy: req.session.username || 'Administrator',
+        changeSummary
+      });
+    } catch (mailErr) {
+      await updateRequest.deleteOne();
+      console.error('Account update approval email send failed:', {
+        email: account.email,
+        role: account instanceof Barangay ? 'barangay' : account.role,
+        message: mailErr.message,
+        code: mailErr.code || ''
+      });
+      return res.status(500).json({
+        message:
+          'Failed to send the approval email. Check deployed EMAIL_USER, EMAIL_PASS, and Gmail App Password settings.'
+      });
+    }
 
     await AdminLog.create({
       adminId: req.session.userId,
