@@ -3731,6 +3731,8 @@
 .public-map-legend-items {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
+  text-align: left;
   gap: 10px;
   flex-wrap: wrap;
 }
@@ -3738,6 +3740,7 @@
 .public-map-legend-item {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 6px;
   color: #456353;
   font-size: 0.82rem;

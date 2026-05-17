@@ -1153,6 +1153,49 @@
   line-height: 1.45;
 }
 
+.rrl-receipt-proof-section {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.rrl-section-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--rrl-text-soft);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.rrl-section-subhead strong {
+  color: var(--rrl-primary-3);
+  font-size: 13px;
+}
+
+.rrl-receipt-proof-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 12px;
+}
+
+.rrl-receipt-proof-card {
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--rrl-border);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(20, 83, 45, 0.08);
+}
+
+.rrl-receipt-proof-card img {
+  display: block;
+  width: 100%;
+  height: 112px;
+  object-fit: cover;
+}
+
 .rrl-appliance-request-list {
   display: grid;
   gap: 10px;

@@ -46,6 +46,26 @@ const priorityLabels = {
   critical: "Critical",
 };
 
+const roleModuleAllowlist = {
+  admin: ["all", "evacuation", "inventory", "announcement", "account", "analytics", "system"],
+  drrmo: [
+    "all",
+    "relief",
+    "inventory",
+    "donation",
+    "evacuation",
+    "announcement",
+    "incident",
+    "guidelines",
+    "system",
+  ],
+  barangay: ["all", "relief", "evacuation", "system"],
+};
+
+function getAllowedModulesForRole(role) {
+  return roleModuleAllowlist[String(role || "").toLowerCase()] || ["all", "system"];
+}
+
 function formatDate(value) {
   if (!value) return "Unknown time";
 
@@ -153,32 +173,29 @@ export default function Notification() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [notificationEnabled, setNotificationEnabled] = useState(true);
   const [mutedModules, setMutedModules] = useState({});
+  const allowedModules = useMemo(() => getAllowedModulesForRole(role), [role]);
 
   const visibleModules = useMemo(() => {
-    const modules = new Set([
-      "all",
-      "relief",
-      "inventory",
-      "donation",
-      "announcement",
-      "evacuation",
-      "incident",
-      "guidelines",
-      "system",
-    ]);
+    const modules = new Set(allowedModules);
 
     notifications.forEach((item) => {
-      if (item.module) {
+      if (item.module && allowedModules.includes(item.module)) {
         modules.add(item.module);
       }
     });
 
     return Array.from(modules);
-  }, [notifications]);
+  }, [allowedModules, notifications]);
 
   const manageableModules = useMemo(() => {
     return visibleModules.filter((moduleName) => moduleName !== "all");
   }, [visibleModules]);
+
+  useEffect(() => {
+    if (!allowedModules.includes(selectedModule)) {
+      setSelectedModule("all");
+    }
+  }, [allowedModules, selectedModule]);
 
   const filteredNotifications = useMemo(() => {
     if (!notificationEnabled) return [];

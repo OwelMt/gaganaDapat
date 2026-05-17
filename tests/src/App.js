@@ -1,6 +1,7 @@
 import './App.css';
 import './components/css/OverlayFixes.css';
 import './components/css/sidebar.css'; // ← add this
+import './components/css/ThemeTokens.css';
 import { useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -96,7 +97,15 @@ function SessionGate({ allowedRoles = ALL_AUTH, children }) {
           return;
         }
 
-        setUser({ role, username, userId });
+        setUser({
+          role,
+          username,
+          userId,
+          themePreference: data?.themePreference || "dark"
+        });
+        localStorage.setItem("role", role);
+        localStorage.setItem("username", username);
+        localStorage.setItem("userId", userId);
 
         if (allowedRoles.length > 0 && !allowedRoles.includes(role)) {
           navigate(homeForRole(role), { replace: true });
@@ -161,7 +170,15 @@ function LoginGate({ children }) {
           return;
         }
 
-        setUser({ role, username, userId });
+        setUser({
+          role,
+          username,
+          userId,
+          themePreference: data?.themePreference || "dark"
+        });
+        localStorage.setItem("role", role);
+        localStorage.setItem("username", username);
+        localStorage.setItem("userId", userId);
         navigate(homeForRole(role), { replace: true });
       } catch (err) {
         if (!active) return;
@@ -196,7 +213,7 @@ const ROUTES = [
   { path: "/barangay/evacuation-centers", element: <EManagement />, roles: BARANGAY_ONLY },
   { path: "/barangay/notifications", element: <Notification />, roles: BARANGAY_ONLY },
   { path: "/drrmo/dashboard", element: <DRRMODashboard />, roles: DRRMO_ONLY },
-  { path: "/drrmo/relief-lists", element: <ReliefRequestsList />, roles: ADMIN_DRRMO },
+  { path: "/drrmo/relief-lists", element: <ReliefRequestsList />, roles: DRRMO_ONLY },
   { path: "/drrmo/relief-status", element: <ReliefTracking />, roles: ADMIN_DRRMO },
   { path: "/drrmo/audit-trail", element: <AuditTrail />, roles: ADMIN_DRRMO },
   { path: "/drrmo/guidelines", element: <HomeGuidelines />, roles: ADMIN_DRRMO },
@@ -208,12 +225,14 @@ const ROUTES = [
   { path: "/drrmo/analytics", element: <AdminAnalytics />, roles: ADMIN_DRRMO },
   { path: "/drrmo/notifications", element: <Notification />, roles: ADMIN_DRRMO },
   { path: "/admin/dashboard", element: <AdminDashboard />, roles: ADMIN_ONLY },
+  { path: "/admin/relief-lists", element: <ReliefRequestsList />, roles: ADMIN_ONLY },
   { path: "/admin/register", element: <Register />, roles: ADMIN_ONLY },
   { path: "/admin/audit-trail", element: <AuditTrails />, roles: ADMIN_ONLY },
   { path: "/admin/edit-accounts", element: <EditAccount />, roles: ADMIN_ONLY },
   { path: "/admin/archived-accounts", element: <ArchivedAccounts />, roles: ADMIN_ONLY },
   { path: "/admin/inventory", element: <Inventory />, roles: ADMIN_ONLY },
   { path: "/admin/inventory/add", element: <InventoryAdd />, roles: ADMIN_ONLY },
+  { path: "/admin/donations/queue", element: <DonationValidationQueue />, roles: ADMIN_ONLY },
   { path: "/admin/time-in-time-out", element: <TimeInOut />, roles: ADMIN_ONLY },
   { path: "/admin/logs", element: <AdminLogs />, roles: ADMIN_ONLY },
   { path: "/admin/accounts", element: <AdminAccounts />, roles: ADMIN_ONLY },
@@ -221,11 +240,11 @@ const ROUTES = [
   { path: "/admin/announcements", element: <Announcement />, roles: ADMIN_ONLY },
   { path: "/admin/notifications", element: <Notification />, roles: ADMIN_ONLY },
   { path: "/drrmo/digital-twin", element: <UnityDigitalTwin />, roles: ADMIN_DRRMO },
-  { path: "/digital-twin-mobile", element: <UnityDigitalTwin1 />, roles: ALL_AUTH },
+  { path: "/digital-twin-mobile", element: <UnityDigitalTwin1 /> },
   { path: "/idk", element: <HomeGuidelines />, roles: ALL_AUTH },
   { path: "/update/:id", element: <UpdateGuideline />, roles: ALL_AUTH },
   { path: "/map", element: <EvacuationMap />, roles: ALL_AUTH },
-  { path: "/yolo-water-monitor", element: <YoloWaterMonitor />, roles: ALL_AUTH }
+  { path: "/yolo-water-monitor", element: <YoloWaterMonitor /> }
 ];
 
 
@@ -235,7 +254,11 @@ function App() {
       return <LoginGate>{route.element}</LoginGate>;
     }
 
-    return sessionElement(route.element, route.roles || ALL_AUTH);
+    if (!route.roles) {
+      return route.element;
+    }
+
+    return sessionElement(route.element, route.roles);
   };
 
   return (

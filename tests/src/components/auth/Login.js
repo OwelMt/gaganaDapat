@@ -208,6 +208,7 @@ localStorage.removeItem('loginLock');
 setUser(data);
 
 localStorage.setItem('role', data.role || '');
+localStorage.setItem('userId', data.userId || '');
 localStorage.setItem('username', data.username || '');
 localStorage.setItem('email', data.email || '');
 

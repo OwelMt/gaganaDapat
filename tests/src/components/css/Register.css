@@ -476,3 +476,43 @@ select.premium-input {
     min-height: 54px;
   }
 }
+
+:root[data-theme="dark"] .register-page {
+  background:
+    radial-gradient(circle at top right, rgba(63, 185, 80, 0.12), transparent 24%),
+    linear-gradient(180deg, #082611 0%, #0c2814 100%) !important;
+}
+
+:root[data-theme="dark"] .register-hero-copy,
+:root[data-theme="dark"] .register-stat-card,
+:root[data-theme="dark"] .register-panel,
+:root[data-theme="dark"] .register-panel-form,
+:root[data-theme="dark"] .register-role-switch,
+:root[data-theme="dark"] .form-block-highlight {
+  background: linear-gradient(180deg, rgba(19, 49, 27, 0.98) 0%, rgba(23, 58, 32, 0.98) 100%) !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.18) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.2) !important;
+}
+
+:root[data-theme="dark"] .register-kicker,
+:root[data-theme="dark"] .register-title,
+:root[data-theme="dark"] .register-stat-card strong,
+:root[data-theme="dark"] .input-label {
+  color: var(--content-text) !important;
+}
+
+:root[data-theme="dark"] .register-mini-badge,
+:root[data-theme="dark"] .role-tab,
+:root[data-theme="dark"] .role-tab.active {
+  background: rgba(76, 199, 111, 0.12) !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.24) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="dark"] .register-stat-card span,
+:root[data-theme="dark"] .register-field-note,
+:root[data-theme="dark"] .register-helper-text {
+  color: var(--text-soft) !important;
+}

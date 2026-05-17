@@ -1,8 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../css/ArchivedAccounts.css';
+import {
+  AccountConfirmModal,
+  AccountNotificationPortal,
+  buildAccountNotification
+} from './accountOverlayUtils';
 
 export default function ArchivedAccounts() {
+  const notificationTimeoutsRef = useRef({});
   const navigate = useNavigate();
   const BASE_URL =
     process.env.REACT_APP_API_URL || 'https://gaganadapat.onrender.com';
@@ -10,6 +16,10 @@ export default function ArchivedAccounts() {
   const [archived, setArchived] = useState([]);
   const [loading, setLoading] = useState(true);
   const [restoringId, setRestoringId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [restoreTargetId, setRestoreTargetId] = useState(null);
+  const [deleteTargetId, setDeleteTargetId] = useState(null);
 
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
@@ -23,14 +33,41 @@ export default function ArchivedAccounts() {
   }, [navigate]);
 
   useEffect(() => {
-    fetchArchivedAccounts();
-  }, []);
-
-  useEffect(() => {
     setPage(1);
   }, [search, roleFilter]);
 
-  const fetchArchivedAccounts = async () => {
+  useEffect(() => {
+    const timeouts = notificationTimeoutsRef.current;
+
+    return () => {
+      Object.values(timeouts).forEach(clearTimeout);
+      notificationTimeoutsRef.current = {};
+    };
+  }, []);
+
+  const removeNotification = (id) => {
+    if (notificationTimeoutsRef.current[id]) {
+      clearTimeout(notificationTimeoutsRef.current[id]);
+      delete notificationTimeoutsRef.current[id];
+    }
+
+    setNotifications((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const showNotification = (message, type = 'info') => {
+    const notification = buildAccountNotification(message, type);
+
+    setNotifications((prev) => [notification, ...prev].slice(0, 3));
+
+    notificationTimeoutsRef.current[notification.id] = setTimeout(() => {
+      setNotifications((prev) =>
+        prev.filter((item) => item.id !== notification.id)
+      );
+      delete notificationTimeoutsRef.current[notification.id];
+    }, 4000);
+  };
+
+  const fetchArchivedAccounts = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -42,15 +79,17 @@ export default function ArchivedAccounts() {
       setArchived(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
-      alert('Failed to fetch archived accounts');
+      showNotification('Failed to fetch archived accounts', 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, [BASE_URL]);
+
+  useEffect(() => {
+    fetchArchivedAccounts();
+  }, [fetchArchivedAccounts]);
 
   const restoreAccount = async (id) => {
-    if (!window.confirm('Restore this account?')) return;
-
     try {
       setRestoringId(id);
 
@@ -60,33 +99,63 @@ export default function ArchivedAccounts() {
       });
 
       if (res.ok) {
-        alert('Account restored successfully');
-        setArchived((prev) => prev.filter((a) => a._id !== id));
+        showNotification('Account restored successfully', 'success');
+        setArchived((prev) => prev.filter((account) => account._id !== id));
       } else {
-        alert('Failed to restore account');
+        showNotification('Failed to restore account', 'error');
       }
     } catch (err) {
       console.error(err);
-      alert('Error restoring account');
+      showNotification('Error restoring account', 'error');
     } finally {
       setRestoringId(null);
+      setRestoreTargetId(null);
+    }
+  };
+
+  const deleteArchivedAccount = async (id) => {
+    try {
+      setDeletingId(id);
+
+      const res = await fetch(`${BASE_URL}/api/auth/archived/${id}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok) {
+        showNotification(
+          data.message || 'Archived account deleted successfully',
+          'success'
+        );
+        setArchived((prev) => prev.filter((account) => account._id !== id));
+      } else {
+        showNotification(data.message || 'Failed to delete archived account', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showNotification('Error deleting archived account', 'error');
+    } finally {
+      setDeletingId(null);
+      setDeleteTargetId(null);
     }
   };
 
   const filteredArchived = useMemo(() => {
     const term = search.trim().toLowerCase();
 
-    return archived.filter((acc) => {
+    return archived.filter((account) => {
       const matchesSearch =
         !term ||
-        String(acc.username || '').toLowerCase().includes(term) ||
-        String(acc.email || '').toLowerCase().includes(term) ||
-        String(acc.phoneNumber || '').toLowerCase().includes(term) ||
-        String(acc.address || '').toLowerCase().includes(term) ||
-        String(acc.role || '').toLowerCase().includes(term);
+        String(account.username || '').toLowerCase().includes(term) ||
+        String(account.email || '').toLowerCase().includes(term) ||
+        String(account.phoneNumber || '').toLowerCase().includes(term) ||
+        String(account.address || '').toLowerCase().includes(term) ||
+        String(account.role || '').toLowerCase().includes(term);
 
       const matchesRole =
-        !roleFilter || String(acc.role || '').toLowerCase() === roleFilter;
+        !roleFilter || String(account.role || '').toLowerCase() === roleFilter;
 
       return matchesSearch && matchesRole;
     });
@@ -127,20 +196,27 @@ export default function ArchivedAccounts() {
   const statItems = [
     {
       label: 'Archived',
-      value: loading ? '—' : archived.length,
+      value: loading ? '-' : archived.length,
       tone: 'green'
     },
     {
       label: 'Barangay',
-      value: loading ? '—' : roleCounts.barangay,
+      value: loading ? '-' : roleCounts.barangay,
       tone: 'emerald'
     },
     {
       label: 'DRRMO',
-      value: loading ? '—' : roleCounts.drrmo,
+      value: loading ? '-' : roleCounts.drrmo,
       tone: 'blue'
     }
   ];
+
+  const restoreTarget = restoreTargetId
+    ? archived.find((account) => account._id === restoreTargetId) || null
+    : null;
+  const deleteTarget = deleteTargetId
+    ? archived.find((account) => account._id === deleteTargetId) || null
+    : null;
 
   return (
     <div className="archived-page">
@@ -178,14 +254,14 @@ export default function ArchivedAccounts() {
                 type="text"
                 placeholder="Search username, email, phone, address, or role"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(event) => setSearch(event.target.value)}
               />
             </div>
 
             <select
               className="archived-filter"
               value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
+              onChange={(event) => setRoleFilter(event.target.value)}
             >
               <option value="">All Roles</option>
               <option value="barangay">Barangay</option>
@@ -197,7 +273,9 @@ export default function ArchivedAccounts() {
             <span className="archived-results-text">
               {loading
                 ? 'Loading records...'
-                : `${filteredArchived.length} result${filteredArchived.length === 1 ? '' : 's'}`}
+                : `${filteredArchived.length} result${
+                    filteredArchived.length === 1 ? '' : 's'
+                  }`}
             </span>
 
             {hasActiveFilters && !loading && (
@@ -262,33 +340,48 @@ export default function ArchivedAccounts() {
                     </td>
                   </tr>
                 ) : (
-                  paginatedArchived.map((acc) => (
-                    <tr key={acc._id}>
-                      <td title={acc.username || ''}>{acc.username || '-'}</td>
-                      <td className="archived-email" title={acc.email || ''}>
-                        {acc.email || '-'}
+                  paginatedArchived.map((account) => (
+                    <tr key={account._id}>
+                      <td title={account.username || ''}>
+                        {account.username || '-'}
                       </td>
-                      <td title={acc.phoneNumber || ''}>{acc.phoneNumber || '-'}</td>
-                      <td title={acc.address || ''}>{acc.address || '-'}</td>
+                      <td className="archived-email" title={account.email || ''}>
+                        {account.email || '-'}
+                      </td>
+                      <td title={account.phoneNumber || ''}>
+                        {account.phoneNumber || '-'}
+                      </td>
+                      <td title={account.address || ''}>
+                        {account.address || '-'}
+                      </td>
                       <td>
                         <span
                           className={`archived-role-pill ${
-                            String(acc.role || '').toLowerCase() === 'barangay'
+                            String(account.role || '').toLowerCase() === 'barangay'
                               ? 'barangay'
                               : 'drrmo'
                           }`}
                         >
-                          {formatRole(acc.role)}
+                          {formatRole(account.role)}
                         </span>
                       </td>
                       <td>
-                        <button
-                          className="archived-restore-btn"
-                          onClick={() => restoreAccount(acc._id)}
-                          disabled={restoringId === acc._id}
-                        >
-                          {restoringId === acc._id ? 'Restoring...' : 'Restore'}
-                        </button>
+                        <div className="archived-action-row">
+                          <button
+                            className="archived-restore-btn"
+                            onClick={() => setRestoreTargetId(account._id)}
+                            disabled={restoringId === account._id}
+                          >
+                            {restoringId === account._id ? 'Restoring...' : 'Restore'}
+                          </button>
+                          <button
+                            className="archived-delete-btn"
+                            onClick={() => setDeleteTargetId(account._id)}
+                            disabled={deletingId === account._id}
+                          >
+                            {deletingId === account._id ? 'Deleting...' : 'Delete'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -303,7 +396,7 @@ export default function ArchivedAccounts() {
               disabled={!canPrev}
               onClick={() => setPage((prev) => Math.max(1, prev - 1))}
             >
-              ← Prev
+              &larr; Prev
             </button>
 
             <span className="archived-page-label">
@@ -315,11 +408,56 @@ export default function ArchivedAccounts() {
               disabled={!canNext}
               onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
             >
-              Next →
+              Next &rarr;
             </button>
           </div>
         </section>
       </div>
+
+      <AccountConfirmModal
+        open={Boolean(restoreTargetId)}
+        title="Restore account?"
+        message="This archived account will be moved back into the active account list."
+        details={[
+          { label: 'Username', value: restoreTarget?.username || '-' },
+          { label: 'Role', value: formatRole(restoreTarget?.role) }
+        ]}
+        confirmLabel="Restore Account"
+        cancelLabel="Cancel"
+        busy={restoringId === restoreTargetId}
+        onConfirm={() => restoreTargetId && restoreAccount(restoreTargetId)}
+        onClose={() => {
+          if (restoringId !== restoreTargetId) {
+            setRestoreTargetId(null);
+          }
+        }}
+      />
+
+      <AccountConfirmModal
+        open={Boolean(deleteTargetId)}
+        title="Delete archived account?"
+        message="This will permanently remove the archived record. This action cannot be undone."
+        details={[
+          { label: 'Username', value: deleteTarget?.username || '-' },
+          { label: 'Role', value: formatRole(deleteTarget?.role) },
+          { label: 'Email', value: deleteTarget?.email || '-' }
+        ]}
+        confirmLabel="Delete Permanently"
+        cancelLabel="Cancel"
+        confirmTone="danger"
+        busy={deletingId === deleteTargetId}
+        onConfirm={() => deleteTargetId && deleteArchivedAccount(deleteTargetId)}
+        onClose={() => {
+          if (deletingId !== deleteTargetId) {
+            setDeleteTargetId(null);
+          }
+        }}
+      />
+
+      <AccountNotificationPortal
+        notifications={notifications}
+        onDismiss={removeNotification}
+      />
     </div>
   );
 }

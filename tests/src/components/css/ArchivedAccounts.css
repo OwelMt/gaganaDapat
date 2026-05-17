@@ -336,6 +336,38 @@ body,
   box-shadow: none;
 }
 
+.archived-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.archived-delete-btn {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #efc9c9;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff5f5 0%, #ffe8e8 100%);
+  color: #b42318;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.archived-delete-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(180, 35, 24, 0.12);
+  background: linear-gradient(180deg, #fff1f1 0%, #ffdede 100%);
+}
+
+.archived-delete-btn:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 .archived-empty-cell {
   padding: 0 !important;
 }
@@ -474,4 +506,43 @@ body,
   .archived-stats {
     grid-template-columns: 1fr;
   }
+}
+
+:root[data-theme="dark"] .archived-page {
+  background:
+    radial-gradient(circle at top right, rgba(63, 185, 80, 0.12), transparent 24%),
+    linear-gradient(180deg, #082611 0%, #0c2814 100%) !important;
+}
+
+:root[data-theme="dark"] .archived-hero-copy,
+:root[data-theme="dark"] .archived-stat-card,
+:root[data-theme="dark"] .archived-panel,
+:root[data-theme="dark"] .archived-table-wrap,
+:root[data-theme="dark"] .archived-search,
+:root[data-theme="dark"] .archived-filter {
+  background: linear-gradient(180deg, rgba(19, 49, 27, 0.98) 0%, rgba(23, 58, 32, 0.98) 100%) !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.18) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.2) !important;
+}
+
+:root[data-theme="dark"] .archived-kicker,
+:root[data-theme="dark"] .archived-title,
+:root[data-theme="dark"] .archived-stat-card strong,
+:root[data-theme="dark"] .archived-table thead th,
+:root[data-theme="dark"] .archived-table tbody td {
+  color: var(--content-text) !important;
+}
+
+:root[data-theme="dark"] .archived-mini-badge,
+:root[data-theme="dark"] .archived-clear-btn {
+  background: rgba(76, 199, 111, 0.12) !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.24) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="dark"] .archived-stat-card span,
+:root[data-theme="dark"] .archived-results-text {
+  color: var(--text-soft) !important;
 }

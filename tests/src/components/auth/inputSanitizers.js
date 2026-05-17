@@ -29,7 +29,7 @@ export function sanitizePhoneNumber(value) {
 }
 
 export function sanitizeHotline(value) {
-  return sanitizeText(value).replace(/[^0-9+\-() extEXT]/g, "");
+  return sanitizeText(value).replace(/[^0-9+\-() ]/g, "");
 }
 
 export function sanitizeAddress(value) {

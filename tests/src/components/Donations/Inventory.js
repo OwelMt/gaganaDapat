@@ -23,6 +23,15 @@ import {
   getSupportTypeLabel as getReliefSupportTypeLabel,
   hasSupportType,
 } from "../relief/supportTypes";
+import { resolveInventoryType } from "./inventoryTypeUtils";
+import {
+  getTodayInputDate,
+  validateFutureOrTodayInventoryDate,
+} from "./inventoryExpiryUtils";
+import {
+  buildInventoryItemLookup,
+  summarizeTemplateHealth,
+} from "./foodPackTemplateHealthUtils";
 import {
   FaArchive,
   FaBell,
@@ -79,9 +88,18 @@ export default function Inventory() {
   const role = String(user?.role || localStorage.getItem("role") || "")
     .trim()
     .toLowerCase();
+  const isAdmin = role === "admin";
+  const isDrrmo = role === "drrmo";
+  const releaseActorLabel = isAdmin ? "Admin" : "DRRMO";
   const canSeeCentralInventory = role === "admin" || role === "drrmo";
-  const canRelease = role === "drrmo";
-  const canManageTemplates = role === "admin" || role === "drrmo";
+  const canRelease = isAdmin || isDrrmo;
+  const canManageTemplates = isDrrmo;
+  const allowedViewTypes = useMemo(
+    () =>
+      isAdmin ? ["monetary"] : isDrrmo ? ["goods", "appliance"] : [],
+    [isAdmin, isDrrmo]
+  );
+  const defaultViewType = allowedViewTypes[0] || "goods";
 
   const [activeItems, setActiveItems] = useState([]);
   const [archivedItems, setArchivedItems] = useState([]);
@@ -99,7 +117,7 @@ export default function Inventory() {
   const [error, setError] = useState("");
 
   const [mode, setMode] = useState("active");
-  const [viewType, setViewType] = useState("goods");
+  const [viewType, setViewType] = useState(defaultViewType);
   const canUseReleasePlanner = canRelease && mode === "active";
 
   const [search, setSearch] = useState("");
@@ -144,6 +162,7 @@ export default function Inventory() {
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [foodPacksToRelease, setFoodPacksToRelease] = useState("");
   const [releaseMonetaryAmount, setReleaseMonetaryAmount] = useState("");
+  const [releaseProofFiles, setReleaseProofFiles] = useState([]);
   const [activeJourneyStep, setActiveJourneyStep] = useState("review");
   const [confirmedJourneySteps, setConfirmedJourneySteps] = useState([]);
 
@@ -166,7 +185,9 @@ export default function Inventory() {
   const notificationTimersRef = useRef({});
   const [confirmationDialog, setConfirmationDialog] = useState(null);
   const templateModalRef = useRef(null);
+  const releaseProofInputRef = useRef(null);
   const expiredNoticeCountRef = useRef(0);
+  const minExpirationDate = useMemo(() => getTodayInputDate(), []);
 
   const normalize = useCallback((val) => (val || "").toString().trim().toLowerCase(), []);
 
@@ -264,19 +285,28 @@ export default function Inventory() {
     [extractReferenceFromDescription]
   );
 
-  const getRequestedPackCount = (request) =>
-    Number(request?.totals?.requestedFoodPacks || 0);
+  const getRequestedPackCount = useCallback(
+    (request) => Number(request?.totals?.requestedFoodPacks || 0),
+    []
+  );
 
-  const getReleasedPackCount = (request) =>
-    Number(request?.fulfillment?.releasedFoodPacks || 0);
+  const getReleasedPackCount = useCallback(
+    (request) => Number(request?.fulfillment?.releasedFoodPacks || 0),
+    []
+  );
 
-  const getRemainingPackCount = (request) =>
-    Math.max(0, getRequestedPackCount(request) - getReleasedPackCount(request));
+  const getRemainingPackCount = useCallback(
+    (request) =>
+      Math.max(0, getRequestedPackCount(request) - getReleasedPackCount(request)),
+    [getRequestedPackCount, getReleasedPackCount]
+  );
 
-  const getRequestedMonetaryAmount = (request) =>
-    Number(request?.totals?.requestedMonetaryAmount || 0);
+  const getRequestedMonetaryAmount = useCallback(
+    (request) => Number(request?.totals?.requestedMonetaryAmount || 0),
+    []
+  );
 
-  const getRequestedApplianceQuantity = (request) => {
+  const getRequestedApplianceQuantity = useCallback((request) => {
     if (request?.totals?.requestedApplianceQuantity !== undefined) {
       return Number(request?.totals?.requestedApplianceQuantity || 0);
     }
@@ -287,27 +317,40 @@ export default function Inventory() {
           0
         )
       : 0;
-  };
+  }, []);
 
-  const getRequestSupportTypes = (request) => getSupportTypesFromRequest(request);
+  const getRequestSupportTypes = useCallback(
+    (request) => getSupportTypesFromRequest(request),
+    []
+  );
 
-  const getReleasedMonetaryAmount = (request) =>
-    Number(request?.fulfillment?.releasedMonetaryAmount || 0);
+  const getReleasedMonetaryAmount = useCallback(
+    (request) => Number(request?.fulfillment?.releasedMonetaryAmount || 0),
+    []
+  );
 
-  const getReleasedApplianceQuantity = (request) =>
-    Number(request?.fulfillment?.releasedApplianceQuantity || 0);
+  const getReleasedApplianceQuantity = useCallback(
+    (request) => Number(request?.fulfillment?.releasedApplianceQuantity || 0),
+    []
+  );
 
-  const getRemainingMonetaryAmount = (request) =>
-    Math.max(
-      0,
-      getRequestedMonetaryAmount(request) - getReleasedMonetaryAmount(request)
-    );
+  const getRemainingMonetaryAmount = useCallback(
+    (request) =>
+      Math.max(
+        0,
+        getRequestedMonetaryAmount(request) - getReleasedMonetaryAmount(request)
+      ),
+    [getRequestedMonetaryAmount, getReleasedMonetaryAmount]
+  );
 
-  const getRemainingApplianceQuantity = (request) =>
-    Math.max(
-      0,
-      getRequestedApplianceQuantity(request) - getReleasedApplianceQuantity(request)
-    );
+  const getRemainingApplianceQuantity = useCallback(
+    (request) =>
+      Math.max(
+        0,
+        getRequestedApplianceQuantity(request) - getReleasedApplianceQuantity(request)
+      ),
+    [getRequestedApplianceQuantity, getReleasedApplianceQuantity]
+  );
 
   const getRequestTypeLabel = (request) =>
     getReliefSupportTypeLabel(getRequestSupportTypes(request));
@@ -467,7 +510,7 @@ export default function Inventory() {
   }, [canRelease, pushNotification]);
 
   const fetchFoodPackTemplates = useCallback(async () => {
-    if (!canManageTemplates && !canRelease) {
+    if (!canManageTemplates) {
       setFoodPackTemplates([]);
       return;
     }
@@ -491,7 +534,7 @@ export default function Inventory() {
     } finally {
       setLoadingTemplates(false);
     }
-  }, [canManageTemplates, canRelease, pushNotification]);
+  }, [canManageTemplates, pushNotification]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([
@@ -535,6 +578,12 @@ export default function Inventory() {
   ]);
 
   useEffect(() => {
+    if (!allowedViewTypes.includes(viewType)) {
+      setViewType(defaultViewType);
+    }
+  }, [allowedViewTypes, defaultViewType, viewType]);
+
+  useEffect(() => {
     if (viewType === "goods" && (sortBy === "name" || sortBy === "category")) {
       setSortBy("createdAt");
     }
@@ -558,7 +607,7 @@ export default function Inventory() {
       setOperationsOpen(true);
       setPlannerOpen(true);
       setMode("active");
-      setViewType("goods");
+      setViewType(defaultViewType);
     }
 
     if (incomingRequestId) {
@@ -568,19 +617,19 @@ export default function Inventory() {
     if (incomingOpen || incomingRequestId) {
       navigate(location.pathname, { replace: true, state: {} });
     }
-  }, [location.state, canRelease, navigate, location.pathname]);
+  }, [location.state, canRelease, navigate, location.pathname, defaultViewType]);
 
   const activeGoods = useMemo(() => {
-    return activeItems.filter((item) => normalize(item.type) === "goods");
-  }, [activeItems, normalize]);
+    return activeItems.filter((item) => resolveInventoryType(item) === "goods");
+  }, [activeItems]);
 
   const activeAppliances = useMemo(() => {
-    return activeItems.filter((item) => normalize(item.type) === "appliance");
-  }, [activeItems, normalize]);
+    return activeItems.filter((item) => resolveInventoryType(item) === "appliance");
+  }, [activeItems]);
 
   const activeMonetary = useMemo(() => {
-    return activeItems.filter((item) => normalize(item.type) === "monetary");
-  }, [activeItems, normalize]);
+    return activeItems.filter((item) => resolveInventoryType(item) === "monetary");
+  }, [activeItems]);
 
   const mergedActiveGoods = useMemo(() => {
     const grouped = new Map();
@@ -638,21 +687,25 @@ export default function Inventory() {
     return mergedActiveGoods;
   }, [mergedActiveGoods]);
 
+  const activeFoodInventoryLookup = useMemo(() => {
+    return buildInventoryItemLookup(activeGoods);
+  }, [activeGoods]);
+
   const activeApplianceGoods = useMemo(() => {
     return activeAppliances;
   }, [activeAppliances]);
 
   const archivedGoods = useMemo(() => {
-    return archivedItems.filter((item) => normalize(item.type) === "goods");
-  }, [archivedItems, normalize]);
+    return archivedItems.filter((item) => resolveInventoryType(item) === "goods");
+  }, [archivedItems]);
 
   const archivedMonetary = useMemo(() => {
-    return archivedItems.filter((item) => normalize(item.type) === "monetary");
-  }, [archivedItems, normalize]);
+    return archivedItems.filter((item) => resolveInventoryType(item) === "monetary");
+  }, [archivedItems]);
 
   const archivedAppliances = useMemo(() => {
-    return archivedItems.filter((item) => normalize(item.type) === "appliance");
-  }, [archivedItems, normalize]);
+    return archivedItems.filter((item) => resolveInventoryType(item) === "appliance");
+  }, [archivedItems]);
 
   const activeSummary = useMemo(() => {
     const totalGoodsQuantity = mergedActiveGoods.reduce(
@@ -1036,13 +1089,45 @@ export default function Inventory() {
     ].sort((a, b) => a.localeCompare(b));
   }, [approvedRequests]);
 
+  const roleRelevantApprovedRequests = useMemo(() => {
+    return approvedRequests.filter((request) => {
+      const supportTypes = getRequestSupportTypes(request);
+      if (isAdmin) {
+        return (
+          hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY) &&
+          getRemainingMonetaryAmount(request) > 0
+        );
+      }
+
+      if (isDrrmo) {
+        const hasPendingFood =
+          hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS) &&
+          getRemainingPackCount(request) > 0;
+        const hasPendingAppliance =
+          hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE) &&
+          getRemainingApplianceQuantity(request) > 0;
+        return hasPendingFood || hasPendingAppliance;
+      }
+
+      return false;
+    });
+  }, [
+    approvedRequests,
+    isAdmin,
+    isDrrmo,
+    getRequestSupportTypes,
+    getRemainingApplianceQuantity,
+    getRemainingMonetaryAmount,
+    getRemainingPackCount,
+  ]);
+
   const filteredApprovedRequests = useMemo(() => {
-    if (!releaseBarangayFilter) return approvedRequests;
-    return approvedRequests.filter(
+    if (!releaseBarangayFilter) return roleRelevantApprovedRequests;
+    return roleRelevantApprovedRequests.filter(
       (request) =>
         String(request.barangayName || "").trim() === releaseBarangayFilter
     );
-  }, [approvedRequests, releaseBarangayFilter]);
+  }, [roleRelevantApprovedRequests, releaseBarangayFilter]);
 
   const selectedReleaseRequest = useMemo(() => {
     return (
@@ -1054,7 +1139,7 @@ export default function Inventory() {
 
   const selectedReleaseSupportTypes = useMemo(
     () => getRequestSupportTypes(selectedReleaseRequest),
-    [selectedReleaseRequest]
+    [selectedReleaseRequest, getRequestSupportTypes]
   );
   const selectedRequestNeedsFood = hasSupportType(
     selectedReleaseSupportTypes,
@@ -1074,11 +1159,13 @@ export default function Inventory() {
   const selectedRemainingApplianceQuantity =
     getRemainingApplianceQuantity(selectedReleaseRequest);
   const selectedRequestPendingFood =
-    selectedRequestNeedsFood && selectedRemainingFoodPacks > 0;
+    isDrrmo && selectedRequestNeedsFood && selectedRemainingFoodPacks > 0;
   const selectedRequestPendingMonetary =
-    selectedRequestNeedsMonetary && selectedRemainingMonetaryAmount > 0;
+    isAdmin && selectedRequestNeedsMonetary && selectedRemainingMonetaryAmount > 0;
   const selectedRequestPendingAppliance =
-    selectedRequestNeedsAppliance && selectedRemainingApplianceQuantity > 0;
+    isDrrmo &&
+    selectedRequestNeedsAppliance &&
+    selectedRemainingApplianceQuantity > 0;
   const releaseJourneySteps = useMemo(
     () =>
       buildReleaseJourneySteps({
@@ -1133,6 +1220,10 @@ export default function Inventory() {
   useEffect(() => {
     setActiveJourneyStep(getInitialJourneyStep(releaseJourneySteps));
     setConfirmedJourneySteps([]);
+    setReleaseProofFiles([]);
+    if (releaseProofInputRef.current) {
+      releaseProofInputRef.current.value = "";
+    }
   }, [selectedReleaseRequestId, releaseJourneySteps]);
 
   const selectedTemplate = useMemo(() => {
@@ -1150,6 +1241,39 @@ export default function Inventory() {
       ) || null
     );
   }, [foodPackTemplates, selectedTemplateCardId]);
+
+  const templateHealthById = useMemo(() => {
+    const next = {};
+
+    foodPackTemplates.forEach((template) => {
+      next[String(template._id)] = summarizeTemplateHealth(
+        template,
+        activeFoodInventoryLookup
+      );
+    });
+
+    return next;
+  }, [foodPackTemplates, activeFoodInventoryLookup]);
+
+  const selectedTemplateCardHealth = useMemo(() => {
+    if (!selectedTemplateCard) {
+      return {
+        itemHealth: [],
+        lowCount: 0,
+        expiringCount: 0,
+        expiredCount: 0,
+      };
+    }
+
+    return (
+      templateHealthById[String(selectedTemplateCard._id)] || {
+        itemHealth: [],
+        lowCount: 0,
+        expiringCount: 0,
+        expiredCount: 0,
+      }
+    );
+  }, [selectedTemplateCard, templateHealthById]);
 
   const computedTemplateItems = useMemo(() => {
     if (!selectedTemplate) return [];
@@ -1232,6 +1356,24 @@ export default function Inventory() {
     releaseJourneySteps
       .filter((step) => step !== "review")
       .every((step) => completedJourneySteps.includes(step));
+  const releaseProofPreviews = useMemo(
+    () =>
+      releaseProofFiles.map((file) => ({
+        key: `${file.name}-${file.lastModified}-${file.size}`,
+        file,
+        name: file.name,
+        previewUrl: URL.createObjectURL(file),
+      })),
+    [releaseProofFiles]
+  );
+
+  useEffect(() => {
+    return () => {
+      releaseProofPreviews.forEach((preview) => {
+        URL.revokeObjectURL(preview.previewUrl);
+      });
+    };
+  }, [releaseProofPreviews]);
 
   useEffect(() => {
     if (!releaseJourneySteps.includes(activeJourneyStep)) {
@@ -1360,11 +1502,61 @@ export default function Inventory() {
     setReleaseMonetaryAmount(
       selectedReleaseRequest ? String(getRemainingMonetaryAmount(selectedReleaseRequest) || "") : ""
     );
+    setReleaseProofFiles([]);
     setApplianceSelections([]);
     setApplianceSearch("");
     setReleaseRemarks("");
     setActiveJourneyStep(getInitialJourneyStep(releaseJourneySteps));
     setConfirmedJourneySteps([]);
+    if (releaseProofInputRef.current) {
+      releaseProofInputRef.current.value = "";
+    }
+  };
+
+  const handleReleaseProofFileSelect = (event) => {
+    const incomingFiles = Array.from(event.target.files || []);
+    if (!incomingFiles.length) return;
+
+    const imageFiles = incomingFiles.filter((file) =>
+      String(file.type || "").startsWith("image/")
+    );
+
+    if (imageFiles.length !== incomingFiles.length) {
+      pushNotification("Only image proof files are allowed for release proof.", "error");
+    }
+
+    setReleaseProofFiles((prev) => {
+      const next = [...prev];
+
+      imageFiles.forEach((file) => {
+        const duplicate = next.some(
+          (existing) =>
+            existing.name === file.name &&
+            existing.size === file.size &&
+            existing.lastModified === file.lastModified
+        );
+
+        if (!duplicate) {
+          next.push(file);
+        }
+      });
+
+      if (next.length > 5) {
+        pushNotification("You can upload up to 5 release proof images.", "warning");
+      }
+
+      return next.slice(0, 5);
+    });
+
+    event.target.value = "";
+  };
+
+  const removeReleaseProofFile = (targetKey) => {
+    setReleaseProofFiles((prev) =>
+      prev.filter(
+        (file) => `${file.name}-${file.lastModified}-${file.size}` !== targetKey
+      )
+    );
   };
 
   const jumpToJourneyStep = (step) => {
@@ -1560,7 +1752,7 @@ useEffect(() => {
   };
 
   const openItemEditModal = (item) => {
-    const normalizedType = normalize(item?.type);
+    const normalizedType = resolveInventoryType(item);
     const itemType =
       normalizedType === "monetary"
         ? "monetary"
@@ -1651,9 +1843,11 @@ useEffect(() => {
       }
 
       if (itemForm.expirationDate) {
-        const parsed = new Date(itemForm.expirationDate);
-        if (Number.isNaN(parsed.getTime())) {
-          errors.expirationDate = "Expiration date is invalid.";
+        const expirationDateError = validateFutureOrTodayInventoryDate(
+          itemForm.expirationDate
+        );
+        if (expirationDateError) {
+          errors.expirationDate = expirationDateError;
         }
       }
 
@@ -1990,8 +2184,14 @@ useEffect(() => {
     return (
       <div className="proof-list">
         {proofFiles.map((file, index) => {
+          const rawValue = typeof file === "string" ? file : "";
           const fileName = typeof file === "string" ? file : file?.filename;
-          const path = typeof file === "string" ? file : file?.path;
+          const path =
+            typeof file === "string" && rawValue.includes("/")
+              ? rawValue
+              : typeof file === "string"
+              ? ""
+              : file?.path;
 
           const href = path
             ? path.startsWith("http")
@@ -2090,7 +2290,7 @@ useEffect(() => {
 
         if (packCount !== requiredPackCount) {
           throw new Error(
-            `DRRMO must fully satisfy the approved request. Release exactly ${requiredPackCount} food pack(s).`
+            `${releaseActorLabel} must fully satisfy the approved request. Release exactly ${requiredPackCount} food pack(s).`
           );
         }
       }
@@ -2105,7 +2305,7 @@ useEffect(() => {
 
         if (enteredMonetaryAmount !== requiredMonetaryAmount) {
           throw new Error(
-            `DRRMO must release the full approved monetary amount in one go. Release exactly ${formatMoney(
+            `${releaseActorLabel} must release the full approved monetary amount in one go. Release exactly ${formatMoney(
               requiredMonetaryAmount
             )}.`
           );
@@ -2140,6 +2340,10 @@ useEffect(() => {
         }
       }
 
+      if (!releaseProofFiles.length) {
+        throw new Error("Attach at least one release proof image before submitting.");
+      }
+
       const payload = buildReleaseRequestPayload({
         reliefRequestId: selectedReleaseRequest._id,
         remarks: releaseRemarks,
@@ -2170,7 +2374,13 @@ useEffect(() => {
         throw new Error("Add at least one appliance item to release.");
       }
 
-      const res = await axios.post(`${BASE_URL}/api/relief-releases`, payload, {
+      const releaseFormData = new FormData();
+      releaseFormData.append("payload", JSON.stringify(payload));
+      releaseProofFiles.forEach((file) => {
+        releaseFormData.append("proofFiles", file);
+      });
+
+      const res = await axios.post(`${BASE_URL}/api/relief-releases`, releaseFormData, {
         withCredentials: true
       });
 
@@ -2219,56 +2429,59 @@ useEffect(() => {
     )
   : null}
 
-          {confirmationDialog ? (
-            <div
-              className="inventory-confirm-backdrop"
-              role="presentation"
-              onClick={closeConfirmationDialog}
-            >
-              <div
-                className={`inventory-confirm-card ${confirmationDialog.tone || "primary"}`}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="inventory-confirm-title"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="inventory-confirm-head">
-                  <span className="inventory-confirm-icon">
-                    {confirmationDialog.icon || <FaExclamationTriangle />}
-                  </span>
-                  <div>
-                    <h3 id="inventory-confirm-title">{confirmationDialog.title}</h3>
-                    <p>{confirmationDialog.message}</p>
-                  </div>
-                </div>
+          {confirmationDialog && typeof document !== "undefined"
+            ? createPortal(
+                <div
+                  className="inventory-confirm-backdrop"
+                  role="presentation"
+                  onClick={closeConfirmationDialog}
+                >
+                  <div
+                    className={`inventory-confirm-card ${confirmationDialog.tone || "primary"}`}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="inventory-confirm-title"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="inventory-confirm-head">
+                      <span className="inventory-confirm-icon">
+                        {confirmationDialog.icon || <FaExclamationTriangle />}
+                      </span>
+                      <div>
+                        <h3 id="inventory-confirm-title">{confirmationDialog.title}</h3>
+                        <p>{confirmationDialog.message}</p>
+                      </div>
+                    </div>
 
-                <div className="inventory-confirm-actions">
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={closeConfirmationDialog}
-                    disabled={actionLoading}
-                  >
-                    {confirmationDialog.cancelLabel || "Cancel"}
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn ${
-                      confirmationDialog.tone === "danger"
-                        ? "btn-danger"
-                        : "btn-primary"
-                    }`}
-                    onClick={confirmDialogAction}
-                    disabled={actionLoading}
-                  >
-                    {actionLoading
-                      ? "Working..."
-                      : confirmationDialog.confirmLabel || "Confirm"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
+                    <div className="inventory-confirm-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={closeConfirmationDialog}
+                        disabled={actionLoading}
+                      >
+                        {confirmationDialog.cancelLabel || "Cancel"}
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn ${
+                          confirmationDialog.tone === "danger"
+                            ? "btn-danger"
+                            : "btn-primary"
+                        }`}
+                        onClick={confirmDialogAction}
+                        disabled={actionLoading}
+                      >
+                        {actionLoading
+                          ? "Working..."
+                          : confirmationDialog.confirmLabel || "Confirm"}
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )
+            : null}
 
           <div className="inventory-hero">
             <div className="inventory-hero-head">
@@ -2280,7 +2493,7 @@ useEffect(() => {
                 <div className="inventory-title-meta">
                   {canUseReleasePlanner && (
                     <span className="inventory-top-pill subtle">
-                      {approvedRequests.length} approved request(s)
+                      {filteredApprovedRequests.length} approved request(s)
                     </span>
                   )}
 
@@ -2317,77 +2530,93 @@ useEffect(() => {
 
             {mode === "active" && (
               <div className="inventory-summary inventory-summary-6">
-                <div className="summary-card summary-card-emphasis success">
-                  <div className="summary-card-top">
-                    <span className="summary-label">Goods Stock</span>
-                    <span className="summary-icon"><FaBoxes /></span>
-                  </div>
-                  <h3 className="summary-value">
-                    {activeSummary.totalGoodsQuantity.toLocaleString()}
-                  </h3>
-                  <span className="summary-note">
-                    {activeSummary.goodsCount} goods record(s)
-                  </span>
-                </div>
+                {isAdmin ? (
+                  <>
+                    <div className="summary-card info">
+                      <div className="summary-card-top">
+                        <span className="summary-label">Monetary Total</span>
+                        <span className="summary-icon"><FaMoneyBillWave /></span>
+                      </div>
+                      <h3 className="summary-value">
+                        {formatMoney(activeSummary.totalMonetaryAmount)}
+                      </h3>
+                      <span className="summary-note">
+                        {activeSummary.monetaryCount} monetary record(s)
+                      </span>
+                    </div>
+                    <div className="summary-card accent">
+                      <div className="summary-card-top">
+                        <span className="summary-label">Pending Monetary Releases</span>
+                        <span className="summary-icon"><FaClipboardCheck /></span>
+                      </div>
+                      <h3 className="summary-value">
+                        {filteredApprovedRequests.length.toLocaleString()}
+                      </h3>
+                      <span className="summary-note">Approved requests waiting for admin</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="summary-card summary-card-emphasis success">
+                      <div className="summary-card-top">
+                        <span className="summary-label">Goods Stock</span>
+                        <span className="summary-icon"><FaBoxes /></span>
+                      </div>
+                      <h3 className="summary-value">
+                        {activeSummary.totalGoodsQuantity.toLocaleString()}
+                      </h3>
+                      <span className="summary-note">
+                        {activeSummary.goodsCount} goods record(s)
+                      </span>
+                    </div>
 
-                <div className="summary-card accent">
-                  <div className="summary-card-top">
-                    <span className="summary-label">Food Template Items</span>
-                    <span className="summary-icon"><FaUtensils /></span>
-                  </div>
-                  <h3 className="summary-value">
-                    {activeSummary.foodEligibleCount.toLocaleString()}
-                  </h3>
-                  <span className="summary-note">Eligible for food packs</span>
-                </div>
+                    <div className="summary-card accent">
+                      <div className="summary-card-top">
+                        <span className="summary-label">Food Template Items</span>
+                        <span className="summary-icon"><FaUtensils /></span>
+                      </div>
+                      <h3 className="summary-value">
+                        {activeSummary.foodEligibleCount.toLocaleString()}
+                      </h3>
+                      <span className="summary-note">Eligible for food packs</span>
+                    </div>
 
-                <div className="summary-card muted">
-                  <div className="summary-card-top">
-                    <span className="summary-label">Appliance Items</span>
-                    <span className="summary-icon"><FaBoxOpen /></span>
-                  </div>
-                  <h3 className="summary-value">
-                    {activeSummary.applianceCount.toLocaleString()}
-                  </h3>
-                  <span className="summary-note">
-                    Total quantity: {activeSummary.totalApplianceQuantity.toLocaleString()}
-                  </span>
-                </div>
+                    <div className="summary-card muted">
+                      <div className="summary-card-top">
+                        <span className="summary-label">Appliance Items</span>
+                        <span className="summary-icon"><FaBoxOpen /></span>
+                      </div>
+                      <h3 className="summary-value">
+                        {activeSummary.applianceCount.toLocaleString()}
+                      </h3>
+                      <span className="summary-note">
+                        Total quantity: {activeSummary.totalApplianceQuantity.toLocaleString()}
+                      </span>
+                    </div>
 
-                <div className="summary-card danger">
-                  <div className="summary-card-top">
-                    <span className="summary-label">Expired Goods</span>
-                    <span className="summary-icon"><FaTimes /></span>
-                  </div>
-                  <h3 className="summary-value">
-                    {activeSummary.expiredCount.toLocaleString()}
-                  </h3>
-                  <span className="summary-note">Needs review or removal</span>
-                </div>
+                    <div className="summary-card danger">
+                      <div className="summary-card-top">
+                        <span className="summary-label">Expired Goods</span>
+                        <span className="summary-icon"><FaTimes /></span>
+                      </div>
+                      <h3 className="summary-value">
+                        {activeSummary.expiredCount.toLocaleString()}
+                      </h3>
+                      <span className="summary-note">Needs review or removal</span>
+                    </div>
 
-                <div className="summary-card warning">
-                  <div className="summary-card-top">
-                    <span className="summary-label">Expiring Soon</span>
-                    <span className="summary-icon"><FaExclamationTriangle /></span>
-                  </div>
-                  <h3 className="summary-value">
-                    {activeSummary.expiringSoonCount.toLocaleString()}
-                  </h3>
-                  <span className="summary-note">30 days or less</span>
-                </div>
-
-                <div className="summary-card info">
-                  <div className="summary-card-top">
-                    <span className="summary-label">Monetary Total</span>
-                    <span className="summary-icon"><FaMoneyBillWave /></span>
-                  </div>
-                  <h3 className="summary-value">
-                    {formatMoney(activeSummary.totalMonetaryAmount)}
-                  </h3>
-                  <span className="summary-note">
-                    {activeSummary.monetaryCount} monetary record(s)
-                  </span>
-                </div>
+                    <div className="summary-card warning">
+                      <div className="summary-card-top">
+                        <span className="summary-label">Expiring Soon</span>
+                        <span className="summary-icon"><FaExclamationTriangle /></span>
+                      </div>
+                      <h3 className="summary-value">
+                        {activeSummary.expiringSoonCount.toLocaleString()}
+                      </h3>
+                      <span className="summary-note">30 days or less</span>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -2404,27 +2633,43 @@ useEffect(() => {
                   <span className="summary-note">Historical inventory entries</span>
                 </div>
 
-                <div className="summary-card success">
-                  <div className="summary-card-top">
-                    <span className="summary-label">Goods</span>
-                    <span className="summary-icon"><FaBoxes /></span>
-                  </div>
-                  <h3 className="summary-value">
-                    {archivedSummary.goodsCount.toLocaleString()}
-                  </h3>
-                  <span className="summary-note">Archived goods records</span>
-                </div>
+                {isDrrmo ? (
+                  <>
+                    <div className="summary-card success">
+                      <div className="summary-card-top">
+                        <span className="summary-label">Goods</span>
+                        <span className="summary-icon"><FaBoxes /></span>
+                      </div>
+                      <h3 className="summary-value">
+                        {archivedSummary.goodsCount.toLocaleString()}
+                      </h3>
+                      <span className="summary-note">Archived goods records</span>
+                    </div>
+                    <div className="summary-card warning">
+                      <div className="summary-card-top">
+                        <span className="summary-label">Appliances</span>
+                        <span className="summary-icon"><FaBoxOpen /></span>
+                      </div>
+                      <h3 className="summary-value">
+                        {archivedSummary.applianceCount.toLocaleString()}
+                      </h3>
+                      <span className="summary-note">Archived appliance records</span>
+                    </div>
+                  </>
+                ) : null}
 
-                <div className="summary-card info">
-                  <div className="summary-card-top">
-                    <span className="summary-label">Monetary</span>
-                    <span className="summary-icon"><FaFileInvoiceDollar /></span>
+                {isAdmin ? (
+                  <div className="summary-card info">
+                    <div className="summary-card-top">
+                      <span className="summary-label">Monetary</span>
+                      <span className="summary-icon"><FaFileInvoiceDollar /></span>
+                    </div>
+                    <h3 className="summary-value">
+                      {archivedSummary.monetaryCount.toLocaleString()}
+                    </h3>
+                    <span className="summary-note">Archived monetary records</span>
                   </div>
-                  <h3 className="summary-value">
-                    {archivedSummary.monetaryCount.toLocaleString()}
-                  </h3>
-                  <span className="summary-note">Archived monetary records</span>
-                </div>
+                ) : null}
               </div>
             )}
           </div>
@@ -2438,32 +2683,33 @@ useEffect(() => {
             </div>
           ) : (
             <>
-              {itemEditModalOpen ? (
-                <div
-                  className="inventory-modal-backdrop"
-                  onClick={closeItemEditModal}
-                >
-                  <div
-                    className="inventory-modal"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="inventory-modal-head">
-                      <div>
-                        <h3>Edit Inventory Item</h3>
-                        <p>Update the selected inventory record.</p>
-                      </div>
-
-                      <button
-                        type="button"
-                        className="inventory-modal-close"
-                        onClick={closeItemEditModal}
-                        aria-label="Close edit modal"
+              {itemEditModalOpen && typeof document !== "undefined"
+                ? createPortal(
+                    <div
+                      className="inventory-modal-backdrop"
+                      onClick={closeItemEditModal}
+                    >
+                      <div
+                        className="inventory-modal"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        <FaTimes />
-                      </button>
-                    </div>
+                        <div className="inventory-modal-head">
+                          <div>
+                            <h3>Edit Inventory Item</h3>
+                            <p>Update the selected inventory record.</p>
+                          </div>
 
-                    <div className="inventory-modal-grid">
+                          <button
+                            type="button"
+                            className="inventory-modal-close"
+                            onClick={closeItemEditModal}
+                            aria-label="Close edit modal"
+                          >
+                            <FaTimes />
+                          </button>
+                        </div>
+
+                        <div className="inventory-modal-grid">
                       <div className="release-selection-field">
                         <label>Name</label>
                         <input
@@ -2486,9 +2732,15 @@ useEffect(() => {
                           value={itemForm.type}
                           onChange={handleItemFormChange}
                         >
-                          <option value="goods">Goods</option>
-                          <option value="appliance">Appliance</option>
-                          <option value="monetary">Monetary</option>
+                          {allowedViewTypes.includes("goods") ? (
+                            <option value="goods">Goods</option>
+                          ) : null}
+                          {allowedViewTypes.includes("appliance") ? (
+                            <option value="appliance">Appliance</option>
+                          ) : null}
+                          {allowedViewTypes.includes("monetary") ? (
+                            <option value="monetary">Monetary</option>
+                          ) : null}
                         </select>
                       </div>
 
@@ -2551,6 +2803,7 @@ useEffect(() => {
                               name="expirationDate"
                               className="input"
                               value={itemForm.expirationDate}
+                              min={minExpirationDate}
                               onChange={handleItemFormChange}
                             />
                             {itemFormErrors.expirationDate ? (
@@ -2696,31 +2949,33 @@ useEffect(() => {
                           onChange={handleItemFormChange}
                         />
                       </div>
-                    </div>
+                        </div>
 
-                    <div className="inventory-modal-actions">
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={closeItemEditModal}
-                        disabled={itemEditSubmitting}
-                      >
-                        <FaTimes className="btn-icon" />
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={saveItemEdit}
-                        disabled={itemEditSubmitting}
-                      >
-                        <FaCheck className="btn-icon" />
-                        {itemEditSubmitting ? "Saving..." : "Save Changes"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
+                        <div className="inventory-modal-actions">
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={closeItemEditModal}
+                            disabled={itemEditSubmitting}
+                          >
+                            <FaTimes className="btn-icon" />
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={saveItemEdit}
+                            disabled={itemEditSubmitting}
+                          >
+                            <FaCheck className="btn-icon" />
+                            {itemEditSubmitting ? "Saving..." : "Save Changes"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>,
+                    document.body
+                  )
+                : null}
 
               {canUseReleasePlanner && operationsOpen && (
                 <div className="inventory-operations-stack">
@@ -2753,41 +3008,68 @@ useEffect(() => {
                       ) : (
                         <>
                           <div className="template-card-grid">
-                            {paginatedTemplates.map((template) => (
-                              <button
-                                type="button"
-                                key={template._id}
-                                className={`template-summary-card ${
-                                  selectedTemplateCardId === template._id ? "active" : ""
-                                }`}
-                                onClick={() =>
-                                  setSelectedTemplateCardId((prev) =>
-                                    prev === template._id ? "" : template._id
-                                  )
-                                }
-                              >
-                                <div className="template-summary-top">
-                                  <div>
-                                    <strong>{template.name}</strong>
-                                    <span>{template.description || "No description."}</span>
-                                  </div>
-                                  <span className="badge available">
-                                    {(template.items || []).length} item(s)
-                                  </span>
-                                </div>
+                            {paginatedTemplates.map((template) => {
+                              const templateHealth =
+                                templateHealthById[String(template._id)] || {
+                                  lowCount: 0,
+                                  expiringCount: 0,
+                                  expiredCount: 0,
+                                };
 
-                                <div className="template-summary-meta">
-                                  <div>
-                                    <label>Created By</label>
-                                    <b>{template.createdBy || "-"}</b>
+                              return (
+                                <button
+                                  type="button"
+                                  key={template._id}
+                                  className={`template-summary-card ${
+                                    selectedTemplateCardId === template._id ? "active" : ""
+                                  }`}
+                                  onClick={() =>
+                                    setSelectedTemplateCardId((prev) =>
+                                      prev === template._id ? "" : template._id
+                                    )
+                                  }
+                                >
+                                  <div className="template-summary-top">
+                                    <div>
+                                      <strong>{template.name}</strong>
+                                      <span>{template.description || "No description."}</span>
+                                    </div>
+
+                                    <div className="template-summary-pill-stack">
+                                      <span className="badge available">
+                                        {(template.items || []).length} Item(s)
+                                      </span>
+                                      {templateHealth.lowCount > 0 ? (
+                                        <span className="badge low">
+                                          {templateHealth.lowCount} Low
+                                        </span>
+                                      ) : null}
+                                      {templateHealth.expiringCount > 0 ? (
+                                        <span className="badge badge-expiry-soon">
+                                          {templateHealth.expiringCount} Expiring
+                                        </span>
+                                      ) : null}
+                                      {templateHealth.expiredCount > 0 ? (
+                                        <span className="badge badge-expiry-expired">
+                                          {templateHealth.expiredCount} Expired
+                                        </span>
+                                      ) : null}
+                                    </div>
                                   </div>
-                                  <div>
-                                    <label>Updated By</label>
-                                    <b>{template.updatedBy || "-"}</b>
+
+                                  <div className="template-summary-meta">
+                                    <div>
+                                      <label>Created By</label>
+                                      <b>{template.createdBy || "-"}</b>
+                                    </div>
+                                    <div>
+                                      <label>Updated By</label>
+                                      <b>{template.updatedBy || "-"}</b>
+                                    </div>
                                   </div>
-                                </div>
-                              </button>
-                            ))}
+                                </button>
+                              );
+                            })}
                           </div>
 
                           {templatePageCount > 1 && (
@@ -2824,6 +3106,26 @@ useEffect(() => {
                               <p>
                                 {selectedTemplateCard.description || "No description."}
                               </p>
+                              <div className="template-detail-summary">
+                                <span className="badge available">
+                                  {(selectedTemplateCard.items || []).length} Item(s)
+                                </span>
+                                {selectedTemplateCardHealth.lowCount > 0 ? (
+                                  <span className="badge low">
+                                    {selectedTemplateCardHealth.lowCount} Low
+                                  </span>
+                                ) : null}
+                                {selectedTemplateCardHealth.expiringCount > 0 ? (
+                                  <span className="badge badge-expiry-soon">
+                                    {selectedTemplateCardHealth.expiringCount} Expiring
+                                  </span>
+                                ) : null}
+                                {selectedTemplateCardHealth.expiredCount > 0 ? (
+                                  <span className="badge badge-expiry-expired">
+                                    {selectedTemplateCardHealth.expiredCount} Expired
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
 
                             <div className="row-actions">
@@ -2854,21 +3156,67 @@ useEffect(() => {
                                   <th>Item</th>
                                   <th>Category</th>
                                   <th>Per Pack</th>
+                                  <th>Available</th>
                                   <th>Unit</th>
+                                  <th>Expiration</th>
+                                  <th>Status</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {(selectedTemplateCard.items || []).length === 0 ? (
                                   <tr>
-                                    <td colSpan="4">No template items found.</td>
+                                    <td colSpan="7">No template items found.</td>
                                   </tr>
                                 ) : (
-                                  selectedTemplateCard.items.map((item, index) => (
-                                    <tr key={`${item.inventoryItemId}-${index}`}>
-                                      <td>{item.itemName || "-"}</td>
-                                      <td>{getCategoryLabel(item.category)}</td>
-                                      <td>{Number(item.quantityPerPack || 0)}</td>
-                                      <td>{item.unit || "-"}</td>
+                                  selectedTemplateCardHealth.itemHealth.map((entry, index) => (
+                                    <tr key={`${entry.item?.inventoryItemId}-${index}`}>
+                                      <td>{entry.item?.itemName || "-"}</td>
+                                      <td>{getCategoryLabel(entry.item?.category)}</td>
+                                      <td>{Number(entry.item?.quantityPerPack || 0)}</td>
+                                      <td>
+                                        <span
+                                          className={`badge ${getStockBadgeClass(
+                                            entry.availableQuantity
+                                          )}`}
+                                        >
+                                          {Number(entry.availableQuantity || 0)}
+                                        </span>
+                                      </td>
+                                      <td>{entry.inventoryItem?.unit || entry.item?.unit || "-"}</td>
+                                      <td>
+                                        <div className="expiry-cell-stack">
+                                          <span>
+                                            {formatExpiryDate(
+                                              entry.inventoryItem?.expirationDate
+                                            )}
+                                          </span>
+                                          {entry.expiryStatus === "soon" ||
+                                          entry.expiryStatus === "expired" ? (
+                                            <span
+                                              className={`badge ${getExpiryBadgeClass(
+                                                entry.inventoryItem
+                                              )}`}
+                                            >
+                                              {getExpiryBadgeLabel(entry.inventoryItem)}
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                      </td>
+                                      <td>
+                                        <div className="template-row-status">
+                                          {entry.isLow ? (
+                                            <span
+                                              className={`badge ${getStockBadgeClass(
+                                                entry.availableQuantity
+                                              )}`}
+                                            >
+                                              Low
+                                            </span>
+                                          ) : (
+                                            <span className="muted-text">Ready</span>
+                                          )}
+                                        </div>
+                                      </td>
                                     </tr>
                                   ))
                                 )}
@@ -3560,6 +3908,72 @@ useEffect(() => {
                                     />
                                   </div>
 
+                                  <div className="release-proof-review-card">
+                                    <div className="release-proof-review-head">
+                                      <div>
+                                        <label>Release Proof</label>
+                                        <p>
+                                          Attach at least one image showing the prepared release
+                                          before submitting.
+                                        </p>
+                                      </div>
+
+                                      <button
+                                        type="button"
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={() => releaseProofInputRef.current?.click()}
+                                        disabled={releaseSubmitting}
+                                      >
+                                        <FaPlus className="btn-icon" />
+                                        Add Image
+                                      </button>
+                                    </div>
+
+                                    <input
+                                      ref={releaseProofInputRef}
+                                      type="file"
+                                      accept="image/*"
+                                      multiple
+                                      className="release-proof-input"
+                                      onChange={handleReleaseProofFileSelect}
+                                    />
+
+                                    {releaseProofPreviews.length ? (
+                                      <div className="release-proof-preview-grid">
+                                        {releaseProofPreviews.map((proof) => (
+                                          <div
+                                            key={proof.key}
+                                            className="release-proof-preview-card"
+                                          >
+                                            <img
+                                              src={proof.previewUrl}
+                                              alt={proof.name}
+                                              className="release-proof-preview-image"
+                                            />
+                                            <div className="release-proof-preview-meta">
+                                              <strong>{proof.name}</strong>
+                                              <span>
+                                                {(proof.file.size / (1024 * 1024)).toFixed(2)} MB
+                                              </span>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              className="release-proof-remove"
+                                              onClick={() => removeReleaseProofFile(proof.key)}
+                                              aria-label={`Remove ${proof.name}`}
+                                            >
+                                              <FaTimes />
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="release-proof-empty">
+                                        No release proof images added yet.
+                                      </div>
+                                    )}
+                                  </div>
+
                                   <div className="release-submit-row">
                                     <button
                                       type="button"
@@ -3591,7 +4005,11 @@ useEffect(() => {
                                       type="button"
                                       className="btn btn-primary release-submit-btn"
                                       onClick={submitRelease}
-                                      disabled={releaseSubmitting || !canSubmitReleasePlan}
+                                      disabled={
+                                        releaseSubmitting ||
+                                        !canSubmitReleasePlan ||
+                                        releaseProofFiles.length === 0
+                                      }
                                     >
                                       <FaClipboardCheck className="btn-icon" />
                                       {releaseSubmitting
@@ -3648,10 +4066,11 @@ useEffect(() => {
                                   </div>
                                 </div>
 
-                                {!canSubmitReleasePlan ? (
+                                {!canSubmitReleasePlan || releaseProofFiles.length === 0 ? (
                                   <div className="release-empty release-empty-inline">
-                                    Complete each required step before reviewing and submitting
-                                    the final release.
+                                    {!canSubmitReleasePlan
+                                      ? "Complete each required step before reviewing and submitting the final release."
+                                      : "Attach at least one release proof image before submitting the final release."}
                                   </div>
                                 ) : null}
                               </div>
@@ -3689,30 +4108,36 @@ useEffect(() => {
                   <div className="inventory-toolbar-top inventory-toolbar-top-split inventory-toolbar-top-clean">
                     <div className="inventory-toolbar-left-cluster inventory-toolbar-left-cluster-clean">
                       <div className="type-switch inventory-type-switch-compact">
-                        <button
-                          type="button"
-                          className={viewType === "goods" ? "active" : ""}
-                          onClick={() => setViewType("goods")}
-                        >
-                          <FaBoxes className="btn-icon" />
-                          Goods
-                        </button>
-                        <button
-                          type="button"
-                          className={viewType === "monetary" ? "active" : ""}
-                          onClick={() => setViewType("monetary")}
-                        >
-                          <FaMoneyBillWave className="btn-icon" />
-                          Monetary
-                        </button>
-                        <button
-                          type="button"
-                          className={viewType === "appliance" ? "active" : ""}
-                          onClick={() => setViewType("appliance")}
-                        >
-                          <FaBoxOpen className="btn-icon" />
-                          Appliances
-                        </button>
+                        {allowedViewTypes.includes("goods") ? (
+                          <button
+                            type="button"
+                            className={viewType === "goods" ? "active" : ""}
+                            onClick={() => setViewType("goods")}
+                          >
+                            <FaBoxes className="btn-icon" />
+                            Goods
+                          </button>
+                        ) : null}
+                        {allowedViewTypes.includes("monetary") ? (
+                          <button
+                            type="button"
+                            className={viewType === "monetary" ? "active" : ""}
+                            onClick={() => setViewType("monetary")}
+                          >
+                            <FaMoneyBillWave className="btn-icon" />
+                            Monetary
+                          </button>
+                        ) : null}
+                        {allowedViewTypes.includes("appliance") ? (
+                          <button
+                            type="button"
+                            className={viewType === "appliance" ? "active" : ""}
+                            onClick={() => setViewType("appliance")}
+                          >
+                            <FaBoxOpen className="btn-icon" />
+                            Appliances
+                          </button>
+                        ) : null}
                       </div>
                     </div>
 
@@ -4118,32 +4543,33 @@ useEffect(() => {
                 )}
               </div>
 
-              {selectedItem ? (
-                <div
-                  className="inventory-modal-backdrop"
-                  onClick={() => setSelectedItem(null)}
-                >
-                  <div
-                    className="inventory-modal"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="inventory-modal-head">
-                      <div>
-                        <h3>{selectedItem.name || "Inventory Detail"}</h3>
-                        <p>Review the selected inventory record.</p>
-                      </div>
-
-                      <button
-                        type="button"
-                        className="inventory-modal-close"
-                        onClick={() => setSelectedItem(null)}
-                        aria-label="Close details modal"
+              {selectedItem && typeof document !== "undefined"
+                ? createPortal(
+                    <div
+                      className="inventory-modal-backdrop"
+                      onClick={() => setSelectedItem(null)}
+                    >
+                      <div
+                        className="inventory-modal"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        <FaTimes />
-                      </button>
-                    </div>
+                        <div className="inventory-modal-head">
+                          <div>
+                            <h3>{selectedItem.name || "Inventory Detail"}</h3>
+                            <p>Review the selected inventory record.</p>
+                          </div>
 
-                    <div className="inventory-modal-grid">
+                          <button
+                            type="button"
+                            className="inventory-modal-close"
+                            onClick={() => setSelectedItem(null)}
+                            aria-label="Close details modal"
+                          >
+                            <FaTimes />
+                          </button>
+                        </div>
+
+                        <div className="inventory-modal-grid">
                       <div className="modal-stat">
                         <span>Type</span>
                         <strong>{selectedItem.type || "-"}</strong>
@@ -4240,61 +4666,61 @@ useEffect(() => {
                         <span>Updated</span>
                         <strong>{formatDate(selectedItem.updatedAt)}</strong>
                       </div>
-                    </div>
+                        </div>
 
-                    <div className="inventory-modal-section">
-                      <h4>Description</h4>
-                      <p>
-                        {normalize(selectedItem.type) === "monetary"
-                          ? stripReferenceFromDescription(selectedItem.description) ||
-                            "No description provided."
-                          : selectedItem.description || "No description provided."}
-                      </p>
-                    </div>
+                        <div className="inventory-modal-section">
+                          <h4>Description</h4>
+                          <p>
+                            {normalize(selectedItem.type) === "monetary"
+                              ? stripReferenceFromDescription(selectedItem.description) ||
+                                "No description provided."
+                              : selectedItem.description || "No description provided."}
+                          </p>
+                        </div>
 
-                    <div className="inventory-modal-section">
-                      <h4>Proof Files</h4>
-                      {renderProofFiles(selectedItem.proofFiles)}
-                    </div>
+                        <div className="inventory-modal-section">
+                          <h4>Proof Files</h4>
+                          {renderProofFiles(selectedItem.proofFiles)}
+                        </div>
 
-                    <div className="inventory-modal-actions">
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={() => setSelectedItem(null)}
-                      >
-                        <FaTimes className="btn-icon" />
-                        Close
-                      </button>
-
-                      {mode === "active" ? (
-                        <>
+                        <div className="inventory-modal-actions">
                           <button
                             type="button"
-                            className="btn btn-edit"
-                            onClick={() => {
-                              setSelectedItem(null);
-                              openItemEditModal(selectedItem);
-                            }}
+                            className="btn btn-secondary"
+                            onClick={() => setSelectedItem(null)}
                           >
-                            <FaEdit className="btn-icon" />
-                            Edit
+                            <FaTimes className="btn-icon" />
+                            Close
                           </button>
-                          <button
-                            type="button"
-                            className="btn btn-archive"
-                            disabled={actionLoading}
-                            onClick={() => {
-                              handleArchive(selectedItem._id);
-                              setSelectedItem(null);
-                            }}
-                          >
-                            <FaArchive className="btn-icon" />
-                            Archive
-                          </button>
-                        </>
-                      ) : (
-                        <>
+
+                          {mode === "active" ? (
+                            <>
+                              <button
+                                type="button"
+                                className="btn btn-edit"
+                                onClick={() => {
+                                  setSelectedItem(null);
+                                  openItemEditModal(selectedItem);
+                                }}
+                              >
+                                <FaEdit className="btn-icon" />
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-archive"
+                                disabled={actionLoading}
+                                onClick={() => {
+                                  handleArchive(selectedItem._id);
+                                  setSelectedItem(null);
+                                }}
+                              >
+                                <FaArchive className="btn-icon" />
+                                Archive
+                              </button>
+                            </>
+                          ) : (
+                            <>
                           <button
                             type="button"
                             className="btn btn-secondary"
@@ -4319,12 +4745,14 @@ useEffect(() => {
                             <FaTrash className="btn-icon" />
                             Delete
                           </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>,
+                    document.body
+                  )
+                : null}
 
               {typeof document !== "undefined" && templateModalOpen
   ? createPortal(

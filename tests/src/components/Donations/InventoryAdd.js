@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 import "../css/InventoryAdd.css";
 import DashboardShell from "../layout/DashboardShell";
+import { useAuth } from "../../context/AuthContext";
 import {
   FaBlender,
   FaArchive,
@@ -35,6 +36,11 @@ import {
   mapSpreadsheetRow,
   parseSafeNumber,
 } from "../shared/spreadsheetImportUtils";
+import { resolveInventoryType } from "./inventoryTypeUtils";
+import {
+  getTodayInputDate,
+  validateFutureOrTodayInventoryDate,
+} from "./inventoryExpiryUtils";
 
 const BASE_URL =
   process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
@@ -72,7 +78,22 @@ const stripReferenceFromDescription = (description = "") =>
     .trim();
 
 const InventoryAdd = () => {
+  const { user } = useAuth();
   const navigate = useNavigate();
+  const role = String(user?.role || localStorage.getItem("role") || "")
+    .trim()
+    .toLowerCase();
+  const isAdmin = role === "admin";
+  const isDrrmo = role === "drrmo";
+  const allowedDonationTypes = useMemo(
+    () => (isAdmin ? ["monetary"] : isDrrmo ? ["goods", "appliance"] : []),
+    [isAdmin, isDrrmo]
+  );
+  const defaultDonationType = allowedDonationTypes[0] || "goods";
+  const canAccessInventoryAdd = isAdmin || isDrrmo;
+  const donationQueuePath = isAdmin
+    ? "/admin/donations/queue"
+    : "/drrmo/donations/queue";
   const [items, setItems] = useState([]);
   const [archivedItems, setArchivedItems] = useState([]);
   const [proofFiles, setProofFiles] = useState([]);
@@ -80,7 +101,7 @@ const InventoryAdd = () => {
   const [fetching, setFetching] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
-  const [donationType, setDonationType] = useState("goods");
+  const [donationType, setDonationType] = useState(defaultDonationType);
   const [editingItemId, setEditingItemId] = useState("");
   const fileInputRef = useRef(null);
   const importFileInputRef = useRef(null);
@@ -162,6 +183,7 @@ const InventoryAdd = () => {
 
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const minExpirationDate = useMemo(() => getTodayInputDate(), []);
 
   const pushToast = useCallback((message, type = "success") => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -195,6 +217,12 @@ const InventoryAdd = () => {
       );
     };
   }, []);
+
+  useEffect(() => {
+    if (!allowedDonationTypes.includes(donationType)) {
+      setDonationType(defaultDonationType);
+    }
+  }, [allowedDonationTypes, defaultDonationType, donationType]);
 
   const normalizeType = (type) => (type || "goods").toLowerCase();
 
@@ -712,9 +740,11 @@ const InventoryAdd = () => {
       }
 
       if (form.expirationDate) {
-        const parsed = new Date(form.expirationDate);
-        if (Number.isNaN(parsed.getTime())) {
-          errors.expirationDate = "Expiration date is invalid.";
+        const expirationDateError = validateFutureOrTodayInventoryDate(
+          form.expirationDate
+        );
+        if (expirationDateError) {
+          errors.expirationDate = expirationDateError;
         }
       }
 
@@ -770,7 +800,7 @@ const InventoryAdd = () => {
   };
 
   const openEditForm = (item) => {
-    const itemType = normalizeType(item.type);
+    const itemType = resolveInventoryType(item);
 
     setDonationType(itemType);
     setEditingItemId(item._id);
@@ -1058,28 +1088,28 @@ const InventoryAdd = () => {
   }, [showArchived, donationType, pushToast]);
 
   const goodsItems = useMemo(
-    () => items.filter((item) => normalizeType(item.type) === "goods"),
+    () => items.filter((item) => resolveInventoryType(item) === "goods"),
     [items]
   );
 
   const monetaryItems = useMemo(
-    () => items.filter((item) => normalizeType(item.type) === "monetary"),
+    () => items.filter((item) => resolveInventoryType(item) === "monetary"),
     [items]
   );
 
   const applianceItems = useMemo(
-    () => items.filter((item) => normalizeType(item.type) === "appliance"),
+    () => items.filter((item) => resolveInventoryType(item) === "appliance"),
     [items]
   );
 
   const currentTypeItems = useMemo(() => {
     const sourceItems = showArchived ? archivedItems : items;
-    return sourceItems.filter((item) => normalizeType(item.type) === donationType);
+    return sourceItems.filter((item) => resolveInventoryType(item) === donationType);
   }, [items, archivedItems, donationType, showArchived]);
 
   const allTypeItems = useMemo(() => {
     return [...items, ...archivedItems].filter(
-      (item) => normalizeType(item.type) === donationType
+      (item) => resolveInventoryType(item) === donationType
     );
   }, [items, archivedItems, donationType]);
 
@@ -1106,7 +1136,9 @@ const InventoryAdd = () => {
   }, [currentTypeItems]);
 
     const summary = useMemo(() => {
-    const totalItems = items.length;
+    const totalItems = isAdmin
+      ? monetaryItems.length
+      : goodsItems.length + applianceItems.length;
     const totalGoodsEntries = goodsItems.length;
     const totalMonetaryEntries = monetaryItems.length;
     const totalApplianceEntries = applianceItems.length;
@@ -1140,7 +1172,7 @@ const InventoryAdd = () => {
       totalApplianceQuantity,
       recentDonationsCount
     };
-  }, [items, goodsItems, monetaryItems, applianceItems]);
+  }, [items, goodsItems, monetaryItems, applianceItems, isAdmin]);
 
   const filteredItems = useMemo(() => {
     let filtered = [...currentTypeItems];
@@ -1265,6 +1297,22 @@ const InventoryAdd = () => {
   const tableColSpan =
     donationType === "goods" ? 11 : donationType === "appliance" ? 10 : 8;
 
+  if (!canAccessInventoryAdd) {
+    return (
+      <DashboardShell>
+        <div className="inventory-page">
+          <div className="inventory-shell">
+            <div className="inventory-card">
+              <div className="table-empty">
+                <h4>Inventory donation intake is not available for this account.</h4>
+              </div>
+            </div>
+          </div>
+        </div>
+      </DashboardShell>
+    );
+  }
+
   return (
     <DashboardShell>
       <div className="inventory-page">
@@ -1288,62 +1336,65 @@ const InventoryAdd = () => {
               )
             : null}
 
-          {confirmationDialog ? (
-            <div
-              className="inventory-confirm-backdrop"
-              role="presentation"
-              onClick={closeConfirmationDialog}
-            >
-              <div
-                className={`inventory-confirm-card ${confirmationDialog.tone || "primary"}`}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="inventory-add-confirm-title"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="inventory-confirm-head">
-                  <span className="inventory-confirm-icon">
-                    {confirmationDialog.icon}
-                  </span>
-                  <div>
-                    <h3 id="inventory-add-confirm-title">
-                      {confirmationDialog.title}
-                    </h3>
-                    <p>{confirmationDialog.message}</p>
-                  </div>
-                </div>
+          {confirmationDialog && typeof document !== "undefined"
+            ? createPortal(
+                <div
+                  className="inventory-confirm-backdrop"
+                  role="presentation"
+                  onClick={closeConfirmationDialog}
+                >
+                  <div
+                    className={`inventory-confirm-card ${confirmationDialog.tone || "primary"}`}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="inventory-add-confirm-title"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="inventory-confirm-head">
+                      <span className="inventory-confirm-icon">
+                        {confirmationDialog.icon}
+                      </span>
+                      <div>
+                        <h3 id="inventory-add-confirm-title">
+                          {confirmationDialog.title}
+                        </h3>
+                        <p>{confirmationDialog.message}</p>
+                      </div>
+                    </div>
 
-                <div className="inventory-confirm-actions">
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={closeConfirmationDialog}
-                    disabled={loading}
-                  >
-                    <FaTimes className="btn-icon" />
-                    {confirmationDialog.cancelLabel || "Cancel"}
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn ${
-                      confirmationDialog.tone === "danger"
-                        ? "btn-danger"
-                        : "btn-primary"
-                    }`}
-                    onClick={confirmDialogAction}
-                    disabled={loading}
-                  >
-                    {confirmationDialog.tone === "danger" ? (
-                      <FaTrash className="btn-icon" />
-                    ) : (
-                      <FaCheck className="btn-icon" />
-                    )}
-                    {confirmationDialog.confirmLabel || "Confirm"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
+                    <div className="inventory-confirm-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={closeConfirmationDialog}
+                        disabled={loading}
+                      >
+                        <FaTimes className="btn-icon" />
+                        {confirmationDialog.cancelLabel || "Cancel"}
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn ${
+                          confirmationDialog.tone === "danger"
+                            ? "btn-danger"
+                            : "btn-primary"
+                        }`}
+                        onClick={confirmDialogAction}
+                        disabled={loading}
+                      >
+                        {confirmationDialog.tone === "danger" ? (
+                          <FaTrash className="btn-icon" />
+                        ) : (
+                          <FaCheck className="btn-icon" />
+                        )}
+                        {confirmationDialog.confirmLabel || "Confirm"}
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )
+            : null}
 
           <div
             className={`inventory-header ${
@@ -1407,41 +1458,49 @@ const InventoryAdd = () => {
                     <span className="summary-icon"><FaArchive /></span>
                   </div>
                   <h3 className="summary-value">{summary.totalItems}</h3>
-                  <span className="summary-note">All donation entries</span>
-                </div>
-
-                <div className="summary-card success">
-                  <div className="summary-card-top">
-                    <p className="summary-label">Goods Donations</p>
-                    <span className="summary-icon"><FaBoxes /></span>
-                  </div>
-                  <h3 className="summary-value">{summary.totalGoodsEntries}</h3>
                   <span className="summary-note">
-                    Total quantity: {summary.totalGoodsQuantity}
+                    {isAdmin ? "All monetary donation entries" : "All goods and appliance entries"}
                   </span>
                 </div>
 
-                <div className="summary-card info">
-                  <div className="summary-card-top">
-                    <p className="summary-label">Monetary Donations</p>
-                    <span className="summary-icon"><FaMoneyBillWave /></span>
+                {allowedDonationTypes.includes("goods") ? (
+                  <div className="summary-card success">
+                    <div className="summary-card-top">
+                      <p className="summary-label">Goods Donations</p>
+                      <span className="summary-icon"><FaBoxes /></span>
+                    </div>
+                    <h3 className="summary-value">{summary.totalGoodsEntries}</h3>
+                    <span className="summary-note">
+                      Total quantity: {summary.totalGoodsQuantity}
+                    </span>
                   </div>
-                  <h3 className="summary-value">{summary.totalMonetaryEntries}</h3>
-                  <span className="summary-note">
-                    Total amount: PHP {summary.totalMonetaryAmount.toLocaleString()}
-                  </span>
-                </div>
+                ) : null}
 
-                <div className="summary-card warning">
-                  <div className="summary-card-top">
-                    <p className="summary-label">Appliance Donations</p>
-                    <span className="summary-icon"><FaBlender /></span>
+                {allowedDonationTypes.includes("monetary") ? (
+                  <div className="summary-card info">
+                    <div className="summary-card-top">
+                      <p className="summary-label">Monetary Donations</p>
+                      <span className="summary-icon"><FaMoneyBillWave /></span>
+                    </div>
+                    <h3 className="summary-value">{summary.totalMonetaryEntries}</h3>
+                    <span className="summary-note">
+                      Total amount: PHP {summary.totalMonetaryAmount.toLocaleString()}
+                    </span>
                   </div>
-                  <h3 className="summary-value">{summary.totalApplianceEntries}</h3>
-                  <span className="summary-note">
-                    Total quantity: {summary.totalApplianceQuantity}
-                  </span>
-                </div>
+                ) : null}
+
+                {allowedDonationTypes.includes("appliance") ? (
+                  <div className="summary-card warning">
+                    <div className="summary-card-top">
+                      <p className="summary-label">Appliance Donations</p>
+                      <span className="summary-icon"><FaBlender /></span>
+                    </div>
+                    <h3 className="summary-value">{summary.totalApplianceEntries}</h3>
+                    <span className="summary-note">
+                      Total quantity: {summary.totalApplianceQuantity}
+                    </span>
+                  </div>
+                ) : null}
 
                 <div className="summary-card accent">
                   <div className="summary-card-top">
@@ -1496,7 +1555,7 @@ const InventoryAdd = () => {
                     <button
                       type="button"
                       className="btn btn-secondary"
-                      onClick={() => navigate("/drrmo/donations/queue")}
+                      onClick={() => navigate(donationQueuePath)}
                     >
                       <FaClipboardCheck className="btn-icon" />
                       Review Mobile Donations
@@ -1529,36 +1588,42 @@ const InventoryAdd = () => {
 
                 {!editingItemId && (
                   <div className="donation-type-tabs">
-                    <button
-                      type="button"
-                      className={`donation-type-tab ${
-                        donationType === "goods" ? "active" : ""
-                      }`}
-                      onClick={() => setDonationType("goods")}
-                    >
-                      <FaBoxes className="btn-icon" />
-                      Goods
-                    </button>
-                    <button
-                      type="button"
-                      className={`donation-type-tab ${
-                        donationType === "appliance" ? "active" : ""
-                      }`}
-                      onClick={() => setDonationType("appliance")}
-                    >
-                      <FaBlender className="btn-icon" />
-                      Appliances
-                    </button>
-                    <button
-                      type="button"
-                      className={`donation-type-tab ${
-                        donationType === "monetary" ? "active" : ""
-                      }`}
-                      onClick={() => setDonationType("monetary")}
-                    >
-                      <FaMoneyBillWave className="btn-icon" />
-                      Monetary
-                    </button>
+                    {allowedDonationTypes.includes("goods") ? (
+                      <button
+                        type="button"
+                        className={`donation-type-tab ${
+                          donationType === "goods" ? "active" : ""
+                        }`}
+                        onClick={() => setDonationType("goods")}
+                      >
+                        <FaBoxes className="btn-icon" />
+                        Goods
+                      </button>
+                    ) : null}
+                    {allowedDonationTypes.includes("appliance") ? (
+                      <button
+                        type="button"
+                        className={`donation-type-tab ${
+                          donationType === "appliance" ? "active" : ""
+                        }`}
+                        onClick={() => setDonationType("appliance")}
+                      >
+                        <FaBlender className="btn-icon" />
+                        Appliances
+                      </button>
+                    ) : null}
+                    {allowedDonationTypes.includes("monetary") ? (
+                      <button
+                        type="button"
+                        className={`donation-type-tab ${
+                          donationType === "monetary" ? "active" : ""
+                        }`}
+                        onClick={() => setDonationType("monetary")}
+                      >
+                        <FaMoneyBillWave className="btn-icon" />
+                        Monetary
+                      </button>
+                    ) : null}
                   </div>
                 )}
 
@@ -1736,6 +1801,7 @@ const InventoryAdd = () => {
                                   type="date"
                                   name="expirationDate"
                                   value={form.expirationDate}
+                                  min={minExpirationDate}
                                   onChange={handleChange}
                                   className={`input ${
                                     formErrors.expirationDate ? "input-error" : ""
@@ -2006,47 +2072,55 @@ const InventoryAdd = () => {
             </div>
           ) : (
             <>
-              <div className="inventory-card">
-                <div className="type-switch">
-                  <button
-                    className={`type-tab ${donationType === "goods" ? "active" : ""}`}
-                    onClick={() => {
-                      setDonationType("goods");
-                      setCurrentPage(1);
-                      clearFilters();
-                    }}
-                  >
-                    <FaBoxes className="btn-icon" />
-                    Goods Donations
-                  </button>
-                  <button
-                    className={`type-tab ${
-                      donationType === "monetary" ? "active" : ""
-                    }`}
-                    onClick={() => {
-                      setDonationType("monetary");
-                      setCurrentPage(1);
-                      clearFilters();
-                    }}
-                  >
-                    <FaMoneyBillWave className="btn-icon" />
-                    Monetary Donations
-                  </button>
-                  <button
-                    className={`type-tab ${
-                      donationType === "appliance" ? "active" : ""
-                    }`}
-                    onClick={() => {
-                      setDonationType("appliance");
-                      setCurrentPage(1);
-                      clearFilters();
-                    }}
-                  >
-                    <FaBlender className="btn-icon" />
-                    Appliance Donations
-                  </button>
+              {allowedDonationTypes.length > 1 ? (
+                <div className="inventory-card">
+                  <div className="type-switch">
+                    {allowedDonationTypes.includes("goods") ? (
+                      <button
+                        className={`type-tab ${donationType === "goods" ? "active" : ""}`}
+                        onClick={() => {
+                          setDonationType("goods");
+                          setCurrentPage(1);
+                          clearFilters();
+                        }}
+                      >
+                        <FaBoxes className="btn-icon" />
+                        Goods Donations
+                      </button>
+                    ) : null}
+                    {allowedDonationTypes.includes("monetary") ? (
+                      <button
+                        className={`type-tab ${
+                          donationType === "monetary" ? "active" : ""
+                        }`}
+                        onClick={() => {
+                          setDonationType("monetary");
+                          setCurrentPage(1);
+                          clearFilters();
+                        }}
+                      >
+                        <FaMoneyBillWave className="btn-icon" />
+                        Monetary Donations
+                      </button>
+                    ) : null}
+                    {allowedDonationTypes.includes("appliance") ? (
+                      <button
+                        className={`type-tab ${
+                          donationType === "appliance" ? "active" : ""
+                        }`}
+                        onClick={() => {
+                          setDonationType("appliance");
+                          setCurrentPage(1);
+                          clearFilters();
+                        }}
+                      >
+                        <FaBlender className="btn-icon" />
+                        Appliance Donations
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               <div className="inventory-card">
                 <div className="section-header compact">

@@ -1,19 +1,23 @@
+.dqv-page {
+  --dqv-pane-height: auto;
+}
+
 .dqv-page .rrl-header-card {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(246, 251, 247, 0.98) 100%);
 }
 
 .dqv-page .rrl-board {
-  align-items: start;
+  align-items: flex-start;
 }
 
 .dqv-page .rrl-board-left {
   position: static;
-  align-self: start;
+  align-self: flex-start;
 }
 
 .dqv-page .rrl-board-right {
-  align-self: start;
+  align-self: flex-start;
 }
 
 .dqv-notification-stack {
@@ -33,14 +37,30 @@
 }
 
 .dqv-page .rrl-queue-card {
-  height: auto;
-  min-height: 0;
-  max-height: none;
+  min-height: 360px;
+  overflow: visible;
+}
+
+.dqv-page .rrl-placeholder-card,
+.dqv-page .rrl-details-card-compact {
+  min-height: 360px;
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
+.dqv-page .rrl-placeholder-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dqv-page .rrl-queue-list {
   gap: 16px;
   padding-right: 4px;
+}
+
+.dqv-page .dqv-toolbar-simple {
+  margin-bottom: 16px;
 }
 
 .dqv-page .rrl-queue-item {
@@ -138,6 +158,20 @@
   word-break: break-word;
 }
 
+.dqv-duplicate-note {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(20, 83, 45, 0.14);
+  background: linear-gradient(180deg, #f6fbf7 0%, #eef8f0 100%);
+  color: #1f5a35;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .dqv-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -224,6 +258,10 @@
 .dqv-page .rrl-review-layout-focused {
   grid-template-columns: minmax(0, 1fr) 286px;
   gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .dqv-page .rrl-panel {
@@ -238,8 +276,23 @@
   gap: 12px;
 }
 
+.dqv-page .rrl-meta-strip {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .dqv-page .rrl-readiness-compact {
   gap: 10px;
+}
+
+.dqv-page .rrl-readiness-compact-row {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.dqv-page .rrl-readiness-compact-row strong {
+  max-width: 100%;
+  text-align: right;
+  word-break: break-word;
 }
 
 .dqv-image-modal {
@@ -315,6 +368,22 @@
     min-height: 0;
     height: auto;
     max-height: none;
+  }
+
+  .dqv-page .rrl-placeholder-card,
+  .dqv-page .rrl-details-card-compact {
+    min-height: 0;
+    height: auto;
+    max-height: none;
+  }
+
+  .dqv-page .rrl-review-layout-focused {
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .dqv-page .rrl-meta-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

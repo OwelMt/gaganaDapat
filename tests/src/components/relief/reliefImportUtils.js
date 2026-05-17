@@ -1,4 +1,5 @@
 import {
+  isMonetaryMixedWithOtherSupport,
   SUPPORT_TYPE_APPLIANCE,
   SUPPORT_TYPE_FOODPACKS,
   SUPPORT_TYPE_MONETARY,
@@ -160,6 +161,9 @@ export const deriveImportedSupportTypes = ({
     : [];
 
   if (normalizedImportedSupportTypes.length > 0) {
+    if (isMonetaryMixedWithOtherSupport(normalizedImportedSupportTypes)) {
+      return [SUPPORT_TYPE_MONETARY];
+    }
     return normalizedImportedSupportTypes;
   }
 
@@ -182,15 +186,25 @@ export const deriveImportedSupportTypes = ({
 
   if (!shouldPreserveManualSupportTypes) {
     if (inferredSupportTypes.length > 0) {
-      return normalizeSupportTypes(inferredSupportTypes);
+      const normalizedInferred = normalizeSupportTypes(inferredSupportTypes);
+      if (isMonetaryMixedWithOtherSupport(normalizedInferred)) {
+        return [SUPPORT_TYPE_MONETARY];
+      }
+      return normalizedInferred;
     }
     return normalizeSupportTypes([SUPPORT_TYPE_FOODPACKS]);
   }
 
-  return normalizeSupportTypes([
+  const normalizedMerged = normalizeSupportTypes([
     ...normalizedPreviousSupportTypes,
     ...inferredSupportTypes,
   ]);
+
+  if (isMonetaryMixedWithOtherSupport(normalizedMerged)) {
+    return [SUPPORT_TYPE_MONETARY];
+  }
+
+  return normalizedMerged;
 };
 
 export const shouldShowConfirmReceivedAction = ({

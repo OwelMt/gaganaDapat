@@ -1,16 +1,28 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../css/EditAccount.css';
 import {
   sanitizeAddress,
-  sanitizeEmail,
   sanitizeHotline,
   sanitizePassword,
   sanitizePhoneNumber,
   sanitizeUsername
 } from './inputSanitizers';
+import {
+  validateAddress,
+  validateHotline,
+  validatePhoneNumber,
+  validateStrongPassword,
+  validateUsername
+} from './inputValidators';
+import {
+  AccountConfirmModal,
+  AccountNotificationPortal,
+  buildAccountNotification
+} from './accountOverlayUtils';
 
 export default function EditAccount() {
+  const notificationTimeoutsRef = useRef({});
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -27,15 +39,46 @@ export default function EditAccount() {
   const [roleFilter, setRoleFilter] = useState('');
   const [savingId, setSavingId] = useState(null);
   const [archivingId, setArchivingId] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [pendingSelectionId, setPendingSelectionId] = useState(null);
+  const [archiveTargetId, setArchiveTargetId] = useState(null);
+  const [updateTargetId, setUpdateTargetId] = useState(null);
 
   const BASE_URL =
     process.env.REACT_APP_API_URL || 'https://gaganadapat.onrender.com';
 
   useEffect(() => {
-    fetchAccounts();
+    const timeouts = notificationTimeoutsRef.current;
+
+    return () => {
+      Object.values(timeouts).forEach(clearTimeout);
+      notificationTimeoutsRef.current = {};
+    };
   }, []);
 
-  const fetchAccounts = async () => {
+  const removeNotification = (id) => {
+    if (notificationTimeoutsRef.current[id]) {
+      clearTimeout(notificationTimeoutsRef.current[id]);
+      delete notificationTimeoutsRef.current[id];
+    }
+
+    setNotifications((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const showNotification = (message, type = 'info') => {
+    const notification = buildAccountNotification(message, type);
+
+    setNotifications((prev) => [notification, ...prev].slice(0, 3));
+
+    notificationTimeoutsRef.current[notification.id] = setTimeout(() => {
+      setNotifications((prev) =>
+        prev.filter((item) => item.id !== notification.id)
+      );
+      delete notificationTimeoutsRef.current[notification.id];
+    }, 4000);
+  };
+
+  const fetchAccounts = useCallback(async () => {
     try {
       const res = await fetch(`${BASE_URL}/api/auth/all`, {
         credentials: 'include'
@@ -46,35 +89,38 @@ export default function EditAccount() {
       setAccounts(safeData);
 
       const mappedForms = {};
-      safeData.forEach((a) => {
-        mappedForms[a._id] = {
-          username: a.username || '',
-          email: a.email || '',
-          phoneNumber: a.phoneNumber || '',
-          hotline: a.hotline || '',
-          address: a.address || '',
+      safeData.forEach((account) => {
+        mappedForms[account._id] = {
+          username: account.username || '',
+          email: account.email || '',
+          phoneNumber: account.phoneNumber || '',
+          hotline: account.hotline || '',
+          address: account.address || '',
           password: '',
           confirmPassword: ''
         };
       });
       setForms(mappedForms);
 
-      if (safeData.length > 0 && !open) {
-        const firstVisible = safeData.find((acc) => acc.role !== 'admin');
+      if (safeData.length > 0) {
+        const firstVisible = safeData.find((account) => account.role !== 'admin');
         if (firstVisible) {
-          setOpen(firstVisible._id);
+          setOpen((prev) => prev || firstVisible._id);
         }
       }
     } catch (err) {
       console.error(err);
-      alert('Failed to fetch accounts');
+      showNotification('Failed to fetch accounts', 'error');
     }
-  };
+  }, [BASE_URL]);
+
+  useEffect(() => {
+    fetchAccounts();
+  }, [fetchAccounts]);
 
   const handleChange = (id, field, value) => {
     const sanitizers = {
       username: sanitizeUsername,
-      email: sanitizeEmail,
       phoneNumber: sanitizePhoneNumber,
       hotline: sanitizeHotline,
       address: sanitizeAddress,
@@ -90,49 +136,42 @@ export default function EditAccount() {
     }));
   };
 
-  const validPhone = (phone) => /^[0-9]{10,11}$/.test(phone);
-  const validPassword = (pass) =>
-    /[A-Z]/.test(pass) && /[0-9]/.test(pass) && pass.length >= 8;
-  const validEmail = (email) => email.includes('@') && email.includes('.com');
-
   const visibleAccounts = useMemo(
-    () => accounts.filter((acc) => acc.role !== 'admin'),
+    () => accounts.filter((account) => account.role !== 'admin'),
     [accounts]
   );
 
   const filteredAccounts = useMemo(() => {
     const term = q.toLowerCase().trim();
 
-    return visibleAccounts.filter((a) => {
-      const matchesSearch = `${a.username} ${a.email} ${a.phoneNumber} ${a.address} ${a.role}`
+    return visibleAccounts.filter((account) => {
+      const matchesSearch = `${account.username} ${account.email} ${account.phoneNumber} ${account.address} ${account.role}`
         .toLowerCase()
         .includes(term);
 
       const matchesRole =
-        !roleFilter || String(a.role || '').toLowerCase() === roleFilter;
+        !roleFilter || String(account.role || '').toLowerCase() === roleFilter;
 
       return matchesSearch && matchesRole;
     });
   }, [visibleAccounts, q, roleFilter]);
 
   const selected = useMemo(
-    () => visibleAccounts.find((a) => a._id === open) || null,
+    () => visibleAccounts.find((account) => account._id === open) || null,
     [visibleAccounts, open]
   );
 
   const selectedForm = selected ? forms[selected._id] : null;
 
   const totalBarangay = useMemo(
-    () => visibleAccounts.filter((a) => a.role === 'barangay').length,
+    () => visibleAccounts.filter((account) => account.role === 'barangay').length,
     [visibleAccounts]
   );
 
   const totalDrrmo = useMemo(
-    () => visibleAccounts.filter((a) => a.role === 'drrmo').length,
+    () => visibleAccounts.filter((account) => account.role === 'drrmo').length,
     [visibleAccounts]
   );
-
-  const totalFiltered = filteredAccounts.length;
 
   const getInitials = (value = '') => {
     const text = String(value || '').trim();
@@ -145,7 +184,6 @@ export default function EditAccount() {
 
     return (
       (selectedForm.username || '') !== (selected.username || '') ||
-      (selectedForm.email || '') !== (selected.email || '') ||
       (selectedForm.phoneNumber || '') !== (selected.phoneNumber || '') ||
       (selectedForm.hotline || '') !== (selected.hotline || '') ||
       (selectedForm.address || '') !== (selected.address || '') ||
@@ -158,10 +196,8 @@ export default function EditAccount() {
     if (id === open) return;
 
     if (hasUnsavedChanges) {
-      const proceed = window.confirm(
-        'You have unsaved changes. Switch accounts anyway?'
-      );
-      if (!proceed) return;
+      setPendingSelectionId(id);
+      return;
     }
 
     setOpen(id);
@@ -184,46 +220,64 @@ export default function EditAccount() {
     }));
   };
 
-  const updateAccount = async (id) => {
+  const requestAccountUpdate = async (id) => {
     const data = forms[id];
     if (!data) return;
 
-    if (data.phoneNumber && !validPhone(data.phoneNumber)) {
-      return alert('Phone number must be 10–11 digits');
+    const usernameError = validateUsername(data.username);
+    if (usernameError) {
+      showNotification(usernameError, 'error');
+      return;
     }
 
-    if (data.email && !validEmail(data.email)) {
-      return alert('Email must contain @ and .com');
+    const phoneError = validatePhoneNumber(data.phoneNumber);
+    if (phoneError) {
+      showNotification(phoneError, 'error');
+      return;
+    }
+
+    const hotlineError = validateHotline(data.hotline);
+    if (hotlineError) {
+      showNotification(hotlineError, 'error');
+      return;
+    }
+
+    const addressError = validateAddress(data.address);
+    if (addressError) {
+      showNotification(addressError, 'error');
+      return;
     }
 
     if (data.password) {
-      if (!validPassword(data.password)) {
-        return alert(
-          'Password must be 8+ characters with a capital letter and a number'
-        );
+      const passwordError = validateStrongPassword(data.password);
+      if (passwordError) {
+        showNotification(passwordError, 'error');
+        return;
       }
 
       if (data.password !== data.confirmPassword) {
-        return alert('Passwords do not match');
+        showNotification('Passwords do not match', 'error');
+        return;
       }
     }
 
-    const original = accounts.find((a) => a._id === id);
+    const original = accounts.find((account) => account._id === id);
     if (!original) return;
 
     if (
       data.username === original.username &&
-      data.email === original.email &&
       data.phoneNumber === original.phoneNumber &&
       data.hotline === original.hotline &&
       data.address === original.address &&
       !data.password
     ) {
-      return alert('No changes detected');
+      showNotification('No changes detected', 'info');
+      return;
     }
 
     const payload = { ...data };
     delete payload.confirmPassword;
+    delete payload.email;
     if (!payload.password) delete payload.password;
 
     try {
@@ -236,23 +290,28 @@ export default function EditAccount() {
         body: JSON.stringify(payload)
       });
 
+      const responseData = await res.json().catch(() => ({}));
+
       if (res.ok) {
-        alert('Updated successfully');
+        showNotification(
+          responseData.message ||
+            'Update approval email sent. Changes will apply after the recipient confirms.',
+          'success'
+        );
+        setUpdateTargetId(null);
         await fetchAccounts();
       } else {
-        alert('Update failed');
+        showNotification(responseData.message || 'Update failed', 'error');
       }
     } catch (err) {
       console.error(err);
-      alert('Update failed');
+      showNotification('Update failed', 'error');
     } finally {
       setSavingId(null);
     }
   };
 
   const archiveAccount = async (id) => {
-    if (!window.confirm('Archive this account?')) return;
-
     try {
       setArchivingId(id);
 
@@ -262,17 +321,18 @@ export default function EditAccount() {
       });
 
       if (res.ok) {
-        alert('Account archived successfully');
-        setAccounts((prev) => prev.filter((a) => a._id !== id));
+        showNotification('Account archived successfully', 'success');
+        setAccounts((prev) => prev.filter((account) => account._id !== id));
         setOpen(null);
       } else {
-        alert('Failed to archive account');
+        showNotification('Failed to archive account', 'error');
       }
     } catch (err) {
       console.error(err);
-      alert('Failed to archive account');
+      showNotification('Failed to archive account', 'error');
     } finally {
       setArchivingId(null);
+      setArchiveTargetId(null);
     }
   };
 
@@ -281,6 +341,29 @@ export default function EditAccount() {
     { label: 'DRRMO', value: totalDrrmo, tone: 'blue' },
     { label: 'Barangay', value: totalBarangay, tone: 'emerald' }
   ];
+
+  const archiveTarget = archiveTargetId
+    ? accounts.find((account) => account._id === archiveTargetId) || null
+    : null;
+  const updateTarget = updateTargetId
+    ? accounts.find((account) => account._id === updateTargetId) || null
+    : null;
+  const updateForm = updateTarget ? forms[updateTarget._id] : null;
+  const updateSummaryDetails =
+    updateTarget && updateForm
+      ? [
+          { label: 'Role', value: updateTarget.role || '-' },
+          { label: 'Email', value: updateTarget.email || '-' },
+          { label: 'Username', value: `${updateTarget.username || '-'} -> ${updateForm.username || '-'}` },
+          { label: 'Phone', value: `${updateTarget.phoneNumber || '-'} -> ${updateForm.phoneNumber || '-'}` },
+          { label: 'Hotline', value: `${updateTarget.hotline || '-'} -> ${updateForm.hotline || '-'}` },
+          { label: 'Address', value: `${updateTarget.address || '-'} -> ${updateForm.address || '-'}` },
+          {
+            label: 'Password',
+            value: updateForm.password ? 'Will be updated after email approval' : 'No password change'
+          }
+        ]
+      : [];
 
   return (
     <div className="edit-account">
@@ -321,7 +404,7 @@ export default function EditAccount() {
                   type="search"
                   placeholder="Search account"
                   value={q}
-                  onChange={(e) => setQ(e.target.value)}
+                  onChange={(event) => setQ(event.target.value)}
                 />
               </div>
 
@@ -329,7 +412,7 @@ export default function EditAccount() {
                 <select
                   className="ea-role-filter"
                   value={roleFilter}
-                  onChange={(e) => setRoleFilter(e.target.value)}
+                  onChange={(event) => setRoleFilter(event.target.value)}
                 >
                   <option value="">All Roles</option>
                   <option value="drrmo">DRRMO</option>
@@ -344,26 +427,30 @@ export default function EditAccount() {
                   <strong>No accounts found</strong>
                 </div>
               ) : (
-                filteredAccounts.map((acc) => (
-                  <div key={acc._id} className="ea-item">
+                filteredAccounts.map((account) => (
+                  <div key={account._id} className="ea-item">
                     <button
                       type="button"
-                      className={`ea-head ${open === acc._id ? 'is-active' : ''}`}
-                      onClick={() => handleSelectAccount(acc._id)}
+                      className={`ea-head ${
+                        open === account._id ? 'is-active' : ''
+                      }`}
+                      onClick={() => handleSelectAccount(account._id)}
                     >
                       <div className="ea-head-main">
                         <div className="ea-head-avatar">
-                          {getInitials(acc.username)}
+                          {getInitials(account.username)}
                         </div>
 
                         <div className="ea-head-copy">
-                          <strong className="ea-username">{acc.username}</strong>
-                          <small className="ea-email">{acc.email || 'No email'}</small>
+                          <strong className="ea-username">{account.username}</strong>
+                          <small className="ea-email">
+                            {account.email || 'No email'}
+                          </small>
                         </div>
                       </div>
 
-                      <span className={`ea-role ea-role-${acc.role}`}>
-                        {acc.role}
+                      <span className={`ea-role ea-role-${account.role}`}>
+                        {account.role}
                       </span>
                     </button>
                   </div>
@@ -375,7 +462,7 @@ export default function EditAccount() {
           <section className="ea-editor-card">
             {!selected || !selectedForm ? (
               <div className="ea-placeholder ea-placeholder--centered">
-                <div className="ea-empty-illustration">👤</div>
+                <div className="ea-empty-illustration">ID</div>
                 <div className="ea-empty-title">Select an account</div>
               </div>
             ) : (
@@ -419,8 +506,12 @@ export default function EditAccount() {
                       <label>Username</label>
                       <input
                         value={selectedForm.username || ''}
-                        onChange={(e) =>
-                          handleChange(selected._id, 'username', e.target.value)
+                        onChange={(event) =>
+                          handleChange(
+                            selected._id,
+                            'username',
+                            event.target.value
+                          )
                         }
                       />
                     </div>
@@ -429,18 +520,25 @@ export default function EditAccount() {
                       <label>Email</label>
                       <input
                         value={selectedForm.email || ''}
-                        onChange={(e) =>
-                          handleChange(selected._id, 'email', e.target.value)
-                        }
+                        disabled
+                        readOnly
+                        className="ea-input-readonly"
                       />
+                      <div className="ea-field-hint">
+                        Email is locked. Account changes are approved through this address.
+                      </div>
                     </div>
 
                     <div className="ea-field">
                       <label>Phone Number</label>
                       <input
                         value={selectedForm.phoneNumber || ''}
-                        onChange={(e) =>
-                          handleChange(selected._id, 'phoneNumber', e.target.value)
+                        onChange={(event) =>
+                          handleChange(
+                            selected._id,
+                            'phoneNumber',
+                            event.target.value
+                          )
                         }
                       />
                     </div>
@@ -449,8 +547,8 @@ export default function EditAccount() {
                       <label>Hotline</label>
                       <input
                         value={selectedForm.hotline || ''}
-                        onChange={(e) =>
-                          handleChange(selected._id, 'hotline', e.target.value)
+                        onChange={(event) =>
+                          handleChange(selected._id, 'hotline', event.target.value)
                         }
                       />
                     </div>
@@ -459,8 +557,8 @@ export default function EditAccount() {
                       <label>Address</label>
                       <input
                         value={selectedForm.address || ''}
-                        onChange={(e) =>
-                          handleChange(selected._id, 'address', e.target.value)
+                        onChange={(event) =>
+                          handleChange(selected._id, 'address', event.target.value)
                         }
                       />
                     </div>
@@ -478,8 +576,8 @@ export default function EditAccount() {
                       <input
                         type="password"
                         value={selectedForm.password || ''}
-                        onChange={(e) =>
-                          handleChange(selected._id, 'password', e.target.value)
+                        onChange={(event) =>
+                          handleChange(selected._id, 'password', event.target.value)
                         }
                         placeholder="Leave blank to keep current password"
                       />
@@ -490,8 +588,12 @@ export default function EditAccount() {
                       <input
                         type="password"
                         value={selectedForm.confirmPassword || ''}
-                        onChange={(e) =>
-                          handleChange(selected._id, 'confirmPassword', e.target.value)
+                        onChange={(event) =>
+                          handleChange(
+                            selected._id,
+                            'confirmPassword',
+                            event.target.value
+                          )
                         }
                         placeholder="Re-enter password"
                       />
@@ -511,10 +613,10 @@ export default function EditAccount() {
 
                   <button
                     className="ea-btn ea-btn-primary"
-                    onClick={() => updateAccount(selected._id)}
+                    onClick={() => setUpdateTargetId(selected._id)}
                     disabled={savingId === selected._id}
                   >
-                    {savingId === selected._id ? 'Updating...' : 'Update Account'}
+                    {savingId === selected._id ? 'Sending Approval...' : 'Request Update Approval'}
                   </button>
                 </div>
 
@@ -526,7 +628,7 @@ export default function EditAccount() {
 
                   <button
                     className="ea-btn ea-btn-danger"
-                    onClick={() => archiveAccount(selected._id)}
+                    onClick={() => setArchiveTargetId(selected._id)}
                     disabled={archivingId === selected._id}
                   >
                     {archivingId === selected._id
@@ -539,6 +641,62 @@ export default function EditAccount() {
           </section>
         </section>
       </div>
+
+      <AccountConfirmModal
+        open={Boolean(pendingSelectionId)}
+        title="Discard unsaved changes?"
+        message="You have unsaved edits on the current account. Switching now will discard those changes."
+        confirmLabel="Switch Account"
+        cancelLabel="Stay Here"
+        onConfirm={() => {
+          if (pendingSelectionId) {
+            setOpen(pendingSelectionId);
+          }
+          setPendingSelectionId(null);
+        }}
+        onClose={() => setPendingSelectionId(null)}
+      />
+
+      <AccountConfirmModal
+        open={Boolean(updateTargetId)}
+        title="Send account update approval?"
+        message="The account will stay unchanged for now. An approval email will be sent to the registered Gmail address, and the edits will apply only after the recipient confirms them."
+        details={updateSummaryDetails}
+        confirmLabel="Send Approval Email"
+        cancelLabel="Review Again"
+        busy={savingId === updateTargetId}
+        onConfirm={() => updateTargetId && requestAccountUpdate(updateTargetId)}
+        onClose={() => {
+          if (savingId !== updateTargetId) {
+            setUpdateTargetId(null);
+          }
+        }}
+      />
+
+      <AccountConfirmModal
+        open={Boolean(archiveTargetId)}
+        title="Archive account?"
+        message="This account will be removed from the active list and can still be restored later from archived accounts."
+        details={[
+          { label: 'Username', value: archiveTarget?.username || '-' },
+          { label: 'Role', value: archiveTarget?.role || '-' }
+        ]}
+        confirmLabel="Archive Account"
+        cancelLabel="Cancel"
+        confirmTone="danger"
+        busy={archivingId === archiveTargetId}
+        onConfirm={() => archiveTargetId && archiveAccount(archiveTargetId)}
+        onClose={() => {
+          if (archivingId !== archiveTargetId) {
+            setArchiveTargetId(null);
+          }
+        }}
+      />
+
+      <AccountNotificationPortal
+        notifications={notifications}
+        onDismiss={removeNotification}
+      />
     </div>
   );
 }

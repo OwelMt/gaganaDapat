@@ -10,13 +10,13 @@ import {
   useMap,
   Polyline,
   GeoJSON,
+  Polygon,
 } from "react-leaflet";
 import L from "leaflet";
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { point as turfPoint } from "@turf/helpers";
 import "leaflet/dist/leaflet.css";
 import jaenGeoJSON from "../data/jaen.json";
-import { Polygon } from "react-leaflet";
 
 const DEFAULT_CENTER = [15.3382, 120.9056];
 const BOUNDS_BUFFER = 0.01;
@@ -72,50 +72,97 @@ const maskStyle = {
   interactive: false,
 };
 
-function getBarangayColorParts(index = 0) {
-  const hue = Math.round((index * 137.508 + 24) % 360);
+function getBarangayPaletteSeed(colorKey = "") {
+  const normalized = safeLower(colorKey);
+  if (!normalized) return 0;
+
+  let hash = 0;
+  for (let i = 0; i < normalized.length; i += 1) {
+    hash = (hash * 31 + normalized.charCodeAt(i)) % 1000003;
+  }
+
+  return hash;
+}
+
+function getBarangayColorParts(colorKey = "", fallbackIndex = 0) {
+  const normalized = safeLower(colorKey);
+
+  if (normalized === "hilera") {
+    return { hue: 132, saturation: 68, lightness: 42 };
+  }
+
+  const seed = normalized ? getBarangayPaletteSeed(normalized) : fallbackIndex;
+  const hue = Math.round((seed * 137.508 + 24) % 360);
   const saturationCycle = [78, 64, 86, 58];
   const lightnessCycle = [48, 60, 42, 66];
-  const saturation = saturationCycle[index % saturationCycle.length];
-  const lightness = lightnessCycle[index % lightnessCycle.length];
+  const saturation = saturationCycle[seed % saturationCycle.length];
+  const lightness = lightnessCycle[seed % lightnessCycle.length];
 
   return { hue, saturation, lightness };
 }
 
-function getBarangayFillColor(index = 0) {
-  const { hue, saturation, lightness } = getBarangayColorParts(index);
+function getBarangayFillColor(colorKey = "", fallbackIndex = 0) {
+  const { hue, saturation, lightness } = getBarangayColorParts(
+    colorKey,
+    fallbackIndex
+  );
   return `hsla(${hue}, ${saturation}%, ${lightness}%, 0.54)`;
 }
 
-function getBarangayOutlineColor(index = 0) {
-  const { hue, saturation, lightness } = getBarangayColorParts(index);
+function getBarangayOutlineColor(colorKey = "", fallbackIndex = 0) {
+  const { hue, saturation, lightness } = getBarangayColorParts(
+    colorKey,
+    fallbackIndex
+  );
   return `hsl(${hue}, ${Math.min(88, saturation + 8)}%, ${Math.max(34, lightness - 8)}%)`;
 }
 
-/* ---------------- Helpers ---------------- */
+function countGeometryVertices(geometry) {
+  if (!geometry) return 0;
 
-function geoJSONToLeafletPolygon(geo) {
-  if (!geo) return [];
-
-  // If already Leaflet format
-  if (Array.isArray(geo) && typeof geo[0]?.[0] === "number") {
-    return geo;
+  if (geometry.type === "Polygon") {
+    return geometry.coordinates?.[0]?.length || 0;
   }
 
-  // GeoJSON Polygon: [[[lng, lat]]]
-  if (Array.isArray(geo?.[0]?.[0]?.[0])) {
-    return geo.map(polygon =>
-      polygon[0].map(([lng, lat]) => [lat, lng])
+  if (geometry.type === "MultiPolygon") {
+    return geometry.coordinates?.reduce(
+      (sum, polygon) => sum + (polygon?.[0]?.length || 0),
+      0
     );
   }
 
-  // GeoJSON Polygon: [[lng, lat]]
-  if (Array.isArray(geo?.[0]?.[0])) {
-    return geo[0].map(([lng, lat]) => [lat, lng]);
+  return 0;
+}
+
+function geometryToPolygonSets(geometry) {
+  if (!geometry) return [];
+
+  if (geometry.type === "Polygon") {
+    return [geometry.coordinates || []];
+  }
+
+  if (geometry.type === "MultiPolygon") {
+    return geometry.coordinates || [];
   }
 
   return [];
 }
+
+function ringToLeafletPositions(ring = []) {
+  return ring
+    .map((point) => {
+      if (!Array.isArray(point) || point.length < 2) return null;
+      return [Number(point[1]), Number(point[0])];
+    })
+    .filter(
+      (point) =>
+        Array.isArray(point) &&
+        !Number.isNaN(point[0]) &&
+        !Number.isNaN(point[1])
+    );
+}
+
+/* ---------------- Helpers ---------------- */
 
 function safeLower(value) {
   return String(value || "").toLowerCase().trim();
@@ -140,6 +187,153 @@ function isPointInsideJaen(lat, lng) {
     console.error("Polygon check failed:", error);
     return false;
   }
+}
+
+function isPointInsideGeoJSON(lat, lng, geojson) {
+  if (!geojson) return false;
+
+  try {
+    const clicked = turfPoint([lng, lat]);
+
+    if (geojson.type === "FeatureCollection") {
+      return geojson.features.some((feature) =>
+        booleanPointInPolygon(clicked, feature)
+      );
+    }
+
+    if (geojson.type === "Feature") {
+      return booleanPointInPolygon(clicked, geojson);
+    }
+
+    if (geojson.type === "Polygon" || geojson.type === "MultiPolygon") {
+      return booleanPointInPolygon(clicked, {
+        type: "Feature",
+        properties: {},
+        geometry: geojson,
+      });
+    }
+
+    return false;
+  } catch (error) {
+    console.error("Barangay polygon check failed:", error);
+    return false;
+  }
+}
+
+function getBarangayBoundsData(entry) {
+  if (!entry) return null;
+
+  if (entry.type === "FeatureCollection") {
+    const polygonFeatures = (entry.features || []).filter((feature) => {
+      const type = feature?.geometry?.type;
+      return type === "Polygon" || type === "MultiPolygon";
+    });
+
+    if (!polygonFeatures.length) return null;
+
+    const preferredFeatures = polygonFeatures.filter(
+      (feature) => countGeometryVertices(feature?.geometry) > 5
+    );
+
+    const chosenFeature =
+      [...(preferredFeatures.length ? preferredFeatures : polygonFeatures)].sort(
+        (a, b) =>
+          countGeometryVertices(b?.geometry) - countGeometryVertices(a?.geometry)
+      )[0] || null;
+
+    return chosenFeature
+      ? {
+          type: "FeatureCollection",
+          features: [chosenFeature],
+        }
+      : null;
+  }
+  if (entry.type === "Feature") return entry;
+
+  if (Array.isArray(entry.features)) {
+    return {
+      type: "FeatureCollection",
+      features: entry.features,
+    };
+  }
+
+  if (entry.geometry) {
+    return {
+      type: "Feature",
+      properties: entry.properties || {},
+      geometry: entry.geometry,
+    };
+  }
+
+  return null;
+}
+
+function getBarangayBoundsLabel(entry, fallbackIndex = 0) {
+  const directLabel =
+    entry?.barangayName ||
+    entry?.name ||
+    entry?.properties?.barangayName ||
+    entry?.properties?.name ||
+    entry?.properties?.NAME ||
+    entry?.properties?.adm4_en ||
+    entry?.properties?.barangay ||
+    entry?.features?.[0]?.properties?.barangayName ||
+    entry?.features?.[0]?.properties?.name ||
+    entry?.features?.[0]?.properties?.NAME ||
+    entry?.features?.[0]?.properties?.adm4_en ||
+    entry?.features?.[0]?.properties?.barangay;
+
+  return directLabel || `Barangay ${fallbackIndex + 1}`;
+}
+
+function buildBarangayPolygonStyle({
+  colorKey = "",
+  index = 0,
+  isBarangayRole = false,
+  isOwnedBarangay = false,
+  hovered = false,
+}) {
+  const { hue, saturation, lightness } = getBarangayColorParts(
+    colorKey,
+    index
+  );
+
+  if (isBarangayRole) {
+    if (isOwnedBarangay) {
+      return {
+        color: hovered
+          ? getBarangayOutlineColor(colorKey, index)
+          : `hsla(${hue}, ${Math.min(92, saturation + 10)}%, ${Math.max(26, lightness - 14)}%, 0.96)`,
+        weight: hovered ? 3.25 : 2.35,
+        fillColor: hovered
+          ? getBarangayFillColor(colorKey, index)
+          : `hsla(${hue}, ${Math.max(68, saturation)}%, ${Math.max(46, lightness - 2)}%, 0.56)`,
+        fillOpacity: hovered ? 0.84 : 0.8,
+      };
+    }
+
+    return {
+      color: hovered
+        ? getBarangayOutlineColor(colorKey, index)
+        : `hsla(${hue}, 18%, 28%, 0.52)`,
+      weight: hovered ? 2.5 : 1.2,
+      fillColor: hovered
+        ? getBarangayFillColor(colorKey, index)
+        : `hsla(${hue}, 20%, 32%, 0.34)`,
+      fillOpacity: hovered ? 0.64 : 0.72,
+    };
+  }
+
+  return {
+    color: hovered
+      ? getBarangayOutlineColor(colorKey, index)
+      : `hsla(${hue}, ${Math.min(86, saturation + 4)}%, ${Math.max(32, lightness - 8)}%, 0.82)`,
+    weight: hovered ? 3 : 1.8,
+    fillColor: hovered
+      ? getBarangayFillColor(colorKey, index)
+      : `hsla(${hue}, ${Math.max(58, saturation - 8)}%, ${Math.max(52, lightness + 2)}%, 0.34)`,
+    fillOpacity: hovered ? 0.76 : 0.58,
+  };
 }
 
 function extractOuterRings(geojson) {
@@ -309,8 +503,10 @@ function MapClickHandler({
   setPosition,
   setPlaceName,
   onSelectLocation,
+  onBlockedSelection,
   allowedBounds,
   pickMode,
+  pickBoundaryGeoJSON,
 }) {
   useMapEvents({
     click(e) {
@@ -320,6 +516,13 @@ function MapClickHandler({
 
       if (allowedBounds && !allowedBounds.contains(e.latlng)) return;
       if (!isPointInsideJaen(lat, lng)) return;
+      if (
+        pickBoundaryGeoJSON &&
+        !isPointInsideGeoJSON(lat, lng, pickBoundaryGeoJSON)
+      ) {
+        onBlockedSelection?.();
+        return;
+      }
 
       setPosition([lat, lng]);
 
@@ -494,15 +697,17 @@ function FlyToOnClickMarker({
 const Map = ({
   onSelectLocation,
   onSelectPlace,
+  onBlockedSelection,
   places = [],
   barangayBounds = [],
+  matchedBarangayBounds = null,
+  isBarangayRole = false,
   currentCoords = {},
   evacCoords = {},
   routeCoords = [],
   pickMode = false,
   publicMode = false,
 }) => {
-  console.log("BARANGAY BOUNDS RECEIVED:", barangayBounds);
   const jaenBounds = useMemo(() => {
     if (!jaenGeoJSON) return null;
     return L.geoJSON(jaenGeoJSON).getBounds();
@@ -548,6 +753,11 @@ const Map = ({
     return buildInverseMaskGeoJSON(jaenGeoJSON);
   }, []);
 
+  const pickBoundaryGeoJSON = useMemo(() => {
+    if (!matchedBarangayBounds) return null;
+    return getBarangayBoundsData(matchedBarangayBounds);
+  }, [matchedBarangayBounds]);
+
   const initialCenter = useMemo(() => {
     if (jaenBounds) {
       const center = jaenBounds.getCenter();
@@ -559,6 +769,24 @@ const Map = ({
   const [position, setPosition] = useState(initialCenter);
   const [zoom, setZoom] = useState(publicMode ? 12 : 13);
   const [placeName, setPlaceName] = useState("Jaen, Nueva Ecija");
+  const [hoveredBarangayKey, setHoveredBarangayKey] = useState("");
+  const renderedBarangayBounds = useMemo(() => {
+    return [...barangayBounds].sort((a, b) => {
+      const aLabel = getBarangayBoundsLabel(a);
+      const bLabel = getBarangayBoundsLabel(b);
+      const aOwned =
+        matchedBarangayBounds &&
+        (String(a?._id || "") === String(matchedBarangayBounds?._id || "") ||
+          safeLower(aLabel) === safeLower(getBarangayBoundsLabel(matchedBarangayBounds)));
+      const bOwned =
+        matchedBarangayBounds &&
+        (String(b?._id || "") === String(matchedBarangayBounds?._id || "") ||
+          safeLower(bLabel) === safeLower(getBarangayBoundsLabel(matchedBarangayBounds)));
+
+      if (aOwned === bOwned) return 0;
+      return aOwned ? 1 : -1;
+    });
+  }, [barangayBounds, matchedBarangayBounds]);
 
   useEffect(() => {
     setPosition(initialCenter);
@@ -600,8 +828,10 @@ const Map = ({
         setPosition={setPosition}
         setPlaceName={setPlaceName}
         onSelectLocation={onSelectLocation}
+        onBlockedSelection={onBlockedSelection}
         allowedBounds={allowedBounds}
         pickMode={pickMode}
+        pickBoundaryGeoJSON={pickBoundaryGeoJSON}
       />
 
       <TileLayer
@@ -636,33 +866,59 @@ const Map = ({
         );
       })}
 
-      {barangayBounds.map((b, index) => {
-        const geo = b.features?.[0]?.geometry || b.geometry;
-        console.log("Processing barangay bounds:", b._id || index, "Geo:", geo);
+      {renderedBarangayBounds.map((b, index) => {
+        const geoData = getBarangayBoundsData(b);
+        const label = getBarangayBoundsLabel(b, index);
+        const isOwnedBarangay =
+          matchedBarangayBounds &&
+          (String(b?._id || "") === String(matchedBarangayBounds?._id || "") ||
+            safeLower(label) ===
+              safeLower(getBarangayBoundsLabel(matchedBarangayBounds, index)));
 
-        if (!geo) return null;
+        if (!geoData) return null;
 
-        const positions =
-          geo.type === "Polygon"
-            ? geo.coordinates[0].map(([lng, lat]) => [lat, lng])
-            : geo.type === "MultiPolygon"
-            ? geo.coordinates[0][0].map(([lng, lat]) => [lat, lng])
-            : [];
+        const geometry =
+          geoData?.type === "FeatureCollection"
+            ? geoData.features?.[0]?.geometry || null
+            : geoData?.type === "Feature"
+            ? geoData.geometry
+            : geoData?.geometry || null;
 
-        if (!positions.length) return null;
+        const polygonSets = geometryToPolygonSets(geometry)
+          .map((polygon) => polygon.map((ring) => ringToLeafletPositions(ring)))
+          .filter((polygon) => Array.isArray(polygon?.[0]) && polygon[0].length >= 3);
 
-        return (
+        const barangayKey = String(b?._id || label || index);
+        const style = buildBarangayPolygonStyle({
+          colorKey: label,
+          index,
+          isBarangayRole,
+          isOwnedBarangay,
+          hovered: hoveredBarangayKey === barangayKey,
+        });
+
+        return polygonSets.map((polygon, polygonIndex) => (
           <Polygon
-            key={b._id || index}
-            positions={positions}
-            pathOptions={{
-              color: getBarangayOutlineColor(index),
-              weight: 2,
-              fillColor: getBarangayFillColor(index),
-              fillOpacity: 0.54,
+            key={`${barangayKey}-${polygonIndex}`}
+            positions={polygon}
+            pathOptions={style}
+            eventHandlers={{
+              mouseover: () => setHoveredBarangayKey(barangayKey),
+              mouseout: () => setHoveredBarangayKey((current) =>
+                current === barangayKey ? "" : current
+              ),
             }}
-          />
-        );
+          >
+            <Tooltip
+              sticky
+              direction="top"
+              className="barangay-bound-label"
+              opacity={0.96}
+            >
+              {label}
+            </Tooltip>
+          </Polygon>
+        ));
       })}
 
       {currentCoords.lat &&

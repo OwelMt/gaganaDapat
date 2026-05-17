@@ -23,6 +23,7 @@ import {
   getSupportTypesFromRequest,
   getSupportTypeLabel,
   hasSupportType,
+  isMonetaryMixedWithOtherSupport,
   normalizeSupportTypes
 } from './supportTypes';
 import {
@@ -36,10 +37,14 @@ import {
   mapSpreadsheetRow,
   parseSafeNumber
 } from '../shared/spreadsheetImportUtils';
+import * as dafacWorkbookUtils from './dafacWorkbookUtils';
+import DafacDistributionCard from './DafacDistributionCard';
+import AccomplishedReportPanel from './AccomplishedReportPanel';
 import '../css/ReliefRequestForm.css';
 
 const BASE_URL =
   process.env.REACT_APP_API_URL || 'https://gaganadapat.onrender.com';
+const dafacDistributionUtils = require('./dafacDistributionUtils');
 
 const numberFields = [
   'households',
@@ -55,10 +60,12 @@ const numberFields = [
 
 const STAGE_STEPS = [
   { key: 'prepare', label: 'Prepare', hint: 'Set request details' },
-  { key: 'review', label: 'For Review', hint: 'Waiting for DRRMO' },
+  { key: 'review', label: 'For Review', hint: 'Waiting for reviewer' },
   { key: 'approved', label: 'Approved', hint: 'Ready for release' },
   { key: 'to_receive', label: 'Receive Goods', hint: 'Release in progress' },
-  { key: 'received', label: 'Received', hint: 'Confirmation complete' }
+  { key: 'received', label: 'Received', hint: 'Confirmation complete' },
+  { key: 'dafac', label: 'DAFAC Distribution', hint: 'Encode family assistance' },
+  { key: 'accomplished', label: 'Accomplished Report', hint: 'Export full report' }
 ];
 const createPreparedRow = (row = {}) => ({
   evacPlaceId: row.evacPlaceId || row._id || '',
@@ -118,7 +125,112 @@ const formatDateTime = (value) => {
   }
 };
 
+const createDistributionFamilyMember = (member = {}) => ({
+  fullName: sanitizeInlineText(member.fullName || '', { maxLength: 120 }),
+  relationshipToHead: sanitizeInlineText(member.relationshipToHead || '', {
+    maxLength: 80
+  }),
+  age: String(member.age ?? '').trim(),
+  sex: sanitizeInlineText(member.sex || '', { maxLength: 24 }),
+  education: sanitizeInlineText(member.education || '', { maxLength: 60 }),
+  occupationalSkills: sanitizeInlineText(member.occupationalSkills || '', {
+    maxLength: 80
+  }),
+  remarks: sanitizeInlineText(member.remarks || '', {
+    maxLength: 120,
+    multiline: true
+  })
+});
+
+const createDistributionDraft = (record = {}) => ({
+  _id: record._id || '',
+  serialNo: String(record.serialNo || '').trim(),
+  evacuationCenterName: sanitizeInlineText(record.evacuationCenterName || '', {
+    maxLength: 120
+  }),
+  siteLabel: sanitizeInlineText(record.siteLabel || '', { maxLength: 120 }),
+  distributionDate: record.distributionDate
+    ? new Date(record.distributionDate).toISOString().slice(0, 10)
+    : new Date().toISOString().slice(0, 10),
+  headOfFamily: {
+    surname: sanitizeInlineText(record?.headOfFamily?.surname || '', { maxLength: 80 }),
+    firstName: sanitizeInlineText(record?.headOfFamily?.firstName || '', { maxLength: 80 }),
+    middleName: sanitizeInlineText(record?.headOfFamily?.middleName || '', { maxLength: 80 }),
+    sex: sanitizeInlineText(record?.headOfFamily?.sex || '', { maxLength: 24 }),
+    age: String(record?.headOfFamily?.age ?? '').trim(),
+    birthDate: record?.headOfFamily?.birthDate
+      ? new Date(record.headOfFamily.birthDate).toISOString().slice(0, 10)
+      : '',
+    occupation: sanitizeInlineText(record?.headOfFamily?.occupation || '', { maxLength: 80 }),
+    monthlyIncome: String(record?.headOfFamily?.monthlyIncome ?? '').trim()
+  },
+  familyProfile: {
+    is4PsBeneficiary: Boolean(record?.familyProfile?.is4PsBeneficiary),
+    isIpBeneficiary: Boolean(record?.familyProfile?.isIpBeneficiary),
+    ipEthnicity: sanitizeInlineText(record?.familyProfile?.ipEthnicity || '', {
+      maxLength: 80
+    })
+  },
+  housingProfile: {
+    tenureStatus: sanitizeInlineText(record?.housingProfile?.tenureStatus || '', {
+      maxLength: 120
+    }),
+    housingCondition: sanitizeInlineText(record?.housingProfile?.housingCondition || '', {
+      maxLength: 120
+    })
+  },
+  healthProfile: {
+    healthCondition: sanitizeInlineText(record?.healthProfile?.healthCondition || '', {
+      maxLength: 120
+    })
+  },
+  familyMembers:
+    Array.isArray(record?.familyMembers) && record.familyMembers.length
+      ? record.familyMembers.map((member) => createDistributionFamilyMember(member))
+      : [createDistributionFamilyMember()],
+  distribution: {
+    foodPacksReceived: String(record?.distribution?.foodPacksReceived ?? '').trim(),
+    monetaryAmountReceived: String(record?.distribution?.monetaryAmountReceived ?? '').trim(),
+    applianceUnitsReceived: String(
+      record?.distribution?.applianceUnitsReceived ??
+        (Array.isArray(record?.distribution?.applianceItems)
+          ? record.distribution.applianceItems.reduce(
+              (sum, item) => sum + Number(item?.quantityReceived || 0),
+              0
+            )
+          : '')
+    ).trim()
+  },
+  signOff: {
+    familyHeadPrintedName: sanitizeInlineText(
+      record?.signOff?.familyHeadPrintedName || '',
+      { maxLength: 120 }
+    ),
+    barangayOfficerPrintedName: sanitizeInlineText(
+      record?.signOff?.barangayOfficerPrintedName || '',
+      { maxLength: 120 }
+    ),
+    lswdoPrintedName: sanitizeInlineText(record?.signOff?.lswdoPrintedName || '', {
+      maxLength: 120
+    })
+  },
+  remarks: sanitizeInlineText(record?.remarks || '', {
+    maxLength: 240,
+    multiline: true
+  }),
+  distributionStatus: record?.distributionStatus || 'completed'
+});
+
+const createDistributionEditorCard = (record = {}, mode = 'create') => ({
+  localId: `${mode}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  mode,
+  sourceRecordId: record?._id || '',
+  draft: createDistributionDraft(record)
+});
+
 const normalizeStage = (stage) => String(stage || '').toLowerCase();
+const getDeclaredSupportTypes = (request = {}) =>
+  normalizeSupportTypes(request?.supportTypes, request?.requestType);
 
 const normalizeValue = (value) =>
   String(value || '')
@@ -237,6 +349,7 @@ export default function ReliefRequestForm() {
   const navigate = useNavigate();
   const location = useLocation();
   const fileInputRef = useRef(null);
+  const distributionFileInputRef = useRef(null);
 
   const editMode = location.state?.mode === 'edit';
   const editingRequest = location.state?.request || null;
@@ -280,12 +393,14 @@ export default function ReliefRequestForm() {
     type: '',
     message: ''
   });
+  const [distributionImportIssues, setDistributionImportIssues] = useState([]);
 
   const [confirmState, setConfirmState] = useState({
     open: false,
     title: '',
     message: '',
-    action: ''
+    action: '',
+    payload: null
   });
 
   const [importingFile, setImportingFile] = useState(false);
@@ -296,6 +411,20 @@ export default function ReliefRequestForm() {
     issues: [],
     source: 'manual'
   });
+  const [distributionState, setDistributionState] = useState({
+    records: [],
+    caps: null,
+    summary: null,
+    request: null,
+    loading: false,
+    loaded: false
+  });
+  const [distributionEditorCards, setDistributionEditorCards] = useState([]);
+  const [distributionSubmitting, setDistributionSubmitting] = useState(false);
+  const [distributionImporting, setDistributionImporting] = useState(false);
+  const [distributionPage, setDistributionPage] = useState(1);
+  const [distributionConfirmed, setDistributionConfirmed] = useState(false);
+  const [receiptProofFiles, setReceiptProofFiles] = useState([]);
 
   const fetchLatestBootstrapRows = useCallback(async () => {
     const res = await fetch(`${BASE_URL}/api/relief-requests/bootstrap`, {
@@ -556,6 +685,60 @@ export default function ReliefRequestForm() {
     return journey.request;
   }, [journey.request]);
 
+  const loadDistributionData = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!latestRequest?._id) {
+        setDistributionState({
+          records: [],
+          caps: null,
+          summary: null,
+          request: null,
+          loading: false,
+          loaded: false
+        });
+        setDistributionPage(1);
+        return;
+      }
+
+      try {
+        if (!silent) {
+          setDistributionState((prev) => ({ ...prev, loading: true }));
+        }
+
+        const res = await fetch(`${BASE_URL}/api/relief-distributions/${latestRequest._id}`, {
+          credentials: 'include'
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data?.message || 'Failed to load distribution records.');
+        }
+
+        setDistributionState({
+          records: Array.isArray(data?.records) ? data.records : [],
+          caps: data?.caps || null,
+          summary: data?.summary || null,
+          request: data?.request || null,
+          loading: false,
+          loaded: true
+        });
+        setDistributionPage(1);
+      } catch (err) {
+        console.error(err);
+        setDistributionState((prev) => ({
+          ...prev,
+          loading: false,
+          loaded: true
+        }));
+      }
+    },
+    [latestRequest?._id]
+  );
+
+  useEffect(() => {
+    loadDistributionData({ silent: false });
+  }, [loadDistributionData]);
+
   const preparedRows = useMemo(() => rows.map((row) => createPreparedRow(row)), [rows]);
 
   const activeRows = useMemo(
@@ -636,7 +819,7 @@ export default function ReliefRequestForm() {
   const displaySupportTypes = useMemo(
     () =>
       latestRequest
-        ? getSupportTypesFromRequest(latestRequest)
+        ? getDeclaredSupportTypes(latestRequest)
         : supportTypes,
     [latestRequest, supportTypes]
   );
@@ -757,6 +940,40 @@ export default function ReliefRequestForm() {
   const includesFoodPacks = hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS);
   const includesMonetary = hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY);
   const includesAppliance = hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE);
+  const activeJourneySupportTypes = useMemo(
+    () =>
+      journey?.request
+        ? getDeclaredSupportTypes(journey.request)
+        : supportTypes,
+    [journey?.request, supportTypes]
+  );
+  const journeyUsesStandaloneMonetary = useMemo(
+    () =>
+      activeJourneySupportTypes.length === 1 &&
+      activeJourneySupportTypes.includes(SUPPORT_TYPE_MONETARY),
+    [activeJourneySupportTypes]
+  );
+  const journeySteps = useMemo(
+    () =>
+      STAGE_STEPS.map((step) => {
+        if (step.key === 'review') {
+          return {
+            ...step,
+            hint: journeyUsesStandaloneMonetary ? 'Waiting for Admin' : 'Waiting for DRRMO'
+          };
+        }
+
+        if (step.key === 'to_receive') {
+          return {
+            ...step,
+            label: journeyUsesStandaloneMonetary ? 'Receive Aid' : 'Receive Goods'
+          };
+        }
+
+        return step;
+      }),
+    [journeyUsesStandaloneMonetary]
+  );
 
   const totalIndividuals = useMemo(() => {
     return (
@@ -816,6 +1033,8 @@ export default function ReliefRequestForm() {
 
     if (!supportTypes.length) {
       errors.supportTypes = 'Select at least one support type.';
+    } else if (isMonetaryMixedWithOtherSupport(supportTypes)) {
+      errors.supportTypes = 'Monetary requests must be submitted separately from food packs or appliances.';
     }
 
     if (!sanitizeInlineText(disaster, { maxLength: 160 }).trim()) {
@@ -846,11 +1065,11 @@ export default function ReliefRequestForm() {
             item.remarks.trim()
         );
 
-        if (!hasAnyStartedRow) {
-          errors.requestedAppliances = 'Add at least one appliance request item.';
-        } else if (validRequestedAppliances.length !== normalizedRequestedAppliances.length) {
-          errors.requestedAppliances =
-            'Complete each appliance row with item name, category, and quantity.';
+      if (!hasAnyStartedRow) {
+        errors.requestedAppliances = 'Add at least one appliance request item.';
+      } else if (validRequestedAppliances.length !== normalizedRequestedAppliances.length) {
+        errors.requestedAppliances =
+          'Complete each appliance row with item name, category, and quantity.';
         }
       }
     }
@@ -1012,14 +1231,119 @@ export default function ReliefRequestForm() {
     latestRequest?.receivedAt
   ]);
 
+  const dafacAidVisibility = useMemo(
+    () =>
+      dafacDistributionUtils.getDafacAidVisibility({
+        supportTypes: distributionState.request
+          ? getDeclaredSupportTypes(distributionState.request)
+          : displaySupportTypes,
+        caps: distributionState.caps || {}
+      }),
+    [distributionState.request, distributionState.caps, displaySupportTypes]
+  );
+
+  const accomplishedDistributionSummary = useMemo(
+    () =>
+      dafacDistributionUtils.buildAccomplishedDistributionSummary({
+        supportTypes: distributionState.request
+          ? getDeclaredSupportTypes(distributionState.request)
+          : displaySupportTypes,
+        caps: distributionState.caps || {},
+        records: distributionState.records || []
+      }),
+    [distributionState.request, distributionState.caps, distributionState.records, displaySupportTypes]
+  );
+
+  const hasAnyDistributionRecords = useMemo(
+    () => Array.isArray(distributionState.records) && distributionState.records.length > 0,
+    [distributionState.records]
+  );
+
+  const distributionConfirmationStorageKey = useMemo(
+    () => (latestRequest?._id ? `rrf-dafac-confirmed:${latestRequest._id}` : ''),
+    [latestRequest?._id]
+  );
+
+  const isAccomplishedReady = useMemo(() => {
+    if (!latestRequest?._id || !hasCompletedReceiptState) return false;
+
+    const completedCount = Number(accomplishedDistributionSummary.completedCount || 0);
+    if (completedCount <= 0) return false;
+
+    const visibility = accomplishedDistributionSummary.visibility || {};
+    const totals = accomplishedDistributionSummary.totals || {};
+
+    const foodReady =
+      !visibility.showsFoodPacks || Number(totals.foodPacksRemaining || 0) <= 0;
+    const monetaryReady =
+      !visibility.showsMonetary || Number(totals.monetaryRemaining || 0) <= 0;
+    const applianceReady =
+      !visibility.showsAppliances ||
+      Number(totals.applianceUnitsRemaining || 0) <= 0;
+
+    return foodReady && monetaryReady && applianceReady;
+  }, [latestRequest?._id, hasCompletedReceiptState, accomplishedDistributionSummary]);
+
+  useEffect(() => {
+    if (!distributionConfirmationStorageKey) {
+      setDistributionConfirmed(false);
+      return;
+    }
+
+    try {
+      setDistributionConfirmed(window.sessionStorage.getItem(distributionConfirmationStorageKey) === '1');
+    } catch {
+      setDistributionConfirmed(false);
+    }
+  }, [distributionConfirmationStorageKey]);
+
+  useEffect(() => {
+    if (isAccomplishedReady) {
+      return;
+    }
+
+    if (distributionConfirmed) {
+      setDistributionConfirmed(false);
+    }
+
+    if (distributionConfirmationStorageKey) {
+      try {
+        window.sessionStorage.removeItem(distributionConfirmationStorageKey);
+      } catch {}
+    }
+  }, [distributionConfirmed, distributionConfirmationStorageKey, isAccomplishedReady]);
+
   const stageMeta = useMemo(() => {
     if (editMode || showEditor) return getStageMeta('preparation');
     if (!latestRequest) return getStageMeta('preparation');
     if (hasCompletedReceiptState) {
-      return getStageMeta('completed');
+      if (isAccomplishedReady && distributionConfirmed) {
+        return {
+          label: 'Accomplished Report',
+          tone: 'completed',
+          activeStep: 7,
+          completedSteps: 6
+        };
+      }
+
+      return {
+        label: 'DAFAC Distribution',
+        tone: hasAnyDistributionRecords ? 'approved' : 'released',
+        activeStep: 6,
+        completedSteps: 5
+      };
     }
     return getStageMeta(journey.stage);
-  }, [editMode, showEditor, latestRequest, hasCompletedReceiptState, journey.stage]);
+  }, [
+    editMode,
+    showEditor,
+    latestRequest,
+    hasCompletedReceiptState,
+    journey.stage,
+    hasAnyDistributionRecords,
+    isAccomplishedReady,
+    distributionConfirmed
+  ]);
 
   const requestStatusLabel = useMemo(() => {
     const normalizedStage = normalizeStatus(journey?.stage);
@@ -1074,7 +1398,7 @@ export default function ReliefRequestForm() {
   const canShowRequestAgainButton = useMemo(() => {
     if (journey.canRequestAgain) return true;
     if (!latestRequest) return true;
-    if (hasCompletedReceiptState) return true;
+    if (hasCompletedReceiptState) return false;
 
     const normalizedStatus = normalizeStatus(latestRequest?.status);
     const normalizedStage = normalizeStatus(journey?.stage);
@@ -1375,6 +1699,31 @@ export default function ReliefRequestForm() {
     );
   }, [journey.summary?.receivedFoodPacks, receivedSummary.totalFoodPacks]);
 
+  const receiptProofItems = useMemo(() => {
+    const proofSource =
+      receivedReleaseRecords.length > 0
+        ? receivedReleaseRecords
+        : normalizeStatus(journey?.stage) === 'completed'
+          ? releaseRecords
+          : [];
+
+    return proofSource.flatMap((release, releaseIndex) =>
+      (Array.isArray(release?.receiptProofFiles) ? release.receiptProofFiles : [])
+        .filter(Boolean)
+        .map((proofPath, proofIndex) => ({
+          key: `${release?._id || releaseIndex}-${proofIndex}`,
+          url: `${BASE_URL}/${String(proofPath).replace(/^\/+/, '')}`,
+          label: `Receipt Proof ${proofIndex + 1}`
+        }))
+    );
+  }, [receivedReleaseRecords, releaseRecords, journey?.stage]);
+
+  useEffect(() => {
+    if (hasReceiptCompletionSignal || !latestRequest?._id) {
+      setReceiptProofFiles([]);
+    }
+  }, [hasReceiptCompletionSignal, latestRequest?._id]);
+
   const shouldShowReceivedSection = useMemo(() => {
     const normalizedStage = normalizeStatus(journey?.stage);
     const normalizedStatus = normalizeStatus(latestRequest?.status);
@@ -1387,6 +1736,16 @@ export default function ReliefRequestForm() {
       normalizedStatus === 'completed'
     );
   }, [journey?.stage, latestRequest?.status]);
+
+  const shouldShowDistributionSection = useMemo(
+    () => Boolean(latestRequest?._id && hasCompletedReceiptState),
+    [latestRequest?._id, hasCompletedReceiptState]
+  );
+
+  const shouldShowAccomplishedSection = useMemo(
+    () => Boolean(shouldShowDistributionSection && isAccomplishedReady && distributionConfirmed),
+    [shouldShowDistributionSection, isAccomplishedReady, distributionConfirmed]
+  );
 
   const displayDeliveryItems = useMemo(() => {
     const hasConfirmedReceipt =
@@ -1430,12 +1789,6 @@ export default function ReliefRequestForm() {
       hasReceiptEvidence: isReceiptConfirmed
     });
   }, [journey.canReceiveAnyRelease, journey.stage, latestRequest?.status, releaseRecords, isReceiptConfirmed]);
-
-  useEffect(() => {
-    if (isReceiptConfirmed && formFeedback.type === 'error') {
-      clearFeedback();
-    }
-  }, [isReceiptConfirmed, formFeedback.type]);
 
   const receiptPanelSummary = useMemo(() => {
     const showingReleasedForConfirmation =
@@ -1524,7 +1877,25 @@ export default function ReliefRequestForm() {
 
   const clearFeedback = () => {
     setFormFeedback({ type: '', message: '' });
+    setDistributionImportIssues([]);
   };
+
+  const receiptProofPreviews = useMemo(
+    () =>
+      receiptProofFiles.map((file) => ({
+        key: `${file.name}-${file.size}-${file.lastModified}`,
+        file,
+        url: URL.createObjectURL(file)
+      })),
+    [receiptProofFiles]
+  );
+
+  useEffect(
+    () => () => {
+      receiptProofPreviews.forEach((preview) => URL.revokeObjectURL(preview.url));
+    },
+    [receiptProofPreviews]
+  );
 
   const setSuccessFeedback = (message) => {
     setFormFeedback({ type: 'success', message });
@@ -1534,12 +1905,151 @@ export default function ReliefRequestForm() {
     setFormFeedback({ type: 'error', message });
   };
 
-  const openConfirmation = ({ title, message, action }) => {
+  const handleReceiptProofSelection = (event) => {
+    const selectedFiles = Array.from(event.target.files || []).filter((file) =>
+      String(file?.type || '').startsWith('image/')
+    );
+
+    if (!selectedFiles.length) {
+      setErrorFeedback('Select at least one image file for receipt proof.');
+      return;
+    }
+
+    setReceiptProofFiles(selectedFiles.slice(0, 5));
+  };
+
+  const removeReceiptProofFile = (indexToRemove) => {
+    setReceiptProofFiles((prev) => prev.filter((_, index) => index !== indexToRemove));
+  };
+
+  const resetDistributionConfirmation = useCallback(() => {
+    setDistributionConfirmed(false);
+    if (!distributionConfirmationStorageKey) return;
+    try {
+      window.sessionStorage.removeItem(distributionConfirmationStorageKey);
+    } catch {}
+  }, [distributionConfirmationStorageKey]);
+
+  const handleConfirmDistributionStep = useCallback(() => {
+    if (!isAccomplishedReady) {
+      setErrorFeedback('Complete the DAFAC distribution totals first before confirming.');
+      return;
+    }
+
+    setDistributionConfirmed(true);
+    if (distributionConfirmationStorageKey) {
+      try {
+        window.sessionStorage.setItem(distributionConfirmationStorageKey, '1');
+      } catch {}
+    }
+    setSuccessFeedback('DAFAC distribution confirmed. You can now review the accomplished report.');
+  }, [distributionConfirmationStorageKey, isAccomplishedReady]);
+
+  const updateDistributionEditorCard = (localId, updater) => {
+    setDistributionEditorCards((prev) =>
+      prev.map((card) => {
+        if (card.localId !== localId) return card;
+        return {
+          ...card,
+          draft: updater(card.draft)
+        };
+      })
+    );
+  };
+
+  const openCreateDistributionEditor = () => {
+    setDistributionEditorCards((prev) => [...prev, createDistributionEditorCard({}, 'create')]);
+  };
+
+  const openEditDistributionEditor = (record) => {
+    setDistributionEditorCards((prev) => {
+      const existingIndex = prev.findIndex(
+        (card) => card.mode === 'edit' && card.sourceRecordId === record?._id
+      );
+
+      if (existingIndex >= 0) {
+        return prev;
+      }
+
+      return [createDistributionEditorCard(record, 'edit'), ...prev];
+    });
+  };
+
+  const closeDistributionEditor = (localId) => {
+    if (!localId) {
+      setDistributionEditorCards([]);
+      return;
+    }
+
+    setDistributionEditorCards((prev) => prev.filter((card) => card.localId !== localId));
+  };
+
+  const handleDistributionDraftField = (localId, path, value) => {
+    updateDistributionEditorCard(localId, (prev) => {
+      const next = structuredClone(prev);
+      const keys = path.split('.');
+      let cursor = next;
+
+      for (let index = 0; index < keys.length - 1; index += 1) {
+        cursor = cursor[keys[index]];
+      }
+
+      cursor[keys[keys.length - 1]] = value;
+      return next;
+    });
+  };
+
+  const handleDistributionMemberChange = (localId, index, field, value) => {
+    updateDistributionEditorCard(localId, (prev) => ({
+      ...prev,
+      familyMembers: prev.familyMembers.map((member, memberIndex) =>
+        memberIndex === index
+          ? {
+              ...member,
+              [field]:
+                field === 'age'
+                  ? sanitizeWholeNumberInput(value)
+                  : sanitizeInlineText(value, {
+                      maxLength:
+                        field === 'remarks'
+                          ? 120
+                          : field === 'fullName'
+                            ? 120
+                            : field === 'relationshipToHead'
+                              ? 80
+                              : 60,
+                      multiline: field === 'remarks'
+                    })
+            }
+          : member
+      )
+    }));
+  };
+
+  const addDistributionMember = (localId) => {
+    updateDistributionEditorCard(localId, (prev) => ({
+      ...prev,
+      familyMembers: [...prev.familyMembers, createDistributionFamilyMember()]
+    }));
+  };
+
+  const removeDistributionMember = (localId, index) => {
+    updateDistributionEditorCard(localId, (prev) => ({
+      ...prev,
+      familyMembers:
+        prev.familyMembers.length > 1
+          ? prev.familyMembers.filter((_, memberIndex) => memberIndex !== index)
+          : [createDistributionFamilyMember()]
+    }));
+  };
+
+  const openConfirmation = ({ title, message, action, payload = null }) => {
     setConfirmState({
       open: true,
       title,
       message,
-      action
+      action,
+      payload
     });
   };
 
@@ -1548,8 +2058,216 @@ export default function ReliefRequestForm() {
       open: false,
       title: '',
       message: '',
-      action: ''
+      action: '',
+      payload: null
     });
+  };
+
+  const distributionGridState = useMemo(() => {
+    const editEditorByRecordId = new Map();
+    const createEditorEntries = [];
+
+    (distributionEditorCards || []).forEach((editorCard) => {
+      const entry = {
+        type: 'editor',
+        key: `editor-${editorCard.localId}`,
+        editorCard
+      };
+
+      if (editorCard.mode === 'edit' && editorCard.sourceRecordId) {
+        editEditorByRecordId.set(editorCard.sourceRecordId, entry);
+        return;
+      }
+
+      createEditorEntries.push(entry);
+    });
+
+    const savedEntries = (distributionState.records || []).map((record) => {
+      const recordId = record?._id || '';
+      if (recordId && editEditorByRecordId.has(recordId)) {
+        return editEditorByRecordId.get(recordId);
+      }
+
+      return {
+        type: 'saved',
+        key: `saved-${recordId || record.serialNo}`,
+        record
+      };
+    });
+
+    const entries = [...savedEntries, ...createEditorEntries];
+    const pageSize = 3;
+    const totalPages = Math.max(1, Math.floor(entries.length / pageSize) + 1);
+    const page = Math.min(Math.max(1, distributionPage), totalPages);
+    const startIndex = (page - 1) * pageSize;
+    const visibleEntries = entries.slice(startIndex, startIndex + pageSize);
+    const addCardCount =
+      page === totalPages ? Math.max(1, pageSize - visibleEntries.length) : 0;
+
+    return {
+      page,
+      totalPages,
+      entries: visibleEntries,
+      addCardCount
+    };
+  }, [distributionState.records, distributionEditorCards, distributionPage]);
+
+  useEffect(() => {
+    if (distributionPage !== distributionGridState.page) {
+      setDistributionPage(distributionGridState.page);
+    }
+  }, [distributionPage, distributionGridState.page]);
+
+  const buildDistributionPayload = (draft) => {
+    const sourceDraft = draft || createDistributionDraft();
+    const familyMembers = (sourceDraft.familyMembers || [])
+      .map((member) => ({
+        fullName: sanitizeInlineText(member.fullName, { maxLength: 120 }).trim(),
+        relationshipToHead: sanitizeInlineText(member.relationshipToHead, {
+          maxLength: 80
+        }).trim(),
+        age: parseSafeNumber(member.age),
+        sex: sanitizeInlineText(member.sex, { maxLength: 24 }).trim(),
+        education: sanitizeInlineText(member.education, { maxLength: 60 }).trim(),
+        occupationalSkills: sanitizeInlineText(member.occupationalSkills, {
+          maxLength: 80
+        }).trim(),
+        remarks: sanitizeInlineText(member.remarks, {
+          maxLength: 120,
+          multiline: true
+        }).trim()
+      }))
+      .filter(
+        (member) =>
+          member.fullName ||
+          member.relationshipToHead ||
+          member.age > 0 ||
+          member.sex ||
+          member.education ||
+          member.occupationalSkills ||
+          member.remarks
+      );
+
+    return {
+      serialNo: sanitizeInlineText(sourceDraft.serialNo, { maxLength: 40 }).trim(),
+      evacuationCenterName: sanitizeInlineText(sourceDraft.evacuationCenterName, {
+        maxLength: 120
+      }).trim(),
+      siteLabel: sanitizeInlineText(sourceDraft.siteLabel, { maxLength: 120 }).trim(),
+      distributionDate: sourceDraft.distributionDate,
+      headOfFamily: {
+        surname: sanitizeInlineText(sourceDraft.headOfFamily.surname, {
+          maxLength: 80
+        }).trim(),
+        firstName: sanitizeInlineText(sourceDraft.headOfFamily.firstName, {
+          maxLength: 80
+        }).trim(),
+        middleName: sanitizeInlineText(sourceDraft.headOfFamily.middleName, {
+          maxLength: 80
+        }).trim(),
+        sex: sanitizeInlineText(sourceDraft.headOfFamily.sex, {
+          maxLength: 24
+        }).trim(),
+        age: parseSafeNumber(sourceDraft.headOfFamily.age),
+        birthDate: sourceDraft.headOfFamily.birthDate || null,
+        occupation: sanitizeInlineText(sourceDraft.headOfFamily.occupation, {
+          maxLength: 80
+        }).trim(),
+        monthlyIncome: parseSafeNumber(sourceDraft.headOfFamily.monthlyIncome)
+      },
+      familyProfile: {
+        is4PsBeneficiary: Boolean(sourceDraft.familyProfile.is4PsBeneficiary),
+        isIpBeneficiary: Boolean(sourceDraft.familyProfile.isIpBeneficiary),
+        ipEthnicity: sanitizeInlineText(sourceDraft.familyProfile.ipEthnicity, {
+          maxLength: 80
+        }).trim()
+      },
+      housingProfile: {
+        tenureStatus: sanitizeInlineText(sourceDraft.housingProfile.tenureStatus, {
+          maxLength: 120
+        }).trim(),
+        housingCondition: sanitizeInlineText(
+          sourceDraft.housingProfile.housingCondition,
+          { maxLength: 120 }
+        ).trim()
+      },
+      healthProfile: {
+        healthCondition: sanitizeInlineText(
+          sourceDraft.healthProfile.healthCondition,
+          { maxLength: 120 }
+        ).trim()
+      },
+      familyMembers,
+      distribution: {
+        foodPacksReceived: dafacAidVisibility.showsFoodPacks
+          ? parseSafeNumber(sourceDraft.distribution.foodPacksReceived)
+          : 0,
+        monetaryAmountReceived: dafacAidVisibility.showsMonetary
+          ? parseSafeNumber(sourceDraft.distribution.monetaryAmountReceived)
+          : 0,
+        applianceUnitsReceived: dafacAidVisibility.showsAppliances
+          ? parseSafeNumber(sourceDraft.distribution.applianceUnitsReceived)
+          : 0
+      },
+      signOff: {
+        familyHeadPrintedName: sanitizeInlineText(
+          sourceDraft.signOff.familyHeadPrintedName,
+          { maxLength: 120 }
+        ).trim(),
+        barangayOfficerPrintedName: sanitizeInlineText(
+          sourceDraft.signOff.barangayOfficerPrintedName,
+          { maxLength: 120 }
+        ).trim(),
+        lswdoPrintedName: sanitizeInlineText(sourceDraft.signOff.lswdoPrintedName, {
+          maxLength: 120
+        }).trim()
+      },
+      remarks: sanitizeInlineText(sourceDraft.remarks, {
+        maxLength: 240,
+        multiline: true
+      }).trim(),
+      distributionStatus: 'completed'
+    };
+  };
+
+  const validateDistributionDraft = (draft) => {
+    const payload = buildDistributionPayload(draft);
+
+    if (!payload.serialNo) {
+      throw new Error('Serial number is required for the DAFAC record.');
+    }
+
+    if (!payload.evacuationCenterName) {
+      throw new Error('Evacuation center is required.');
+    }
+
+    if (!payload.headOfFamily.surname && !payload.headOfFamily.firstName) {
+      throw new Error('Head of family name is required.');
+    }
+
+    if (!payload.distributionDate) {
+      throw new Error('Distribution date is required.');
+    }
+
+    if (dafacAidVisibility.showsFoodPacks && payload.distribution.foodPacksReceived <= 0) {
+      throw new Error('Enter how many food packs this family received.');
+    }
+
+    if (
+      dafacAidVisibility.showsMonetary &&
+      payload.distribution.monetaryAmountReceived <= 0
+    ) {
+      throw new Error('Enter how much monetary assistance this family received.');
+    }
+
+    if (
+      dafacAidVisibility.showsAppliances &&
+      payload.distribution.applianceUnitsReceived <= 0
+    ) {
+      throw new Error('Enter how many appliance units this family received.');
+    }
+
+    return payload;
   };
 
   const handleRowNumberChange = (index, field, value) => {
@@ -1581,12 +2299,41 @@ export default function ReliefRequestForm() {
     setSupportTypes((prev) => {
       const normalized = normalizeSupportTypes(prev);
       const hasType = normalized.includes(type);
-      const nextTypes = hasType
-        ? normalized.filter((entry) => entry !== type)
-        : [...normalized, type];
 
-      return nextTypes.length ? normalizeSupportTypes(nextTypes) : normalized;
+      if (type === SUPPORT_TYPE_MONETARY) {
+        return hasType ? normalized : [SUPPORT_TYPE_MONETARY];
+      }
+
+      const withoutMonetary = normalized.filter(
+        (entry) => entry !== SUPPORT_TYPE_MONETARY
+      );
+      const nextTypes = hasType
+        ? withoutMonetary.filter((entry) => entry !== type)
+        : [...withoutMonetary, type];
+
+      return nextTypes.length
+        ? normalizeSupportTypes(nextTypes)
+        : [SUPPORT_TYPE_FOODPACKS];
     });
+
+    if (
+      type === SUPPORT_TYPE_MONETARY &&
+      !includesMonetary
+    ) {
+      setRows((prev) =>
+        prev.map((row) => ({
+          ...row,
+          requestedFoodPacks: 0
+        }))
+      );
+      setRequestedAppliances([createRequestedAppliance()]);
+      setFormFeedback({
+        type: 'info',
+        message:
+          'Monetary assistance must be requested separately. Food packs and appliance requests were cleared.'
+      });
+      return;
+    }
 
     if (type === SUPPORT_TYPE_FOODPACKS && includesFoodPacks) {
       setRows((prev) =>
@@ -1732,7 +2479,7 @@ export default function ReliefRequestForm() {
       pwd: Number(row.pwd || 0),
       pregnant: Number(row.pregnant || 0),
       senior: Number(row.senior || 0),
-      requestedFoodPacks: Number(row.requestedFoodPacks || 0),
+      requestedFoodPacks: includesFoodPacks ? Number(row.requestedFoodPacks || 0) : 0,
       isActiveRow: Boolean(row.isActiveRow),
       rowRemarks: String(row.rowRemarks || '').trim()
         ? sanitizeInlineText(row.rowRemarks, { maxLength: 180, multiline: true }).trim()
@@ -1751,6 +2498,10 @@ export default function ReliefRequestForm() {
     if (isSubmitDisabled) {
       if (isEditingExisting && !isDirty) {
         setErrorFeedback('No changes to save.');
+        return;
+      }
+      if (inlineErrors.supportTypes) {
+        setErrorFeedback(inlineErrors.supportTypes);
         return;
       }
       if (includesMonetary && requestedMonetaryValue <= 0) {
@@ -1884,9 +2635,19 @@ export default function ReliefRequestForm() {
       }
 
       if (confirmState.action === 'receive') {
+        if (!receiptProofFiles.length) {
+          throw new Error('Attach at least one receipt proof image before confirming receipt.');
+        }
+
+        const formData = new FormData();
+        receiptProofFiles.forEach((file) => {
+          formData.append('receiptProofFiles', file);
+        });
+
         const res = await fetch(`${BASE_URL}/api/relief-requests/${latestRequest?._id}/received`, {
           method: 'PUT',
-          credentials: 'include'
+          credentials: 'include',
+          body: formData
         });
 
         const contentType = res.headers.get('content-type') || '';
@@ -1913,6 +2674,7 @@ export default function ReliefRequestForm() {
         setSuccessFeedback(
           data?.message || 'Received deliveries updated successfully.'
         );
+        setReceiptProofFiles([]);
         await loadJourneyData({ silent: true });
       }
 
@@ -1947,6 +2709,10 @@ export default function ReliefRequestForm() {
           data?.message || 'DRRMO has been notified that the delivery was not received.'
         );
         await loadJourneyData({ silent: true });
+      }
+
+      if (confirmState.action === 'delete_distribution') {
+        await handleDeleteDistributionRecord(confirmState.payload?.recordId);
       }
     } catch (err) {
       console.error(err);
@@ -1987,6 +2753,172 @@ export default function ReliefRequestForm() {
       `${BASE_URL}/api/relief-requests/mine/${latestRequest._id}/export-pdf`,
       '_blank'
     );
+  };
+
+  const handleExportAccomplishedPdf = () => {
+    if (!latestRequest?._id) return;
+
+    window.open(
+      `${BASE_URL}/api/relief-distributions/${latestRequest._id}/export-accomplished-report-pdf`,
+      '_blank'
+    );
+  };
+
+  const handleDownloadDistributionTemplate = () => {
+    window.open(`${BASE_URL}/api/relief-distributions/template/download`, '_blank');
+  };
+
+  const handleSaveDistributionRecord = async (editorCard) => {
+    if (!latestRequest?._id) return;
+
+    try {
+      setDistributionSubmitting(true);
+      clearFeedback();
+      resetDistributionConfirmation();
+
+      const payload = validateDistributionDraft(editorCard?.draft);
+      const isEditing = editorCard?.mode === 'edit' && editorCard?.draft?._id;
+      const endpoint = isEditing
+        ? `${BASE_URL}/api/relief-distributions/${latestRequest._id}/records/${editorCard.draft._id}`
+        : `${BASE_URL}/api/relief-distributions/${latestRequest._id}/records`;
+
+      const res = await fetch(endpoint, {
+        method: isEditing ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.message || 'Failed to save the DAFAC record.');
+      }
+
+      setSuccessFeedback(
+        data?.message ||
+          (isEditing
+            ? 'DAFAC family distribution updated successfully.'
+            : 'DAFAC family distribution created successfully.')
+      );
+      closeDistributionEditor(editorCard?.localId);
+      await loadDistributionData({ silent: true });
+    } catch (err) {
+      console.error(err);
+      setErrorFeedback(err.message || 'Failed to save the DAFAC record.');
+    } finally {
+      setDistributionSubmitting(false);
+    }
+  };
+
+  const handleDeleteDistributionRecord = async (recordId) => {
+    if (!latestRequest?._id || !recordId) return;
+
+    try {
+      setDistributionSubmitting(true);
+      clearFeedback();
+      resetDistributionConfirmation();
+
+      const res = await fetch(
+        `${BASE_URL}/api/relief-distributions/${latestRequest._id}/records/${recordId}`,
+        {
+          method: 'DELETE',
+          credentials: 'include'
+        }
+      );
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.message || 'Failed to remove the DAFAC record.');
+      }
+
+      setSuccessFeedback(data?.message || 'DAFAC record removed successfully.');
+      setDistributionEditorCards((prev) =>
+        prev.filter((card) => card?.draft?._id !== recordId && card?.sourceRecordId !== recordId)
+      );
+      await loadDistributionData({ silent: true });
+    } catch (err) {
+      console.error(err);
+      setErrorFeedback(err.message || 'Failed to remove the DAFAC record.');
+    } finally {
+      setDistributionSubmitting(false);
+    }
+  };
+
+  const handleChooseDistributionFile = () => {
+    if (!distributionFileInputRef.current) {
+      setErrorFeedback('The DAFAC import picker is unavailable. Refresh the page and try again.');
+      return;
+    }
+
+    distributionFileInputRef.current.click();
+  };
+
+  const handleDistributionWorkbookImport = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file || !latestRequest?._id) return;
+
+    try {
+      setDistributionImporting(true);
+      clearFeedback();
+      resetDistributionConfirmation();
+
+      const fileName = String(file.name || '').trim();
+      if (!fileName) {
+        throw new Error('Please choose a DAFAC workbook file before importing.');
+      }
+
+      const loweredName = fileName.toLowerCase();
+      if (!loweredName.endsWith('.xlsx') && !loweredName.endsWith('.xls')) {
+        throw new Error('Only Excel workbook files (.xlsx or .xls) can be imported.');
+      }
+
+      const workbookBase64 = await dafacWorkbookUtils.readFileAsDataUrl(file);
+      const res = await fetch(
+        `${BASE_URL}/api/relief-distributions/${latestRequest._id}/import-workbook`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            workbookBase64
+          })
+        }
+      );
+      const data = await res.json();
+
+      if (!res.ok) {
+        const issues = Array.isArray(data?.issues) ? data.issues : [];
+        const error = new Error(
+          data?.message ||
+            (issues.length ? issues.join(' ') : 'Failed to import the DAFAC workbook.')
+        );
+        error.issues = issues;
+        error.serialNos = Array.isArray(data?.serialNos) ? data.serialNos : [];
+        throw error;
+      }
+
+      setSuccessFeedback(data?.message || 'DAFAC workbook imported successfully.');
+      await loadDistributionData({ silent: true });
+      setDistributionEditorCards(
+        (Array.isArray(data?.records) ? data.records : []).map((record) =>
+          createDistributionEditorCard(record, 'edit')
+        )
+      );
+    } catch (err) {
+      console.error(err);
+      const issues = Array.isArray(err?.issues) ? err.issues : [];
+      const serialNos = Array.isArray(err?.serialNos) ? err.serialNos : [];
+      setDistributionImportIssues([
+        ...issues,
+        ...(serialNos.length
+          ? [`Serial numbers involved: ${serialNos.join(', ')}`]
+          : []),
+      ]);
+      setErrorFeedback(err.message || 'Failed to import the DAFAC workbook.');
+    } finally {
+      setDistributionImporting(false);
+      if (event.target) event.target.value = '';
+    }
   };
 
   const handleEditCurrentRequest = () => {
@@ -2161,6 +3093,15 @@ export default function ReliefRequestForm() {
         (sum, row) => sum + Number(row.requestedFoodPacks || 0),
         0
       );
+      if (
+        importedMonetaryAmount > 0 &&
+        (derivedFoodPackTotal > 0 || importedAppliances.length > 0)
+      ) {
+        throw new Error(
+          'Monetary assistance must be imported as a standalone request. Remove food pack and appliance values from this workbook.'
+        );
+      }
+
       const finalImportedSupportTypes = deriveImportedSupportTypes({
         importedRequestType,
         derivedFoodPackTotal,
@@ -2168,6 +3109,12 @@ export default function ReliefRequestForm() {
         importedAppliances,
         previousSupportTypes: supportTypes
       });
+
+      if (isMonetaryMixedWithOtherSupport(finalImportedSupportTypes)) {
+        throw new Error(
+          'Monetary assistance must be imported as a standalone request. Remove food pack and appliance values from this workbook.'
+        );
+      }
 
       const existingAppliances = requestedAppliances
         .map((item) => createRequestedAppliance(item))
@@ -2233,12 +3180,12 @@ export default function ReliefRequestForm() {
   const isJourneyInMotion =
     !showEditorSection &&
     stageMeta.activeStep >= 2 &&
-    stageMeta.activeStep <= 4;
+    stageMeta.activeStep <= 6;
   const requestLayoutClass =
     stageMeta.activeStep >= 4 ? 'rrf-phase-fulfillment' : 'rrf-phase-early';
   const journeyProgressWidth = `${Math.min(
     100,
-    Math.max(0, ((stageMeta.activeStep - 1) / (STAGE_STEPS.length - 1)) * 100)
+    Math.max(0, ((stageMeta.activeStep - 1) / (journeySteps.length - 1)) * 100)
   )}%`;
 
   return (
@@ -2290,8 +3237,8 @@ export default function ReliefRequestForm() {
                   <span />
                 </div>
 
-                <div className="rrf-progress-steps five-step">
-                  {STAGE_STEPS.map((step, index) => {
+                <div className="rrf-progress-steps seven-step">
+                  {journeySteps.map((step, index) => {
                     const stepNumber = index + 1;
                     const isDone = stageMeta.completedSteps >= stepNumber;
                     const isActive = stageMeta.activeStep === stepNumber;
@@ -2327,8 +3274,23 @@ export default function ReliefRequestForm() {
               {formFeedback.message ? (
                 <section className={`rrf-feedback-card ${formFeedback.type}`}>
                   <p>{formFeedback.message}</p>
+                  {distributionImportIssues.length > 0 ? (
+                    <ul className="rrf-feedback-list">
+                      {distributionImportIssues.map((issue, index) => (
+                        <li key={`distribution-issue-${index}`}>{issue}</li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </section>
               ) : null}
+
+              <input
+                ref={distributionFileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleDistributionWorkbookImport}
+                className="rrf-hidden-input"
+              />
 
               <div className="rrf-layout-single">
                 {showEditorSection ? (
@@ -2879,7 +3841,10 @@ export default function ReliefRequestForm() {
                                 action: 'receive'
                               })
                             }
-                            disabled={submittingAction}
+                            disabled={
+                              submittingAction ||
+                              (!isReceiptConfirmed && receiptProofFiles.length === 0)
+                            }
                           >
                             Confirm Received
                             <FaCheck />
@@ -3095,6 +4060,72 @@ export default function ReliefRequestForm() {
                         </div>
 
                         <div className="rrf-unified-items-panel">
+                          <div className="rrf-receipt-proof-panel">
+                            <div className="rrf-subsection-head">
+                              <div>
+                                <span className="rrf-subsection-kicker">Receipt Proof</span>
+                                <h3>{isReceiptConfirmed ? 'Uploaded Receipt Proof' : 'Upload Receipt Proof'}</h3>
+                              </div>
+                              {!isReceiptConfirmed ? (
+                                <button
+                                  type="button"
+                                  className="rrf-btn rrf-btn-secondary rrf-btn-small"
+                                  onClick={() => distributionFileInputRef.current?.click()}
+                                >
+                                  <FaPlus />
+                                  Add Proof
+                                </button>
+                              ) : null}
+                            </div>
+
+                            {!isReceiptConfirmed ? (
+                              <>
+                                <input
+                                  ref={distributionFileInputRef}
+                                  type="file"
+                                  accept="image/*"
+                                  multiple
+                                  hidden
+                                  onChange={handleReceiptProofSelection}
+                                />
+                                <p className="rrf-receipt-proof-note">
+                                  Upload at least one image before confirming receipt in Step 5.
+                                </p>
+                              </>
+                            ) : null}
+
+                            <div className="rrf-proof-grid">
+                              {(isReceiptConfirmed ? receiptProofItems : receiptProofPreviews).map(
+                                (proof, index) => (
+                                  <div key={proof.key} className="rrf-proof-card">
+                                    <img
+                                      src={isReceiptConfirmed ? proof.url : proof.url}
+                                      alt={proof.label || `Receipt proof ${index + 1}`}
+                                    />
+                                    {!isReceiptConfirmed ? (
+                                      <button
+                                        type="button"
+                                        className="rrf-btn rrf-btn-danger rrf-btn-small"
+                                        onClick={() => removeReceiptProofFile(index)}
+                                      >
+                                        <FaMinus />
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                )
+                              )}
+                            </div>
+
+                            {!isReceiptConfirmed && !receiptProofPreviews.length ? (
+                              <div className="rrf-received-empty compact">
+                                <div>
+                                  <h4>No receipt proof uploaded yet</h4>
+                                  <p>Barangay must attach receipt proof before continuing to Step 6.</p>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+
                           <div className="rrf-unified-items-head">
                             <div>
                               <span className="rrf-subsection-kicker">
@@ -3164,6 +4195,462 @@ export default function ReliefRequestForm() {
                             </div>
                           )}
                         </div>
+                      </div>
+                    ) : null}
+
+                    {shouldShowDistributionSection ? (
+                      <div className="rrf-distribution-stage">
+                        {stageMeta.activeStep === 6 ? (
+                        <section className="rrf-card rrf-dafac-stage-card">
+                          <div className="rrf-panel-head">
+                            <div>
+                              <h2>DAFAC Distribution</h2>
+                            </div>
+
+                            <div className="rrf-inline-actions">
+                              <button
+                                type="button"
+                                className="rrf-btn rrf-btn-secondary rrf-btn-small"
+                                onClick={handleDownloadDistributionTemplate}
+                              >
+                                Download Template
+                              </button>
+                              <button
+                                type="button"
+                                className="rrf-btn rrf-btn-secondary rrf-btn-small"
+                                onClick={handleChooseDistributionFile}
+                                disabled={distributionImporting || distributionSubmitting}
+                              >
+                                {distributionImporting ? 'Importing…' : 'Import Excel'}
+                                <FaFileImport />
+                              </button>
+                            </div>
+                          </div>
+
+                          {distributionState.loading ? (
+                            <div className="rrf-received-empty">
+                              <div>
+                                <h4>Loading DAFAC records</h4>
+                                <p>Fetching completed family distributions.</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="rrf-dafac-card-grid">
+                                {distributionGridState.entries.map((entry) => {
+                                  if (entry.type === 'saved') {
+                                    const record = entry.record;
+                                    return (
+                                      <DafacDistributionCard
+                                        key={entry.key}
+                                        record={record}
+                                        visibility={dafacAidVisibility}
+                                        onEdit={openEditDistributionEditor}
+                                        onDelete={(item) =>
+                                          openConfirmation({
+                                            title: 'Remove this DAFAC record?',
+                                            message:
+                                              'This family distribution record will be archived from the request.',
+                                            action: 'delete_distribution',
+                                            payload: { recordId: item?._id }
+                                          })
+                                        }
+                                      />
+                                    );
+                                  }
+
+                                  const editorCard = entry.editorCard;
+                                  return (
+                                  <div key={entry.key} className="rrf-dafac-editor-card">
+                                    <div className="rrf-dafac-editor-head">
+                                      <p className="rrf-dafac-editor-note">
+                                        {editorCard.mode === 'edit'
+                                          ? 'Update this family card, then save.'
+                                          : 'Fill this family card, then save it into the grid.'}
+                                      </p>
+                                      <button
+                                        type="button"
+                                        className="rrf-btn rrf-btn-secondary rrf-btn-small"
+                                        onClick={() => closeDistributionEditor(editorCard.localId)}
+                                      >
+                                        Close
+                                        <FaTimes />
+                                      </button>
+                                    </div>
+
+                                    <div className="rrf-dafac-editor-grid compact">
+                                      <div className="rrf-field">
+                                        <label>Serial No.</label>
+                                        <input
+                                          type="text"
+                                          value={editorCard.draft.serialNo}
+                                          onChange={(e) =>
+                                            handleDistributionDraftField(
+                                              editorCard.localId,
+                                              'serialNo',
+                                              sanitizeInlineText(e.target.value, { maxLength: 40 })
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                      <div className="rrf-field">
+                                        <label>Evacuation Center</label>
+                                        <input
+                                          type="text"
+                                          value={editorCard.draft.evacuationCenterName}
+                                          onChange={(e) =>
+                                            handleDistributionDraftField(
+                                              editorCard.localId,
+                                              'evacuationCenterName',
+                                              sanitizeInlineText(e.target.value, { maxLength: 120 })
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                      <div className="rrf-field">
+                                        <label>Site Label</label>
+                                        <input
+                                          type="text"
+                                          value={editorCard.draft.siteLabel}
+                                          onChange={(e) =>
+                                            handleDistributionDraftField(
+                                              editorCard.localId,
+                                              'siteLabel',
+                                              sanitizeInlineText(e.target.value, { maxLength: 120 })
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                      <div className="rrf-field">
+                                        <label>Date</label>
+                                        <input
+                                          type="date"
+                                          value={editorCard.draft.distributionDate}
+                                          onChange={(e) =>
+                                            handleDistributionDraftField(
+                                              editorCard.localId,
+                                              'distributionDate',
+                                              e.target.value
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                      <div className="rrf-field">
+                                        <label>Surname</label>
+                                        <input
+                                          type="text"
+                                          value={editorCard.draft.headOfFamily.surname}
+                                          onChange={(e) =>
+                                            handleDistributionDraftField(
+                                              editorCard.localId,
+                                              'headOfFamily.surname',
+                                              sanitizeInlineText(e.target.value, { maxLength: 80 })
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                      <div className="rrf-field">
+                                        <label>First Name</label>
+                                        <input
+                                          type="text"
+                                          value={editorCard.draft.headOfFamily.firstName}
+                                          onChange={(e) =>
+                                            handleDistributionDraftField(
+                                              editorCard.localId,
+                                              'headOfFamily.firstName',
+                                              sanitizeInlineText(e.target.value, { maxLength: 80 })
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                      {dafacAidVisibility.showsFoodPacks ? (
+                                        <div className="rrf-field">
+                                          <label>Food Packs</label>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            value={editorCard.draft.distribution.foodPacksReceived}
+                                            onChange={(e) =>
+                                              handleDistributionDraftField(
+                                                editorCard.localId,
+                                                'distribution.foodPacksReceived',
+                                                sanitizeWholeNumberInput(e.target.value)
+                                              )
+                                            }
+                                          />
+                                        </div>
+                                      ) : null}
+                                      {dafacAidVisibility.showsMonetary ? (
+                                        <div className="rrf-field">
+                                          <label>Monetary</label>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={editorCard.draft.distribution.monetaryAmountReceived}
+                                            onChange={(e) =>
+                                              handleDistributionDraftField(
+                                                editorCard.localId,
+                                                'distribution.monetaryAmountReceived',
+                                                sanitizeCurrencyInput(e.target.value)
+                                              )
+                                            }
+                                          />
+                                        </div>
+                                      ) : null}
+                                      {dafacAidVisibility.showsAppliances ? (
+                                        <div className="rrf-field">
+                                          <label>Appliance</label>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            value={editorCard.draft.distribution.applianceUnitsReceived}
+                                            onChange={(e) =>
+                                              handleDistributionDraftField(
+                                                editorCard.localId,
+                                                'distribution.applianceUnitsReceived',
+                                                sanitizeWholeNumberInput(e.target.value)
+                                              )
+                                            }
+                                          />
+                                        </div>
+                                      ) : null}
+                                    </div>
+
+                                    <div className="rrf-dafac-mini-section">
+                                      <div className="rrf-subsection-head">
+                                        <h3>Family members</h3>
+                                        <button
+                                          type="button"
+                                          className="rrf-btn rrf-btn-secondary rrf-btn-small"
+                                          onClick={() => addDistributionMember(editorCard.localId)}
+                                        >
+                                          <FaPlus />
+                                          Add Member
+                                        </button>
+                                      </div>
+
+                                      <div className="rrf-dafac-mini-list">
+                                        {editorCard.draft.familyMembers.map((member, index) => (
+                                          <div key={`member-${index}`} className="rrf-dafac-mini-row">
+                                            <input
+                                              type="text"
+                                              placeholder="Full name"
+                                              value={member.fullName}
+                                              onChange={(e) =>
+                                                handleDistributionMemberChange(
+                                                  editorCard.localId,
+                                                  index,
+                                                  'fullName',
+                                                  e.target.value
+                                                )
+                                              }
+                                            />
+                                            <input
+                                              type="text"
+                                              placeholder="Relationship"
+                                              value={member.relationshipToHead}
+                                              onChange={(e) =>
+                                                handleDistributionMemberChange(
+                                                  editorCard.localId,
+                                                  index,
+                                                  'relationshipToHead',
+                                                  e.target.value
+                                                )
+                                              }
+                                            />
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              placeholder="Age"
+                                              value={member.age}
+                                              onChange={(e) =>
+                                                handleDistributionMemberChange(
+                                                  editorCard.localId,
+                                                  index,
+                                                  'age',
+                                                  e.target.value
+                                                )
+                                              }
+                                            />
+                                            <button
+                                              type="button"
+                                              className="rrf-btn rrf-btn-danger rrf-btn-small"
+                                              onClick={() =>
+                                                removeDistributionMember(editorCard.localId, index)
+                                              }
+                                            >
+                                              <FaMinus />
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    <div className="rrf-dafac-editor-grid signoff">
+                                      <div className="rrf-field">
+                                        <label>Family Head Printed Name</label>
+                                        <input
+                                          type="text"
+                                          value={editorCard.draft.signOff.familyHeadPrintedName}
+                                          onChange={(e) =>
+                                            handleDistributionDraftField(
+                                              editorCard.localId,
+                                              'signOff.familyHeadPrintedName',
+                                              sanitizeInlineText(e.target.value, { maxLength: 120 })
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                      <div className="rrf-field">
+                                        <label>Barangay Officer</label>
+                                        <input
+                                          type="text"
+                                          value={editorCard.draft.signOff.barangayOfficerPrintedName}
+                                          onChange={(e) =>
+                                            handleDistributionDraftField(
+                                              editorCard.localId,
+                                              'signOff.barangayOfficerPrintedName',
+                                              sanitizeInlineText(e.target.value, { maxLength: 120 })
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="rrf-field rrf-remarks-field compact">
+                                      <label>Remarks</label>
+                                      <textarea
+                                        value={editorCard.draft.remarks}
+                                        onChange={(e) =>
+                                          handleDistributionDraftField(
+                                            editorCard.localId,
+                                            'remarks',
+                                            sanitizeInlineText(e.target.value, {
+                                              maxLength: 240,
+                                              multiline: true
+                                            })
+                                          )
+                                        }
+                                      />
+                                    </div>
+
+                                    <div className="rrf-inline-actions rrf-inline-actions-right">
+                                      <button
+                                        type="button"
+                                        className="rrf-btn rrf-btn-primary"
+                                        onClick={() => handleSaveDistributionRecord(editorCard)}
+                                        disabled={distributionSubmitting}
+                                      >
+                                        {distributionSubmitting ? 'Saving…' : 'Save Family Record'}
+                                        <FaCheck />
+                                      </button>
+                                    </div>
+                                  </div>
+                                  );
+                                })}
+
+                                {Array.from({ length: distributionGridState.addCardCount }).map((_, index) => (
+                                  <button
+                                    key={`add-card-${distributionGridState.page}-${index}`}
+                                    type="button"
+                                    className="rrf-dafac-add-card"
+                                    onClick={openCreateDistributionEditor}
+                                  >
+                                    <span>+</span>
+                                  </button>
+                                ))}
+                              </div>
+
+                              {distributionGridState.totalPages > 1 ? (
+                                <div className="rrf-dafac-pagination">
+                                  <button
+                                    type="button"
+                                    className="rrf-btn rrf-btn-secondary rrf-btn-small"
+                                    disabled={distributionGridState.page <= 1}
+                                    onClick={() =>
+                                      setDistributionPage((prev) => Math.max(1, prev - 1))
+                                    }
+                                  >
+                                    Prev
+                                  </button>
+                                  <span>
+                                    Page {distributionGridState.page} of{' '}
+                                    {distributionGridState.totalPages}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="rrf-btn rrf-btn-secondary rrf-btn-small"
+                                    disabled={
+                                      distributionGridState.page >=
+                                      distributionGridState.totalPages
+                                    }
+                                    onClick={() =>
+                                      setDistributionPage((prev) =>
+                                        Math.min(distributionGridState.totalPages, prev + 1)
+                                      )
+                                    }
+                                  >
+                                    Next
+                                  </button>
+                                </div>
+                              ) : null}
+
+                              <div className="rrf-dafac-received-strip">
+                                {dafacAidVisibility.showsFoodPacks ? (
+                                  <div className="rrf-dafac-received-pill">
+                                    <span>Relief Received</span>
+                                    <strong>{accomplishedDistributionSummary.totals?.foodPacksCap || 0}</strong>
+                                  </div>
+                                ) : null}
+                                {dafacAidVisibility.showsMonetary ? (
+                                  <div className="rrf-dafac-received-pill">
+                                    <span>Monetary Received</span>
+                                    <strong>
+                                      PHP {formatMoney(accomplishedDistributionSummary.totals?.monetaryCap || 0)}
+                                    </strong>
+                                  </div>
+                                ) : null}
+                                {dafacAidVisibility.showsAppliances ? (
+                                  <div className="rrf-dafac-received-pill">
+                                    <span>Appliance Units Received</span>
+                                    <strong>{accomplishedDistributionSummary.totals?.applianceUnitsCap || 0}</strong>
+                                  </div>
+                                ) : null}
+                              </div>
+
+                              <div className="rrf-dafac-confirm-strip">
+                                <div className="rrf-dafac-confirm-copy">
+                                  <strong>Step 6 Review</strong>
+                                  <span>
+                                    Keep reviewing the DAFAC cards here. Move to the accomplished
+                                    report only after you confirm the full family distribution.
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="rrf-btn rrf-btn-primary"
+                                  onClick={handleConfirmDistributionStep}
+                                  disabled={!isAccomplishedReady || distributionSubmitting}
+                                >
+                                  Confirm Distribution
+                                  <FaCheck />
+                                </button>
+                              </div>
+
+                            </>
+                          )}
+                        </section>
+                        ) : null}
+
+                        {shouldShowAccomplishedSection && stageMeta.activeStep === 7 ? (
+                          <AccomplishedReportPanel
+                            summary={accomplishedDistributionSummary}
+                            visibility={dafacAidVisibility}
+                            onExport={handleExportAccomplishedPdf}
+                            disabled={distributionSubmitting || !latestRequest?._id}
+                          />
+                        ) : null}
                       </div>
                     ) : null}
                   </section>

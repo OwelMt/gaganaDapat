@@ -673,6 +673,34 @@
   background: #94a3b8;
 }
 
+.barangay-bound-label {
+  border: 1px solid rgba(15, 90, 32, 0.18);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #14532d;
+  box-shadow: 0 10px 24px rgba(15, 90, 32, 0.14);
+  padding: 0;
+}
+
+.barangay-bound-label .leaflet-tooltip-content {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.map-stage .leaflet-interactive:focus,
+.map-stage .leaflet-interactive:focus-visible {
+  outline: none;
+}
+
+.map-stage .leaflet-overlay-pane svg:focus,
+.map-stage .leaflet-overlay-pane path:focus,
+.map-stage .leaflet-overlay-pane path:focus-visible {
+  outline: none !important;
+}
+
 .custom-evac-archived-marker {
   background: transparent !important;
   border: none !important;
@@ -2843,4 +2871,83 @@
 .status-action-btn svg {
   width: 13px;
   height: 13px;
+}
+
+:root[data-theme="dark"] .evac-left-panel,
+:root[data-theme="dark"] .evac-right-panel,
+:root[data-theme="dark"] .evac-map-panel,
+:root[data-theme="dark"] .panel-head,
+:root[data-theme="dark"] .map-stage,
+:root[data-theme="dark"] .evac-top-filters,
+:root[data-theme="dark"] .side-block,
+:root[data-theme="dark"] .details-overview-block,
+:root[data-theme="dark"] .barangay-card,
+:root[data-theme="dark"] .barangay-card.active,
+:root[data-theme="dark"] .place-card,
+:root[data-theme="dark"] .place-card.selected,
+:root[data-theme="dark"] .empty-state-card,
+:root[data-theme="dark"] .details-hero,
+:root[data-theme="dark"] .details-hero.refined {
+  background: linear-gradient(180deg, rgba(19, 49, 27, 0.98) 0%, rgba(23, 58, 32, 0.98) 100%) !important;
+  color: var(--ev-text) !important;
+  border-color: rgba(157, 203, 168, 0.18) !important;
+}
+
+:root[data-theme="dark"] .place-card:hover,
+:root[data-theme="dark"] .barangay-card:hover,
+:root[data-theme="dark"] .tab-btn,
+:root[data-theme="dark"] .tab-btn.active,
+:root[data-theme="dark"] .ghost-btn {
+  background: rgba(76, 199, 111, 0.12) !important;
+  color: var(--ev-text) !important;
+  border-color: rgba(157, 203, 168, 0.24) !important;
+}
+
+:root[data-theme="dark"] .place-card-title,
+:root[data-theme="dark"] .barangay-card-top strong,
+:root[data-theme="dark"] .panel-head h2,
+:root[data-theme="dark"] .map-legend-title,
+:root[data-theme="dark"] .map-add-place-title,
+:root[data-theme="dark"] .side-block-header h3 {
+  color: var(--ev-text) !important;
+}
+
+:root[data-theme="dark"] .place-card-subtitle,
+:root[data-theme="dark"] .place-card-meta,
+:root[data-theme="dark"] .barangay-card-top span,
+:root[data-theme="dark"] .panel-head p,
+:root[data-theme="dark"] .side-block-header p,
+:root[data-theme="dark"] .map-legend-item,
+:root[data-theme="dark"] .map-add-place-copy,
+:root[data-theme="dark"] .empty-state-card p,
+:root[data-theme="dark"] .details-hero-eyebrow {
+  color: var(--ev-text-soft) !important;
+}
+
+:root[data-theme="dark"] .map-legend-card,
+:root[data-theme="dark"] .barangay-bound-label,
+:root[data-theme="dark"] .map-add-place-floating,
+:root[data-theme="dark"] .pick-mode-banner {
+  background: rgba(19, 49, 27, 0.96) !important;
+  color: var(--ev-text) !important;
+  border-color: rgba(157, 203, 168, 0.22) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24) !important;
+}
+
+:root[data-theme="dark"] .barangay-bound-label .leaflet-tooltip-content,
+:root[data-theme="dark"] .pick-mode-banner,
+:root[data-theme="dark"] .map-legend-item {
+  color: var(--ev-text) !important;
+}
+
+:root[data-theme="dark"] .filter-field input,
+:root[data-theme="dark"] .filter-field select,
+:root[data-theme="dark"] .filter-field textarea {
+  background: #13311b !important;
+  color: var(--ev-text) !important;
+  border-color: rgba(157, 203, 168, 0.22) !important;
+}
+
+:root[data-theme="dark"] .filter-field span {
+  color: var(--ev-text-soft) !important;
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   FaBell,
@@ -13,6 +13,8 @@ import {
 import DashboardShell from "../layout/DashboardShell";
 import "../css/ReliefRequestList.css";
 import "../css/DonationValidationQueue.css";
+import { groupDonationRowsByReference } from "./donationReferenceUtils";
+import { useAuth } from "../../context/AuthContext";
 
 const LOCAL_BASE_URL = "http://localhost:8000";
 const REMOTE_BASE_URL =
@@ -121,6 +123,9 @@ const getQueueClass = (status) => {
   return "dqv-queue-pending";
 };
 
+const isActiveQueueStatus = (status) =>
+  ["pending", "resubmitted"].includes(normalize(status));
+
 const getStatusOrder = (status) => {
   const normalized = normalize(status);
   if (normalized === "resubmitted") return 0;
@@ -149,23 +154,25 @@ const EMPTY_CONFIRM_STATE = {
 };
 
 export default function DonationValidationQueue() {
+  const { user } = useAuth();
+  const role = String(user?.role || localStorage.getItem("role") || "")
+    .trim()
+    .toLowerCase();
+  const isAdmin = role === "admin";
+  const queueTypeParam = isAdmin ? "monetary" : "non_monetary";
+  const queueOwnerLabel = isAdmin ? "Admin" : "DRRMO";
   const [rows, setRows] = useState([]);
   const [loadingQueue, setLoadingQueue] = useState(true);
   const [selectedDonation, setSelectedDonation] = useState(null);
   const [donationDetails, setDonationDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
-  const [queueFilter, setQueueFilter] = useState("active");
-  const [typeFilter, setTypeFilter] = useState("");
   const [notifications, setNotifications] = useState([]);
   const [confirmState, setConfirmState] = useState(EMPTY_CONFIRM_STATE);
   const [submittingAction, setSubmittingAction] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
-  const [queueCardHeight, setQueueCardHeight] = useState(null);
   const notificationTimeoutsRef = useRef({});
   const recentNotificationRef = useRef({});
   const lastSelectedDonationRef = useRef(null);
-  const queueCardRef = useRef(null);
-  const detailsCardRef = useRef(null);
   const portalRoot = typeof document !== "undefined" ? document.body : null;
 
   useEffect(() => {
@@ -217,9 +224,12 @@ export default function DonationValidationQueue() {
       try {
         if (!silent) setLoadingQueue(true);
 
-        const response = await fetch(`${BASE_URL}/api/donations?limit=300`, {
-          credentials: "include",
-        });
+        const response = await fetch(
+          `${BASE_URL}/api/donations?limit=300&type=${queueTypeParam}&scope=validation_queue`,
+          {
+            credentials: "include",
+          }
+        );
 
         if (!response.ok) {
           throw new Error("Failed to fetch donation queue.");
@@ -227,13 +237,23 @@ export default function DonationValidationQueue() {
 
         const data = await response.json();
         const nextRows = sortQueue(Array.isArray(data) ? data : []);
-        setRows(nextRows);
+        const groupedRows = sortQueue(groupDonationRowsByReference(nextRows));
+        const nextActiveRows = groupedRows.filter((row) =>
+          isActiveQueueStatus(row?.status)
+        );
+        setRows(groupedRows);
 
         setSelectedDonation((prev) => {
-          if (!nextRows.length) return null;
-          if (!prev?._id) return nextRows[0];
-          return nextRows.find((item) => item._id === prev._id) || nextRows[0];
+          if (!nextActiveRows.length) return null;
+          if (!prev?._id) return nextActiveRows[0];
+          return (
+            nextActiveRows.find((item) => item._id === prev._id) ||
+            nextActiveRows[0]
+          );
         });
+        setDonationDetails((prev) =>
+          nextActiveRows.some((item) => item._id === prev?._id) ? prev : null
+        );
       } catch (error) {
         console.error(error);
         if (!silent) {
@@ -249,7 +269,7 @@ export default function DonationValidationQueue() {
         if (!silent) setLoadingQueue(false);
       }
     },
-    [pushNotification]
+    [pushNotification, queueTypeParam]
   );
 
   useEffect(() => {
@@ -259,24 +279,8 @@ export default function DonationValidationQueue() {
   }, [fetchQueue]);
 
   const filteredRows = useMemo(() => {
-    let next = [...rows];
-
-    if (queueFilter === "active") {
-      next = next.filter((row) =>
-        ["pending", "resubmitted"].includes(normalize(row?.status))
-      );
-    } else {
-      next = next.filter((row) => normalize(row?.status) === queueFilter);
-    }
-
-    if (typeFilter) {
-      next = next.filter(
-        (row) => normalize(row?.inventoryType || row?.donationType) === typeFilter
-      );
-    }
-
-    return sortQueue(next);
-  }, [rows, queueFilter, typeFilter]);
+    return sortQueue(rows.filter((row) => isActiveQueueStatus(row?.status)));
+  }, [rows]);
 
   useEffect(() => {
     setSelectedDonation((prev) => {
@@ -287,9 +291,12 @@ export default function DonationValidationQueue() {
   }, [filteredRows]);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadDonationDetails = async () => {
       if (!selectedDonation?._id) {
         setDonationDetails(null);
+        setLoadingDetails(false);
         lastSelectedDonationRef.current = null;
         return;
       }
@@ -311,20 +318,30 @@ export default function DonationValidationQueue() {
         }
 
         const data = await response.json();
-        setDonationDetails(data);
+        if (!cancelled) {
+          setDonationDetails(data);
+        }
       } catch (error) {
         console.error(error);
-        setDonationDetails(null);
-        pushNotification(
-          error.message || "Failed to load donation details.",
-          "error"
-        );
+        if (!cancelled) {
+          setDonationDetails(null);
+          pushNotification(
+            error.message || "Failed to load donation details.",
+            "error"
+          );
+        }
       } finally {
-        setLoadingDetails(false);
+        if (!cancelled) {
+          setLoadingDetails(false);
+        }
       }
     };
 
     loadDonationDetails();
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedDonation, pushNotification]);
 
   const displayedDonation = donationDetails || selectedDonation;
@@ -404,6 +421,18 @@ export default function DonationValidationQueue() {
         "success"
       );
 
+      if (confirmState.action === "not_received" || confirmState.action === "received") {
+        setRows((prev) =>
+          prev.filter((item) => item._id !== confirmState.donation._id)
+        );
+        setSelectedDonation((prev) =>
+          prev?._id === confirmState.donation._id ? null : prev
+        );
+        setDonationDetails((prev) =>
+          prev?._id === confirmState.donation._id ? null : prev
+        );
+      }
+
       setConfirmState(EMPTY_CONFIRM_STATE);
       lastSelectedDonationRef.current = null;
       await fetchQueue();
@@ -432,29 +461,6 @@ export default function DonationValidationQueue() {
     ? displayedDonation.photos
     : [];
 
-  useLayoutEffect(() => {
-    if (!detailsCardRef.current) return undefined;
-
-    const updateHeights = () => {
-      const nextHeight = detailsCardRef.current?.offsetHeight || 0;
-      setQueueCardHeight(nextHeight > 0 ? nextHeight : null);
-    };
-
-    updateHeights();
-
-    const observer = new ResizeObserver(() => {
-      updateHeights();
-    });
-
-    observer.observe(detailsCardRef.current);
-    window.addEventListener("resize", updateHeights);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", updateHeights);
-    };
-  }, [displayedDonation, loadingDetails, filteredRows.length]);
-
   return (
     <DashboardShell>
       <div className="rrl-page dqv-page">
@@ -463,14 +469,18 @@ export default function DonationValidationQueue() {
             <div className="rrl-header-head">
               <div className="rrl-header-main">
                 <span className="rrl-kicker">Donation Validation</span>
-                <h1 className="rrl-header-title">Review mobile donations before inventory intake</h1>
+                <h1 className="rrl-header-title">
+                  {isAdmin
+                    ? "Review mobile monetary donations before inventory intake"
+                    : "Review mobile donations before inventory intake"}
+                </h1>
                 <div className="rrl-title-meta">
                   <span className="rrl-top-pill">
                     <FaDonate />
                     Physical receipt validation
                   </span>
                   <span className="rrl-top-pill subtle">
-                    Inventory only after DRRMO confirmation
+                    Inventory only after {queueOwnerLabel} confirmation
                   </span>
                 </div>
               </div>
@@ -514,61 +524,11 @@ export default function DonationValidationQueue() {
 
           <section className="rrl-board">
             <div className="rrl-board-left">
-              <section
-                ref={queueCardRef}
-                className="rrl-card rrl-queue-card"
-                style={
-                  queueCardHeight
-                    ? {
-                        height: `${queueCardHeight}px`,
-                        minHeight: `${queueCardHeight}px`,
-                        maxHeight: `${queueCardHeight}px`,
-                      }
-                    : undefined
-                }
-              >
-                <div className="rrl-toolbar">
+              <section className="rrl-card rrl-queue-card">
+                <div className="rrl-toolbar dqv-toolbar-simple">
                   <div className="rrl-toolbar-top">
                     <div className="rrl-toolbar-title">
-                      <h2>
-                        {queueFilter === "active"
-                          ? "Active Queue"
-                          : queueFilter === "received"
-                          ? "Received Donations"
-                          : queueFilter === "not_received"
-                          ? "Did Not Receive"
-                          : "Pending Review"}
-                      </h2>
-                    </div>
-                  </div>
-
-                  <div className="rrl-toolbar-controls">
-                    <div className="rrl-control">
-                      <label>Status</label>
-                      <select
-                        className="rrl-select"
-                        value={queueFilter}
-                        onChange={(e) => setQueueFilter(e.target.value)}
-                      >
-                        <option value="active">Active Queue</option>
-                        <option value="pending">Pending Review</option>
-                        <option value="received">Received</option>
-                        <option value="not_received">Did Not Receive</option>
-                      </select>
-                    </div>
-
-                    <div className="rrl-control">
-                      <label>Donation Type</label>
-                      <select
-                        className="rrl-select"
-                        value={typeFilter}
-                        onChange={(e) => setTypeFilter(e.target.value)}
-                      >
-                        <option value="">All donation types</option>
-                        <option value="goods">Goods</option>
-                        <option value="monetary">Monetary</option>
-                        <option value="appliance">Appliance</option>
-                      </select>
+                      <h2>Active Queue</h2>
                     </div>
                   </div>
                 </div>
@@ -579,7 +539,7 @@ export default function DonationValidationQueue() {
                       <div className="rrl-empty-state">Loading donation queue...</div>
                     ) : filteredRows.length === 0 ? (
                       <div className="rrl-empty-state">
-                        No donation records match the current filters.
+                        No active donation records found.
                       </div>
                     ) : (
                       filteredRows.map((row) => {
@@ -614,8 +574,13 @@ export default function DonationValidationQueue() {
                                 </div>
                                 <div className="rrl-queue-requestno-wrap">
                                   <div className="rrl-queue-requestno">
-                                    {getDonationRef(row)}
+                                  {getDonationRef(row)}
                                   </div>
+                                  {Number(row?.duplicateCount || 1) > 1 ? (
+                                    <span className="rrl-edited-badge">
+                                      {row.duplicateCount} linked
+                                    </span>
+                                  ) : null}
                                   {normalize(row?.status) === "resubmitted" ? (
                                     <span className="rrl-edited-badge">
                                       <FaUndo />
@@ -659,10 +624,7 @@ export default function DonationValidationQueue() {
                   </div>
                 </section>
               ) : (
-                <section
-                  ref={detailsCardRef}
-                  className="rrl-card rrl-details-card rrl-details-card-compact"
-                >
+                <section className="rrl-card rrl-details-card rrl-details-card-compact">
                   <div className="rrl-details-head rrl-details-head-compact">
                     <div className="rrl-details-heading">
                       <div className="rrl-details-barangay">
@@ -674,6 +636,11 @@ export default function DonationValidationQueue() {
                       <div className="rrl-details-requestno">
                         {getDonationRef(displayedDonation)}
                       </div>
+                      {Number(displayedDonation?.duplicateCount || 1) > 1 ? (
+                        <div className="dqv-duplicate-note">
+                          {displayedDonation.duplicateCount} submissions share this reference number and are treated as one donation.
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className={`rrl-status-banner rrl-status-banner-${selectedTone}`}>
@@ -695,16 +662,8 @@ export default function DonationValidationQueue() {
                       <strong>{formatDateTime(displayedDonation.createdAt)}</strong>
                     </div>
                     <div className="rrl-meta-chip">
-                      <span>Barangay</span>
-                      <strong>{displayedDonation.barangay || "-"}</strong>
-                    </div>
-                    <div className="rrl-meta-chip">
                       <span>Fulfillment</span>
                       <strong>{formatStatusLabel(displayedDonation.fulfillmentMethod || "drop_off")}</strong>
-                    </div>
-                    <div className="rrl-meta-chip">
-                      <span>Location</span>
-                      <strong>{displayedDonation.location || "-"}</strong>
                     </div>
                   </div>
 

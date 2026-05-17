@@ -29,6 +29,24 @@ export const SUPPORT_TYPE_OPTIONS = SUPPORT_TYPES.map((type) => ({
   label: SUPPORT_TYPE_LABELS[type] || 'Support',
 }));
 
+export const isStandaloneMonetarySupport = (supportTypes = []) => {
+  const normalized = normalizeSupportTypes(supportTypes);
+  return (
+    normalized.includes(SUPPORT_TYPE_MONETARY) &&
+    !normalized.includes(SUPPORT_TYPE_FOODPACKS) &&
+    !normalized.includes(SUPPORT_TYPE_APPLIANCE)
+  );
+};
+
+export const isMonetaryMixedWithOtherSupport = (supportTypes = []) => {
+  const normalized = normalizeSupportTypes(supportTypes);
+  return (
+    normalized.includes(SUPPORT_TYPE_MONETARY) &&
+    (normalized.includes(SUPPORT_TYPE_FOODPACKS) ||
+      normalized.includes(SUPPORT_TYPE_APPLIANCE))
+  );
+};
+
 export const normalizeSupportTypes = (value, legacyRequestType = '') => {
   const raw = Array.isArray(value) && value.length > 0
     ? value

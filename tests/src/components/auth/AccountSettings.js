@@ -1,5 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  sanitizeAddress,
+  sanitizeHotline,
+  sanitizePhoneNumber,
+  sanitizeUsername
+} from './inputSanitizers';
+import {
+  validateAddress,
+  validateHotline,
+  validatePhoneNumber,
+  validateStrongPassword,
+  validateUsername
+} from './inputValidators';
 
 export default function AccountSettings() {
   const navigate = useNavigate();
@@ -17,24 +30,6 @@ export default function AccountSettings() {
   const [error, setError] = useState('');
 
   const BASE_URL = process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
-
-  const sanitizeText = value =>
-    String(value ?? "")
-      .replace(/[<>`]/g, "")
-      .replace(/[\u0000-\u001F\u007F]/g, "");
-
-  const sanitizeUsername = value =>
-    sanitizeText(value).replace(/[^a-zA-Z0-9 _.-]/g, "");
-
-  const sanitizePhone = value =>
-    String(value ?? "")
-      .replace(/\D/g, "")
-      .slice(0, 11);
-
-  const sanitizeHotline = value =>
-    sanitizeText(value).replace(/[^0-9+\-() extEXT]/g, "");
-
-  const sanitizeAddress = value => sanitizeText(value);
 
   useEffect(() => {
     fetch(`${BASE_URL}/api/barangays/me`, {
@@ -59,17 +54,6 @@ export default function AccountSettings() {
 
   if (!form) return <p>Loading account...</p>;
 
-  const strongPassword = pwd => {
-    return (
-      pwd.length >= 8 &&
-      /[A-Z]/.test(pwd) &&
-      /[a-z]/.test(pwd) &&
-      /[0-8]/.test(pwd)
-    );
-  };
-
-  const validPhone = phone => /^09\d{9}$/.test(phone);
-
   const hasChanges = () => (
     form.username !== original.username ||
     form.phoneNumber !== original.phoneNumber ||
@@ -86,16 +70,34 @@ export default function AccountSettings() {
       return;
     }
 
-    if (form.phoneNumber && !validPhone(form.phoneNumber)) {
-      setError('Phone number must start with 09 and be 11 digits.');
+    const usernameError = validateUsername(form.username);
+    if (usernameError) {
+      setError(usernameError);
+      return;
+    }
+
+    const phoneError = validatePhoneNumber(form.phoneNumber);
+    if (phoneError) {
+      setError(phoneError);
+      return;
+    }
+
+    const hotlineError = validateHotline(form.hotline);
+    if (hotlineError) {
+      setError(hotlineError);
+      return;
+    }
+
+    const addressError = validateAddress(form.address);
+    if (addressError) {
+      setError(addressError);
       return;
     }
 
     if (form.password) {
-      if (!strongPassword(form.password)) {
-        setError(
-          'Password atleast must be 8 characters with uppercase, lowercase, number.'
-        );
+      const passwordError = validateStrongPassword(form.password);
+      if (passwordError) {
+        setError(passwordError);
         return;
       }
 
@@ -151,7 +153,7 @@ export default function AccountSettings() {
         <label style={label}>Phone Number</label>
         <input
           value={form.phoneNumber}
-          onChange={e => setForm({ ...form, phoneNumber: sanitizePhone(e.target.value) })}
+          onChange={e => setForm({ ...form, phoneNumber: sanitizePhoneNumber(e.target.value) })}
           placeholder="09XXXXXXXXX"
         />
 

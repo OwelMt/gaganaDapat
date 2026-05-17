@@ -35,8 +35,6 @@ import { isConfirmationSubmitDisabled } from './requestReviewUtils';
 const BASE_URL =
   process.env.REACT_APP_API_URL || 'https://gaganadapat.onrender.com';
 
-const INVENTORY_RELEASE_ROUTE = '/drrmo/inventory';
-
 const NOTIFICATION_DURATION = 10000;
 const MAX_VISIBLE_NOTIFICATIONS = 4;
 
@@ -237,6 +235,11 @@ const EMPTY_CONFIRM_STATE = {
 
 export default function ReliefRequestsList() {
   const navigate = useNavigate();
+  const storedRole = normalize(localStorage.getItem('role'));
+  const isAdmin = storedRole === 'admin';
+  const queueBasePath = isAdmin ? '/admin' : '/drrmo';
+  const inventoryReleaseRoute = `${queueBasePath}/inventory`;
+  const reviewerLabel = isAdmin ? 'Admin' : 'DRRMO';
 
   const [rows, setRows] = useState([]);
   const [receivedRows, setReceivedRows] = useState([]);
@@ -264,11 +267,10 @@ export default function ReliefRequestsList() {
   const [queueCardHeight, setQueueCardHeight] = useState(null);
 
   useEffect(() => {
-    const storedRole = localStorage.getItem('role');
     if (!storedRole) {
       navigate('/');
     }
-  }, [navigate]);
+  }, [navigate, storedRole]);
 
   useEffect(() => {
     const timeouts = notificationTimeoutsRef.current;
@@ -687,6 +689,19 @@ export default function ReliefRequestsList() {
     displayedSupportTypes,
     SUPPORT_TYPE_APPLIANCE
   );
+  const displayedReceiptProofItems = useMemo(() => {
+    const releases = Array.isArray(reviewDetails?.releases) ? reviewDetails.releases : [];
+
+    return releases.flatMap((release, releaseIndex) =>
+      (Array.isArray(release?.receiptProofFiles) ? release.receiptProofFiles : [])
+        .filter(Boolean)
+        .map((proofPath, proofIndex) => ({
+          key: `${release?._id || releaseIndex}-${proofIndex}`,
+          url: `${BASE_URL}/${String(proofPath).replace(/^\/+/, '')}`,
+          label: `Receipt Proof ${proofIndex + 1}`,
+        }))
+    );
+  }, [reviewDetails?.releases]);
 
   const selectedIndividuals =
     displayedVisibleTotals.male +
@@ -736,7 +751,7 @@ export default function ReliefRequestsList() {
   const openReleasePlanner = (request) => {
     if (!request?._id) return;
 
-    navigate(INVENTORY_RELEASE_ROUTE, {
+    navigate(inventoryReleaseRoute, {
       state: {
         openReleasePlanner: true,
         selectedReliefRequestId: request._id,
@@ -830,7 +845,7 @@ export default function ReliefRequestsList() {
         credentials: 'include',
         body: JSON.stringify({
           action: 'accept',
-          remarks: 'Approved by DRRMO'
+          remarks: `Approved by ${reviewerLabel}`
         })
       });
 
@@ -845,7 +860,7 @@ export default function ReliefRequestsList() {
       pushNotification('Request approved. Opening release planner...', 'success');
       await fetchQueue();
 
-      navigate(INVENTORY_RELEASE_ROUTE, {
+      navigate(inventoryReleaseRoute, {
         state: {
           openReleasePlanner: true,
           selectedReliefRequestId: request._id,
@@ -1272,6 +1287,29 @@ export default function ReliefRequestsList() {
                             {displayedRequest?.remarks || 'No remarks provided.'}
                           </div>
 
+                          {displayedReceiptProofItems.length > 0 ? (
+                            <div className="rrl-receipt-proof-section">
+                              <div className="rrl-section-subhead">
+                                <span>Receipt Proof</span>
+                                <strong>{displayedReceiptProofItems.length} image(s)</strong>
+                              </div>
+                              <div className="rrl-receipt-proof-grid">
+                                {displayedReceiptProofItems.map((proof) => (
+                                  <a
+                                    key={proof.key}
+                                    href={proof.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="rrl-receipt-proof-card"
+                                    title={proof.label}
+                                  >
+                                    <img src={proof.url} alt={proof.label} />
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+
                           <div className="rrl-remarks-summary-grid">
                             {displayedNeedsMonetary ? (
                               <div className="rrl-remarks-summary-card">
@@ -1471,7 +1509,7 @@ export default function ReliefRequestsList() {
                         aria-required="true"
                       />
                       <span className="rrl-modal-help">
-                        A reason is required before DRRMO can reject this request.
+                        A reason is required before {reviewerLabel} can reject this request.
                       </span>
                     </div>
                   ) : null}

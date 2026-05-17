@@ -81,8 +81,26 @@ const numberOrZero = (value) => {
   return Number.isNaN(num) ? 0 : num;
 };
 
+const LIMITED_OCCUPANCY_PERCENT = 75;
+
 const normalizeBarangayKey = (value) =>
   safeLower(value).replace(/\s+/g, " ").trim();
+
+const getBoundsBarangayName = (entry) =>
+  sanitizeText(
+    entry?.barangayName ||
+      entry?.name ||
+      entry?.properties?.barangayName ||
+      entry?.properties?.name ||
+      entry?.properties?.NAME ||
+      entry?.properties?.adm4_en ||
+      entry?.properties?.barangay ||
+      entry?.features?.[0]?.properties?.barangayName ||
+      entry?.features?.[0]?.properties?.name ||
+      entry?.features?.[0]?.properties?.NAME ||
+      entry?.features?.[0]?.properties?.adm4_en ||
+      entry?.features?.[0]?.properties?.barangay
+  );
 
 const getStoredRole = () => localStorage.getItem("role") || "";
 const getStoredUserId = () => localStorage.getItem("userId") || "";
@@ -319,7 +337,7 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
 
     const match = barangayBounds.find((b) => {
       return (
-        normalizeBarangayKey(b?.name) ===
+        normalizeBarangayKey(getBoundsBarangayName(b)) ===
         normalizeBarangayKey(localBarangayName)
       );
     });
@@ -1563,34 +1581,40 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
 
   const individualPercent =
     capacityIndividual > 0
-      ? Math.min(100, Math.round((currentOccupants / capacityIndividual) * 100))
+      ? Math.round((currentOccupants / capacityIndividual) * 100)
       : 0;
+  const individualDisplayPercent = Math.min(100, Math.max(0, individualPercent));
 
   const familyPercent =
     capacityFamily > 0
-      ? Math.min(100, Math.round((currentFamilies / capacityFamily) * 100))
+      ? Math.round((currentFamilies / capacityFamily) * 100)
       : 0;
+  const familyDisplayPercent = Math.min(100, Math.max(0, familyPercent));
 
   const bedPercent =
     bedCapacity > 0
-      ? Math.min(100, Math.round((occupiedBeds / bedCapacity) * 100))
+      ? Math.round((occupiedBeds / bedCapacity) * 100)
       : 0;
+  const bedDisplayPercent = Math.min(100, Math.max(0, bedPercent));
 
   return {
     currentOccupants,
     capacityIndividual,
     remainingIndividuals,
     individualPercent,
+    individualDisplayPercent,
 
     currentFamilies,
     capacityFamily,
     remainingFamilies,
     familyPercent,
+    familyDisplayPercent,
 
     occupiedBeds,
     bedCapacity,
     remainingBeds,
     bedPercent,
+    bedDisplayPercent,
   };
 }, []);
 
@@ -2779,6 +2803,14 @@ const handleSaveOccupancy = useCallback(async () => {
                 selectedPlaceId={selectedId}
                 selectedPlace={selectedPlace}
                 onSelectLocation={handleMapSelectLocation}
+                onBlockedSelection={() => {
+                  if (isBarangayRole) {
+                    pushNotification(
+                      "You can only pin an evacuation area inside your own barangay boundary.",
+                      "error"
+                    );
+                  }
+                }}
                 onSelectPlace={(place) => {
                   if (!place?._id) return;
                   setSelectedId(place._id);
@@ -2789,11 +2821,7 @@ const handleSaveOccupancy = useCallback(async () => {
                 isBarangayRole={isBarangayRole}
                 barangayName={localBarangayName}
                 selectedBarangayName={selectedBarangayName}
-                barangayBounds={
-                  isBarangayRole && matchedBarangayBounds
-                    ? [matchedBarangayBounds]
-                    : barangayBounds
-                }
+                barangayBounds={barangayBounds}
                 matchedBarangayBounds={matchedBarangayBounds}
               />
 
@@ -3104,7 +3132,7 @@ const handleSaveOccupancy = useCallback(async () => {
               className={`occupancy-mini-fill ${getStatusClass(
                 selectedPlace.capacityStatus
               )}`}
-              style={{ width: `${occupancy.individualPercent}%` }}
+              style={{ width: `${occupancy.individualDisplayPercent}%` }}
             />
           </div>
           <em>
@@ -3125,7 +3153,7 @@ const handleSaveOccupancy = useCallback(async () => {
           <div className="occupancy-mini-progress">
             <div
               className="occupancy-mini-fill family"
-              style={{ width: `${occupancy.familyPercent}%` }}
+              style={{ width: `${occupancy.familyDisplayPercent}%` }}
             />
           </div>
           <em>
@@ -3146,7 +3174,7 @@ const handleSaveOccupancy = useCallback(async () => {
           <div className="occupancy-mini-progress">
             <div
               className="occupancy-mini-fill bed"
-              style={{ width: `${occupancy.bedPercent}%` }}
+              style={{ width: `${occupancy.bedDisplayPercent}%` }}
             />
           </div>
           <em>
@@ -3199,7 +3227,7 @@ const handleSaveOccupancy = useCallback(async () => {
             className={`occupancy-progress-fill ${getStatusClass(
               selectedPlace.capacityStatus
             )}`}
-            style={{ width: `${occupancy.individualPercent}%` }}
+            style={{ width: `${occupancy.individualDisplayPercent}%` }}
           />
         </div>
 
@@ -3383,8 +3411,8 @@ const handleSaveOccupancy = useCallback(async () => {
         </div>
 
         <p className="occupancy-helper-text">
-          Type freely, then save once. Status is automatic: 0 people is available,
-          1 or more is limited, and full capacity becomes full.
+          Type freely, then save once. Status is automatic: below {LIMITED_OCCUPANCY_PERCENT}%
+          is available, {LIMITED_OCCUPANCY_PERCENT}% to 99% is limited, and 100% or more is full.
         </p>
       </>
     );

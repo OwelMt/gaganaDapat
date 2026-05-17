@@ -585,3 +585,42 @@ body,
     grid-template-columns: 1fr;
   }
 }
+
+:root[data-theme="dark"] .admin-logs-page {
+  background:
+    radial-gradient(circle at top right, rgba(63, 185, 80, 0.12), transparent 24%),
+    linear-gradient(180deg, #082611 0%, #0c2814 100%) !important;
+}
+
+:root[data-theme="dark"] .admin-logs-hero-copy,
+:root[data-theme="dark"] .admin-stat-card,
+:root[data-theme="dark"] .admin-logs-panel,
+:root[data-theme="dark"] .admin-logs-table-region,
+:root[data-theme="dark"] .admin-logs-search,
+:root[data-theme="dark"] .admin-logs-filter {
+  background: linear-gradient(180deg, rgba(19, 49, 27, 0.98) 0%, rgba(23, 58, 32, 0.98) 100%) !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.18) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.2) !important;
+}
+
+:root[data-theme="dark"] .admin-logs-kicker,
+:root[data-theme="dark"] .admin-logs-title,
+:root[data-theme="dark"] .admin-stat-card strong,
+:root[data-theme="dark"] .admin-logs-table thead th,
+:root[data-theme="dark"] .admin-logs-table tbody td {
+  color: var(--content-text) !important;
+}
+
+:root[data-theme="dark"] .admin-logs-mini-badge,
+:root[data-theme="dark"] .admin-log-chip {
+  background: rgba(76, 199, 111, 0.12) !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.24) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="dark"] .admin-stat-card span,
+:root[data-theme="dark"] .admin-results-text {
+  color: var(--text-soft) !important;
+}

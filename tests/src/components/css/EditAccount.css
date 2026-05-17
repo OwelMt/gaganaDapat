@@ -537,6 +537,18 @@
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
+.ea-field .ea-input-readonly {
+  background: #f3f8f4;
+  color: var(--ea-muted);
+  cursor: not-allowed;
+}
+
+.ea-field .ea-input-readonly:focus {
+  border-color: var(--ea-border-strong);
+  box-shadow: none;
+  transform: none;
+}
+
 .ea-field input::placeholder {
   color: #87a08d;
 }
@@ -545,6 +557,14 @@
   border-color: var(--ea-primary);
   box-shadow: 0 0 0 4px rgba(15, 90, 32, 0.1);
   transform: translateY(-1px);
+}
+
+.ea-field-hint {
+  margin-top: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ea-muted);
+  line-height: 1.45;
 }
 
 .ea-actions {
@@ -724,4 +744,76 @@
   .ea-profile-main {
     align-items: flex-start;
   }
+}
+
+:root[data-theme="dark"] .edit-account {
+  background:
+    radial-gradient(circle at top right, rgba(63, 185, 80, 0.12), transparent 24%),
+    linear-gradient(180deg, #082611 0%, #0c2814 100%) !important;
+}
+
+:root[data-theme="dark"] .ea-hero-copy,
+:root[data-theme="dark"] .ea-stat-card,
+:root[data-theme="dark"] .ea-sidebar-card,
+:root[data-theme="dark"] .ea-editor-card,
+:root[data-theme="dark"] .ea-sidebar-top,
+:root[data-theme="dark"] .ea-list-empty,
+:root[data-theme="dark"] .ea-item,
+:root[data-theme="dark"] .ea-profile-card,
+:root[data-theme="dark"] .ea-section-block,
+:root[data-theme="dark"] .ea-danger-zone,
+:root[data-theme="dark"] .ea-editor-scroll {
+  background: linear-gradient(180deg, rgba(19, 49, 27, 0.98) 0%, rgba(23, 58, 32, 0.98) 100%) !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.18) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.2) !important;
+}
+
+:root[data-theme="dark"] .ea-kicker,
+:root[data-theme="dark"] .ea-page-title,
+:root[data-theme="dark"] .ea-stat-card strong,
+:root[data-theme="dark"] .ea-section-title,
+:root[data-theme="dark"] .ea-profile-copy h3,
+:root[data-theme="dark"] .ea-field label,
+:root[data-theme="dark"] .ea-danger-zone-copy h4 {
+  color: var(--content-text) !important;
+}
+
+:root[data-theme="dark"] .ea-stat-card span,
+:root[data-theme="dark"] .ea-list-empty,
+:root[data-theme="dark"] .ea-profile-meta,
+:root[data-theme="dark"] .ea-profile-copy p,
+:root[data-theme="dark"] .ea-section-copy,
+:root[data-theme="dark"] .ea-item-subtext,
+:root[data-theme="dark"] .ea-danger-zone-copy p {
+  color: var(--text-soft) !important;
+}
+
+:root[data-theme="dark"] .ea-live-pill,
+:root[data-theme="dark"] .ea-live-pill--warning,
+:root[data-theme="dark"] .ea-item.active,
+:root[data-theme="dark"] .ea-item:hover {
+  background: rgba(76, 199, 111, 0.12) !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.24) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="dark"] .ea-list-search,
+:root[data-theme="dark"] .ea-role-filter,
+:root[data-theme="dark"] .ea-field input,
+:root[data-theme="dark"] .ea-field .ea-input-readonly {
+  background: #13311b !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.22) !important;
+}
+
+:root[data-theme="dark"] .ea-field input::placeholder {
+  color: var(--text-soft) !important;
+}
+
+:root[data-theme="dark"] .ea-btn-secondary {
+  background: rgba(76, 199, 111, 0.12) !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.24) !important;
 }

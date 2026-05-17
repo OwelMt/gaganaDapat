@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../css/Register.css';
 import {
@@ -9,6 +9,19 @@ import {
   sanitizePhoneNumber,
   sanitizeUsername
 } from './inputSanitizers';
+import {
+  validateAddress,
+  validateConfirmPassword,
+  validateEmail,
+  validatePhoneNumber,
+  validateStrongPassword,
+  validateUsername
+} from './inputValidators';
+import {
+  AccountConfirmModal,
+  AccountNotificationPortal,
+  buildAccountNotification
+} from './accountOverlayUtils';
 
 const OFFICIAL_BARANGAYS = [
   "Calabasa",
@@ -39,6 +52,7 @@ const OFFICIAL_BARANGAYS = [
 ];
 
 export default function Register() {
+  const notificationTimeoutsRef = useRef({});
   const navigate = useNavigate();
   const BASE_URL =
     process.env.REACT_APP_API_URL || 'https://gaganadapat.onrender.com';
@@ -63,9 +77,9 @@ export default function Register() {
 
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
-  const [submitError, setSubmitError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   const [availableBarangays, setAvailableBarangays] = useState(OFFICIAL_BARANGAYS);
   const [barangayLoading, setBarangayLoading] = useState(false);
@@ -108,49 +122,38 @@ export default function Register() {
     if (role !== 'barangay') {
       setBarangay('');
     }
-    setSubmitError('');
-    setSuccessMessage('');
   }, [role]);
 
-  function validatePassword(pw) {
-    if (!pw) return 'Password is required';
-    if (!/^[A-Z]/.test(pw)) return 'Password must start with a capital letter';
-    if (!/\d/.test(pw)) return 'Password must contain at least one number';
-    if (pw.length < 8) return 'Password must be at least 8 characters';
-    return '';
-  }
+  useEffect(() => {
+    const timeouts = notificationTimeoutsRef.current;
 
-  function validateEmail(value) {
-    if (!value) return 'Email is required';
-    if (!value.includes('@') || !value.includes('.com')) {
-      return 'Email must contain @ and .com';
+    return () => {
+      Object.values(timeouts).forEach(clearTimeout);
+      notificationTimeoutsRef.current = {};
+    };
+  }, []);
+
+  const removeNotification = (id) => {
+    if (notificationTimeoutsRef.current[id]) {
+      clearTimeout(notificationTimeoutsRef.current[id]);
+      delete notificationTimeoutsRef.current[id];
     }
-    return '';
-  }
 
-  function validatePhone(value) {
-    if (!value) return 'Phone number is required';
-    if (!/^\d{10,11}$/.test(value)) {
-      return 'Enter valid phone number (10-11 digits)';
-    }
-    return '';
-  }
+    setNotifications((prev) => prev.filter((item) => item.id !== id));
+  };
 
-  function validateUsername(value) {
-    if (!value.trim()) return 'Username is required';
-    return '';
-  }
+  const showNotification = (message, type = 'info') => {
+    const notification = buildAccountNotification(message, type);
 
-  function validateAddress(value) {
-    if (!value.trim()) return 'Address is required';
-    return '';
-  }
+    setNotifications((prev) => [notification, ...prev].slice(0, 3));
 
-  function validateConfirmPassword(passwordValue, confirmValue) {
-    if (!confirmValue) return 'Please confirm the password';
-    if (passwordValue !== confirmValue) return 'Passwords do not match';
-    return '';
-  }
+    notificationTimeoutsRef.current[notification.id] = setTimeout(() => {
+      setNotifications((prev) =>
+        prev.filter((item) => item.id !== notification.id)
+      );
+      delete notificationTimeoutsRef.current[notification.id];
+    }, 4000);
+  };
 
   useEffect(() => {
     const nextErrors = {};
@@ -166,7 +169,7 @@ export default function Register() {
     }
 
     if (touched.phoneNumber) {
-      const error = validatePhone(phoneNumber);
+      const error = validatePhoneNumber(phoneNumber);
       if (error) nextErrors.phoneNumber = error;
     }
 
@@ -176,7 +179,7 @@ export default function Register() {
     }
 
     if (touched.password) {
-      const error = validatePassword(password);
+      const error = validateStrongPassword(password);
       if (error) nextErrors.password = error;
     }
 
@@ -211,13 +214,13 @@ export default function Register() {
     const emailError = validateEmail(email);
     if (emailError) nextErrors.email = emailError;
 
-    const phoneError = validatePhone(phoneNumber);
+    const phoneError = validatePhoneNumber(phoneNumber);
     if (phoneError) nextErrors.phoneNumber = phoneError;
 
     const addressError = validateAddress(address);
     if (addressError) nextErrors.address = addressError;
 
-    const passwordError = validatePassword(password);
+    const passwordError = validateStrongPassword(password);
     if (passwordError) nextErrors.password = passwordError;
 
     const confirmError = validateConfirmPassword(password, confirmPassword);
@@ -233,8 +236,6 @@ export default function Register() {
   async function handleRegister() {
     const freshErrors = computeErrors();
     setErrors(freshErrors);
-    setSubmitError('');
-    setSuccessMessage('');
 
     setTouched({
       username: true,
@@ -247,10 +248,14 @@ export default function Register() {
     });
 
     if (Object.keys(freshErrors).length > 0) {
-      setSubmitError('Please fix the highlighted fields first.');
+      showNotification('Please fix the highlighted fields first.', 'error');
       return;
     }
 
+    setShowConfirmModal(true);
+  }
+
+  async function confirmRegister() {
     const payload = {
       username: username.trim(),
       password,
@@ -262,8 +267,9 @@ export default function Register() {
       ...(role === 'barangay' ? { barangay } : {})
     };
 
-    try {
+      try {
       setIsSubmitting(true);
+      setShowConfirmModal(false);
 
       const res = await fetch(`${BASE_URL}/api/auth/register`, {
         method: 'POST',
@@ -283,7 +289,10 @@ export default function Register() {
       }
 
       const createdRoleLabel = role === 'barangay' ? 'Barangay' : 'DRRMO';
-      setSuccessMessage(`${createdRoleLabel} account created successfully.`);
+      showNotification(
+        `${createdRoleLabel} approval email sent. The account will be created after the recipient confirms it.`,
+        'success'
+      );
 
       setRole('drrmo');
       setUsername('');
@@ -298,13 +307,9 @@ export default function Register() {
       setTouched({});
       setShowPassword(false);
       setShowConfirmPassword(false);
-
-      setTimeout(() => {
-        navigate('/admin/dashboard');
-      }, 1000);
     } catch (err) {
       console.error(err);
-      setSubmitError(err.message || 'Registration failed');
+      showNotification(err.message || 'Registration failed', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -321,12 +326,12 @@ export default function Register() {
       },
       {
         label: 'Available Barangays',
-        value: barangayLoading ? '—' : availableBarangays.length,
+        value: barangayLoading ? '-' : availableBarangays.length,
         tone: 'green'
       },
       {
         label: 'Occupied Barangays',
-        value: barangayLoading ? '—' : usedCount,
+        value: barangayLoading ? '-' : usedCount,
         tone: 'amber'
       }
     ];
@@ -402,7 +407,6 @@ export default function Register() {
                       onChange={(e) => {
                         setBarangay(e.target.value);
                         setTouched((prev) => ({ ...prev, barangay: true }));
-                        setSubmitError('');
                       }}
                       disabled={barangayLoading}
                     >
@@ -435,7 +439,6 @@ export default function Register() {
                     onChange={(e) => {
                       setUsername(sanitizeUsername(e.target.value));
                       setTouched((prev) => ({ ...prev, username: true }));
-                      setSubmitError('');
                     }}
                   />
                 </div>
@@ -452,7 +455,6 @@ export default function Register() {
                     onChange={(e) => {
                       setEmail(sanitizeEmail(e.target.value));
                       setTouched((prev) => ({ ...prev, email: true }));
-                      setSubmitError('');
                     }}
                   />
                 </div>
@@ -469,7 +471,6 @@ export default function Register() {
                     onChange={(e) => {
                       setPhoneNumber(sanitizePhoneNumber(e.target.value));
                       setTouched((prev) => ({ ...prev, phoneNumber: true }));
-                      setSubmitError('');
                     }}
                   />
                 </div>
@@ -485,7 +486,6 @@ export default function Register() {
                     value={hotline}
                     onChange={(e) => {
                       setHotline(sanitizeHotline(e.target.value));
-                      setSubmitError('');
                     }}
                   />
                 </div>
@@ -502,7 +502,6 @@ export default function Register() {
                     onChange={(e) => {
                       setAddress(sanitizeAddress(e.target.value));
                       setTouched((prev) => ({ ...prev, address: true }));
-                      setSubmitError('');
                     }}
                   />
                 </div>
@@ -520,7 +519,6 @@ export default function Register() {
                     onChange={(e) => {
                       setPassword(sanitizePassword(e.target.value));
                       setTouched((prev) => ({ ...prev, password: true }));
-                      setSubmitError('');
                     }}
                   />
                   <button
@@ -545,7 +543,6 @@ export default function Register() {
                     onChange={(e) => {
                       setConfirmPassword(sanitizePassword(e.target.value));
                       setTouched((prev) => ({ ...prev, confirmPassword: true }));
-                      setSubmitError('');
                     }}
                   />
                   <button
@@ -557,22 +554,6 @@ export default function Register() {
                   </button>
                 </div>
                 {renderFieldError('confirmPassword')}
-              </div>
-
-              <div className="form-status-row form-block-full">
-                <div className="form-status-space" aria-live="polite">
-                  {submitError && (
-                    <div className="status-banner status-banner-error">
-                      {submitError}
-                    </div>
-                  )}
-
-                  {successMessage && (
-                    <div className="status-banner status-banner-success">
-                      {successMessage}
-                    </div>
-                  )}
-                </div>
               </div>
 
               <div className="form-actions form-block-full">
@@ -588,6 +569,35 @@ export default function Register() {
           </div>
         </div>
       </div>
+
+      <AccountConfirmModal
+        open={showConfirmModal}
+        title="Create account?"
+        message="Please confirm the details below before creating this account."
+        details={[
+          { label: 'Role', value: role === 'barangay' ? 'Barangay' : 'DRRMO' },
+          ...(role === 'barangay'
+            ? [{ label: 'Barangay', value: barangay || '-' }]
+            : []),
+          { label: 'Username', value: username.trim() || '-' },
+          { label: 'Email', value: email.trim() || '-' },
+          { label: 'Phone', value: phoneNumber.trim() || '-' }
+        ]}
+        confirmLabel="Create Account"
+        cancelLabel="Review Again"
+        busy={isSubmitting}
+        onConfirm={confirmRegister}
+        onClose={() => {
+          if (!isSubmitting) {
+            setShowConfirmModal(false);
+          }
+        }}
+      />
+
+      <AccountNotificationPortal
+        notifications={notifications}
+        onDismiss={removeNotification}
+      />
     </div>
   );
 }

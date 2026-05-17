@@ -23,7 +23,7 @@ describe("reliefImportUtils", () => {
     ).toEqual([SUPPORT_TYPE_FOODPACKS, SUPPORT_TYPE_APPLIANCE]);
   });
 
-  test("derives monetary plus appliance without forcing food packs", () => {
+  test("forces imported monetary plus appliance back to standalone monetary", () => {
     expect(
       deriveImportedSupportTypes({
         importedRequestType: "",
@@ -34,10 +34,10 @@ describe("reliefImportUtils", () => {
         ],
         previousSupportTypes: [SUPPORT_TYPE_MONETARY],
       })
-    ).toEqual([SUPPORT_TYPE_MONETARY, SUPPORT_TYPE_APPLIANCE]);
+    ).toEqual([SUPPORT_TYPE_MONETARY]);
   });
 
-  test("keeps all three support types when the spreadsheet contains all three", () => {
+  test("forces imported all-support rows back to standalone monetary when cash is present", () => {
     expect(
       deriveImportedSupportTypes({
         importedRequestType: "",
@@ -48,11 +48,7 @@ describe("reliefImportUtils", () => {
         ],
         previousSupportTypes: [SUPPORT_TYPE_FOODPACKS, SUPPORT_TYPE_MONETARY],
       })
-    ).toEqual([
-      SUPPORT_TYPE_FOODPACKS,
-      SUPPORT_TYPE_MONETARY,
-      SUPPORT_TYPE_APPLIANCE,
-    ]);
+    ).toEqual([SUPPORT_TYPE_MONETARY]);
   });
 
   test("shows confirm received for waiting receipt journey even if canReceiveAnyRelease was not provided", () => {
