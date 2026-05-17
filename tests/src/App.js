@@ -220,7 +220,6 @@ const ROUTES = [
   { path: "/drrmo/announcements", element: <Announcement />, roles: ADMIN_DRRMO },
   { path: "/drrmo/inventory", element: <Inventory />, roles: ADMIN_DRRMO },
   { path: "/drrmo/inventory/add", element: <InventoryAdd />, roles: ADMIN_DRRMO },
-  { path: "/drrmo/donations/queue", element: <DonationValidationQueue />, roles: ADMIN_DRRMO },
   { path: "/drrmo/incident-report", element: <IncidentReport />, roles: ADMIN_DRRMO },
   { path: "/drrmo/analytics", element: <AdminAnalytics />, roles: ADMIN_DRRMO },
   { path: "/drrmo/notifications", element: <Notification />, roles: ADMIN_DRRMO },

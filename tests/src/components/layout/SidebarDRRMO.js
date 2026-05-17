@@ -4,7 +4,6 @@ import { useTheme } from "../../context/ThemeContext";
 import {
   FaBell,
   FaChartBar,
-  FaClipboardCheck,
   FaClipboardList,
   FaComments,
   FaCube,
@@ -21,12 +20,10 @@ import {
 import logo from "../../assets/images/sagipbayanlogo.png";
 
 const BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
-const QUEUE_REVIEW_STATUSES = new Set(["pending", "resubmitted"]);
 const EMPTY_COUNTS = {
   notifications: 0,
   relief: 0,
   inventory: 0,
-  donationQueue: 0,
   evacuation: 0,
   incident: 0,
   guidelines: 0,
@@ -52,7 +49,6 @@ const readCachedCounts = () => {
       notifications: Number(parsed?.notifications || 0),
       relief: Number(parsed?.relief || 0),
       inventory: Number(parsed?.inventory || 0),
-      donationQueue: Number(parsed?.donationQueue || 0),
       evacuation: Number(parsed?.evacuation || 0),
       incident: Number(parsed?.incident || 0),
       guidelines: Number(parsed?.guidelines || 0),
@@ -69,7 +65,6 @@ const writeCachedCounts = (counts) => {
     notifications: Number(counts?.notifications || 0),
     relief: Number(counts?.relief || 0),
     inventory: Number(counts?.inventory || 0),
-    donationQueue: Number(counts?.donationQueue || 0),
     evacuation: Number(counts?.evacuation || 0),
     incident: Number(counts?.incident || 0),
     guidelines: Number(counts?.guidelines || 0),
@@ -102,26 +97,6 @@ const getNotificationCount = async (moduleName) => {
   return items.length;
 };
 
-const getDonationQueueCount = async () => {
-  const res = await fetch(`${BASE_URL}/api/donations?limit=300`, {
-    method: "GET",
-    credentials: "include",
-  });
-
-  if (!res.ok) return 0;
-
-  const data = await res.json();
-  const items = Array.isArray(data)
-    ? data
-    : Array.isArray(data.donations)
-    ? data.donations
-    : [];
-
-  return items.filter((item) =>
-    QUEUE_REVIEW_STATUSES.has(String(item?.status || "").toLowerCase())
-  ).length;
-};
-
 export default function SidebarDRRMO({
   collapsed,
   onToggle,
@@ -140,7 +115,6 @@ export default function SidebarDRRMO({
   const [unreadCount, setUnreadCount] = useState(cachedCountsRef.current.notifications);
   const [reliefUnreadCount, setReliefUnreadCount] = useState(cachedCountsRef.current.relief);
   const [inventoryUnreadCount, setInventoryUnreadCount] = useState(cachedCountsRef.current.inventory);
-  const [donationQueueCount, setDonationQueueCount] = useState(cachedCountsRef.current.donationQueue);
   const [evacUnreadCount, setEvacUnreadCount] = useState(cachedCountsRef.current.evacuation);
   const [incidentUnreadCount, setIncidentUnreadCount] = useState(cachedCountsRef.current.incident);
   const [guidelinesUnreadCount, setGuidelinesUnreadCount] = useState(cachedCountsRef.current.guidelines);
@@ -189,7 +163,6 @@ export default function SidebarDRRMO({
         notifications: Number(counts?.notifications || 0),
         relief: Number(counts?.relief || 0),
         inventory: Number(counts?.inventory || 0),
-        donationQueue: Number(counts?.donationQueue || 0),
         evacuation: Number(counts?.evacuation || 0),
         incident: Number(counts?.incident || 0),
         guidelines: Number(counts?.guidelines || 0),
@@ -204,9 +177,6 @@ export default function SidebarDRRMO({
       }
       if (nextCounts.inventory > previousCounts.inventory) {
         triggerBadgePulse("inventory");
-      }
-      if (nextCounts.donationQueue > previousCounts.donationQueue) {
-        triggerBadgePulse("donationQueue");
       }
       if (nextCounts.evacuation > previousCounts.evacuation) {
         triggerBadgePulse("evacuation");
@@ -227,7 +197,6 @@ export default function SidebarDRRMO({
       setUnreadCount(nextCounts.notifications);
       setReliefUnreadCount(nextCounts.relief);
       setInventoryUnreadCount(nextCounts.inventory);
-      setDonationQueueCount(nextCounts.donationQueue);
       setEvacUnreadCount(nextCounts.evacuation);
       setIncidentUnreadCount(nextCounts.incident);
       setGuidelinesUnreadCount(nextCounts.guidelines);
@@ -239,7 +208,6 @@ export default function SidebarDRRMO({
           allRes,
           reliefCount,
           inventoryCount,
-          donationQueueUnread,
           evacuationCount,
           incidentCount,
           guidelinesCount,
@@ -250,7 +218,6 @@ export default function SidebarDRRMO({
           }),
           getNotificationCount("relief"),
           getNotificationCount("inventory"),
-          getDonationQueueCount(),
           getNotificationCount("evacuation"),
           getNotificationCount("incident"),
           getNotificationCount("guidelines"),
@@ -271,7 +238,6 @@ export default function SidebarDRRMO({
             notifications: allData.unreadCount,
             relief: reliefCount,
             inventory: inventoryCount,
-            donationQueue: donationQueueUnread,
             evacuation: evacuationCount,
             incident: incidentCount,
             guidelines: guidelinesCount,
@@ -373,14 +339,6 @@ export default function SidebarDRRMO({
           Icon: FaPlusCircle,
           exact: true,
           badge: 0,
-        },
-        {
-          to: "/drrmo/donations/queue",
-          label: "Donation Queue",
-          Icon: FaClipboardCheck,
-          exact: true,
-          badge: donationQueueCount,
-          badgeKey: "donationQueue",
         },
       ],
     },

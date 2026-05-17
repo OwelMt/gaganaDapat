@@ -8,16 +8,16 @@
 }
 
 .dqv-page .rrl-board {
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .dqv-page .rrl-board-left {
   position: static;
-  align-self: flex-start;
+  align-self: stretch;
 }
 
 .dqv-page .rrl-board-right {
-  align-self: flex-start;
+  align-self: stretch;
 }
 
 .dqv-notification-stack {
@@ -38,12 +38,14 @@
 
 .dqv-page .rrl-queue-card {
   min-height: 360px;
+  height: 100%;
   overflow: visible;
 }
 
 .dqv-page .rrl-placeholder-card,
 .dqv-page .rrl-details-card-compact {
   min-height: 360px;
+  height: 100%;
   overflow-x: hidden;
   overflow-y: visible;
 }
@@ -156,20 +158,6 @@
   font-size: 22px !important;
   line-height: 1.25 !important;
   word-break: break-word;
-}
-
-.dqv-duplicate-note {
-  display: inline-flex;
-  align-items: center;
-  margin-top: 10px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(20, 83, 45, 0.14);
-  background: linear-gradient(180deg, #f6fbf7 0%, #eef8f0 100%);
-  color: #1f5a35;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.45;
 }
 
 .dqv-detail-grid {

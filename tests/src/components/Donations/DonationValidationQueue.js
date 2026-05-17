@@ -123,8 +123,10 @@ const getQueueClass = (status) => {
   return "dqv-queue-pending";
 };
 
-const isActiveQueueStatus = (status) =>
-  ["pending", "resubmitted"].includes(normalize(status));
+const isActiveQueueStatus = (status) => {
+  const normalized = normalize(status);
+  return !["received", "not_received", "rejected"].includes(normalized);
+};
 
 const getStatusOrder = (status) => {
   const normalized = normalize(status);
@@ -352,7 +354,7 @@ export default function DonationValidationQueue() {
         const status = normalize(row?.status);
         const type = normalize(row?.inventoryType || row?.donationType);
         acc.total += 1;
-        if (status === "pending") acc.pending += 1;
+        if (isActiveQueueStatus(status) && status !== "resubmitted") acc.pending += 1;
         if (status === "resubmitted") acc.resubmitted += 1;
         if (status === "received") acc.received += 1;
         if (status === "not_received") acc.notReceived += 1;
@@ -369,6 +371,24 @@ export default function DonationValidationQueue() {
       }
     );
   }, [rows]);
+
+  const inactiveSummaryMessage = useMemo(() => {
+    if (filteredRows.length || !rows.length) return "";
+
+    const notReceivedCount = Number(topTotals.notReceived || 0);
+    const receivedCount = Number(topTotals.received || 0);
+
+    if (notReceivedCount && receivedCount) {
+      return `${notReceivedCount} donation(s) are marked not received and ${receivedCount} are already in inventory.`;
+    }
+    if (notReceivedCount) {
+      return `${notReceivedCount} donation(s) are marked not received and waiting for donor resubmission.`;
+    }
+    if (receivedCount) {
+      return `${receivedCount} donation(s) were already accepted and moved to inventory.`;
+    }
+    return "Loaded donation records are currently in non-reviewable statuses.";
+  }, [filteredRows.length, rows.length, topTotals.notReceived, topTotals.received]);
 
   const openConfirmation = useCallback((action, donation) => {
     if (!donation?._id) return;
@@ -537,10 +557,13 @@ export default function DonationValidationQueue() {
                   <div className="rrl-queue-list">
                     {loadingQueue ? (
                       <div className="rrl-empty-state">Loading donation queue...</div>
-                    ) : filteredRows.length === 0 ? (
-                      <div className="rrl-empty-state">
-                        No active donation records found.
-                      </div>
+                      ) : filteredRows.length === 0 ? (
+                        <div className="rrl-empty-state">
+                          <div>No active donation records found.</div>
+                          {inactiveSummaryMessage ? (
+                            <small className="rrl-empty-note">{inactiveSummaryMessage}</small>
+                          ) : null}
+                        </div>
                     ) : (
                       filteredRows.map((row) => {
                         const isActive = selectedDonation?._id === row._id;
@@ -576,11 +599,6 @@ export default function DonationValidationQueue() {
                                   <div className="rrl-queue-requestno">
                                   {getDonationRef(row)}
                                   </div>
-                                  {Number(row?.duplicateCount || 1) > 1 ? (
-                                    <span className="rrl-edited-badge">
-                                      {row.duplicateCount} linked
-                                    </span>
-                                  ) : null}
                                   {normalize(row?.status) === "resubmitted" ? (
                                     <span className="rrl-edited-badge">
                                       <FaUndo />
@@ -636,11 +654,6 @@ export default function DonationValidationQueue() {
                       <div className="rrl-details-requestno">
                         {getDonationRef(displayedDonation)}
                       </div>
-                      {Number(displayedDonation?.duplicateCount || 1) > 1 ? (
-                        <div className="dqv-duplicate-note">
-                          {displayedDonation.duplicateCount} submissions share this reference number and are treated as one donation.
-                        </div>
-                      ) : null}
                     </div>
 
                     <div className={`rrl-status-banner rrl-status-banner-${selectedTone}`}>

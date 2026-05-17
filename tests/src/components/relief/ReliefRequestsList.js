@@ -168,6 +168,39 @@ const sortOperationalQueue = (items = []) =>
     return aTime - bTime;
   });
 
+const getStickyReceivedRequests = (activeItems = [], receivedItems = []) => {
+  const activeByBarangay = new Set(
+    (Array.isArray(activeItems) ? activeItems : [])
+      .map((item) => String(item?.barangayName || '').trim())
+      .filter(Boolean)
+  );
+
+  const latestReceivedByBarangay = new Map();
+
+  (Array.isArray(receivedItems) ? receivedItems : []).forEach((item) => {
+    const barangayName = String(item?.barangayName || '').trim();
+    if (!barangayName || activeByBarangay.has(barangayName)) return;
+
+    const existing = latestReceivedByBarangay.get(barangayName);
+    const itemTime = new Date(
+      item?.receivedAt || item?.updatedAt || item?.requestDate || item?.createdAt || 0
+    ).getTime();
+    const existingTime = new Date(
+      existing?.receivedAt ||
+        existing?.updatedAt ||
+        existing?.requestDate ||
+        existing?.createdAt ||
+        0
+    ).getTime();
+
+    if (!existing || itemTime >= existingTime) {
+      latestReceivedByBarangay.set(barangayName, item);
+    }
+  });
+
+  return Array.from(latestReceivedByBarangay.values());
+};
+
 const areQueuesEquivalent = (prevRows = [], nextRows = []) => {
   if (prevRows.length !== nextRows.length) return false;
 
@@ -393,7 +426,7 @@ export default function ReliefRequestsList() {
             )
           : [];
 
-        const cleaned = sortOperationalQueue(
+        const unresolvedRequests = sortOperationalQueue(
           requests.filter((item) => {
             const status = normalize(item?.status);
             if (queueFilter === 'received') return status === 'received';
@@ -402,6 +435,14 @@ export default function ReliefRequestsList() {
             return true;
           })
         );
+
+        const cleaned =
+          queueFilter === 'active'
+            ? sortOperationalQueue([
+                ...unresolvedRequests,
+                ...getStickyReceivedRequests(unresolvedRequests, receivedRequests),
+              ])
+            : unresolvedRequests;
 
         setReceivedRows(receivedRequests);
 

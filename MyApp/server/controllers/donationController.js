@@ -183,6 +183,29 @@ function normalizeDonationForResponse(donationDoc) {
   return donation;
 }
 
+function buildMonetaryDonationFilter() {
+  return {
+    $or: [
+      { inventoryType: "monetary" },
+      { donationType: "monetary" },
+      { category: /^money$/i },
+      { paymentMethod: { $in: ["gcash", "bank_transfer", "bank", "cash"] } },
+      {
+        $and: [
+          { amount: { $gt: 0 } },
+          {
+            $or: [
+              { referenceNumber: { $exists: true, $ne: "" } },
+              { gcashReferenceNumber: { $exists: true, $ne: "" } },
+              { transferReferenceNumber: { $exists: true, $ne: "" } },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
 function buildReferenceNumberFilter(referenceNumber) {
   const normalizedReferenceNumber =
     normalizeDonationReferenceNumber(referenceNumber);
@@ -619,9 +642,15 @@ async function getDonations(req, res) {
 
     const effectiveTypeFilter = roleScopedType || typeFilter;
     if (VALID_INVENTORY_TYPES.includes(effectiveTypeFilter)) {
-      filter.inventoryType = effectiveTypeFilter;
-    } else if (["monetary", "non_monetary"].includes(effectiveTypeFilter)) {
-      filter.donationType = effectiveTypeFilter;
+      if (effectiveTypeFilter === "monetary") {
+        Object.assign(filter, buildMonetaryDonationFilter());
+      } else {
+        filter.inventoryType = effectiveTypeFilter;
+      }
+    } else if (effectiveTypeFilter === "non_monetary") {
+      filter.inventoryType = { $in: ["goods", "appliance"] };
+    } else if (effectiveTypeFilter === "monetary") {
+      Object.assign(filter, buildMonetaryDonationFilter());
     }
 
     if (req.query.category) filter.category = normalizeLower(req.query.category, 80);

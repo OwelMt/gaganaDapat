@@ -93,7 +93,7 @@ const InventoryAdd = () => {
   const canAccessInventoryAdd = isAdmin || isDrrmo;
   const donationQueuePath = isAdmin
     ? "/admin/donations/queue"
-    : "/drrmo/donations/queue";
+    : "/drrmo/inventory/add";
   const [items, setItems] = useState([]);
   const [archivedItems, setArchivedItems] = useState([]);
   const [proofFiles, setProofFiles] = useState([]);

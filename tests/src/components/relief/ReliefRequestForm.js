@@ -229,8 +229,7 @@ const createDistributionEditorCard = (record = {}, mode = 'create') => ({
 });
 
 const normalizeStage = (stage) => String(stage || '').toLowerCase();
-const getDeclaredSupportTypes = (request = {}) =>
-  normalizeSupportTypes(request?.supportTypes, request?.requestType);
+const getDeclaredSupportTypes = (request = {}) => getSupportTypesFromRequest(request);
 
 const normalizeValue = (value) =>
   String(value || '')
@@ -1399,6 +1398,7 @@ export default function ReliefRequestForm() {
     if (journey.canRequestAgain) return true;
     if (!latestRequest) return true;
     if (hasCompletedReceiptState) return false;
+    if (stageMeta.activeStep >= 5) return false;
 
     const normalizedStatus = normalizeStatus(latestRequest?.status);
     const normalizedStage = normalizeStatus(journey?.stage);
@@ -1411,7 +1411,13 @@ export default function ReliefRequestForm() {
           normalizedStage
         )
       );
-    }, [journey.canRequestAgain, journey.stage, latestRequest, hasCompletedReceiptState]);
+    }, [
+      journey.canRequestAgain,
+      journey.stage,
+      latestRequest,
+      hasCompletedReceiptState,
+      stageMeta.activeStep
+    ]);
 
   const decisionRemarks = useMemo(() => {
     return (

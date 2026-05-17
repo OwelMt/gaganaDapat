@@ -533,7 +533,7 @@ export default function Notification() {
     }
 
     if (rawLink === "/donations") {
-      if (role === "drrmo") return "/drrmo/donations/queue";
+      if (role === "drrmo") return "/drrmo/inventory/add";
       if (role === "admin") return "/admin/inventory/add";
       return "/";
     }
