@@ -8,6 +8,20 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+function getConfiguredSender() {
+  const sender = String(process.env.EMAIL_USER || "").trim();
+
+  if (!sender) {
+    const error = new Error(
+      "Account update approval email is not configured. Set EMAIL_USER and EMAIL_PASS on the deployed backend."
+    );
+    error.code = "EMAIL_CONFIG_MISSING";
+    throw error;
+  }
+
+  return sender;
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -36,9 +50,10 @@ const sendAccountUpdateApprovalEmail = ({
         )
         .join("")}</ul>`
     : "<p>No field summary available.</p>";
+  const configuredSender = getConfiguredSender();
 
   return transporter.sendMail({
-    from: "SAGIP BAYAN <no-reply@sagipbayan.local>",
+    from: `SAGIP BAYAN <${configuredSender}>`,
     to: email,
     subject: `Approve updates to your ${roleLabel} SAGIP BAYAN account`,
     html: `

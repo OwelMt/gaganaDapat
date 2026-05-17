@@ -8,6 +8,20 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+function getConfiguredSender() {
+  const sender = String(process.env.EMAIL_USER || "").trim();
+
+  if (!sender) {
+    const error = new Error(
+      "Account approval email is not configured. Set EMAIL_USER and EMAIL_PASS on the deployed backend."
+    );
+    error.code = "EMAIL_CONFIG_MISSING";
+    throw error;
+  }
+
+  return sender;
+}
+
 const sendAccountApprovalEmail = ({
   email,
   approvalLink,
@@ -21,9 +35,10 @@ const sendAccountApprovalEmail = ({
     role === "barangay" && barangayName
       ? `<p><strong>Barangay:</strong> ${barangayName}</p>`
       : "";
+  const configuredSender = getConfiguredSender();
 
   return transporter.sendMail({
-    from: "SAGIP BAYAN <no-reply@sagipbayan.local>",
+    from: `SAGIP BAYAN <${configuredSender}>`,
     to: email,
     subject: `Approve your ${roleLabel} SAGIP BAYAN account`,
     html: `
