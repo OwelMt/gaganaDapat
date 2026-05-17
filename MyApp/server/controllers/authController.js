@@ -417,11 +417,12 @@ const register = async (req, res) => {
         email: cleanEmail,
         role: cleanRole,
         message: mailErr.message,
-        code: mailErr.code || ''
+        code: mailErr.code || '',
+        status: mailErr.status || ''
       });
       return res.status(500).json({
         message:
-          'Failed to send the approval email. Check deployed EMAIL_USER, EMAIL_PASS, and Gmail App Password settings.'
+          'Failed to send the approval email. Check deployed email provider settings (RESEND_API_KEY / EMAIL_FROM or EMAIL_USER / EMAIL_PASS).'
       });
     }
 
@@ -1075,11 +1076,12 @@ const updateAccount = async (req, res) => {
         email: account.email,
         role: account instanceof Barangay ? 'barangay' : account.role,
         message: mailErr.message,
-        code: mailErr.code || ''
+        code: mailErr.code || '',
+        status: mailErr.status || ''
       });
       return res.status(500).json({
         message:
-          'Failed to send the approval email. Check deployed EMAIL_USER, EMAIL_PASS, and Gmail App Password settings.'
+          'Failed to send the approval email. Check deployed email provider settings (RESEND_API_KEY / EMAIL_FROM or EMAIL_USER / EMAIL_PASS).'
       });
     }
 
