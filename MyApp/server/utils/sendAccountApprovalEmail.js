@@ -1,26 +1,4 @@
-const nodemailer = require("nodemailer");
-
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
-
-function getConfiguredSender() {
-  const sender = String(process.env.EMAIL_USER || "").trim();
-
-  if (!sender) {
-    const error = new Error(
-      "Account approval email is not configured. Set EMAIL_USER and EMAIL_PASS on the deployed backend."
-    );
-    error.code = "EMAIL_CONFIG_MISSING";
-    throw error;
-  }
-
-  return sender;
-}
+const sendTransactionalEmail = require("./sendTransactionalEmail");
 
 const sendAccountApprovalEmail = ({
   email,
@@ -35,10 +13,8 @@ const sendAccountApprovalEmail = ({
     role === "barangay" && barangayName
       ? `<p><strong>Barangay:</strong> ${barangayName}</p>`
       : "";
-  const configuredSender = getConfiguredSender();
 
-  return transporter.sendMail({
-    from: `SAGIP BAYAN <${configuredSender}>`,
+  return sendTransactionalEmail({
     to: email,
     subject: `Approve your ${roleLabel} SAGIP BAYAN account`,
     html: `
