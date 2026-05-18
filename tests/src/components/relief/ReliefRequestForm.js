@@ -1258,11 +1258,6 @@ export default function ReliefRequestForm() {
     [distributionState.records]
   );
 
-  const distributionConfirmationStorageKey = useMemo(
-    () => (latestRequest?._id ? `rrf-dafac-confirmed:${latestRequest._id}` : ''),
-    [latestRequest?._id]
-  );
-
   const isAccomplishedReady = useMemo(() => {
     if (!latestRequest?._id || !hasCompletedReceiptState) return false;
 
@@ -1284,17 +1279,11 @@ export default function ReliefRequestForm() {
   }, [latestRequest?._id, hasCompletedReceiptState, accomplishedDistributionSummary]);
 
   useEffect(() => {
-    if (!distributionConfirmationStorageKey) {
-      setDistributionConfirmed(false);
-      return;
-    }
-
-    try {
-      setDistributionConfirmed(window.sessionStorage.getItem(distributionConfirmationStorageKey) === '1');
-    } catch {
-      setDistributionConfirmed(false);
-    }
-  }, [distributionConfirmationStorageKey]);
+    const requestStage = normalizeStage(
+      distributionState.request?.currentStage || latestRequest?.currentStage || journey?.stage
+    );
+    setDistributionConfirmed(requestStage === 'accomplished');
+  }, [distributionState.request?.currentStage, latestRequest?.currentStage, journey?.stage]);
 
   useEffect(() => {
     if (isAccomplishedReady) {
@@ -1304,17 +1293,20 @@ export default function ReliefRequestForm() {
     if (distributionConfirmed) {
       setDistributionConfirmed(false);
     }
-
-    if (distributionConfirmationStorageKey) {
-      try {
-        window.sessionStorage.removeItem(distributionConfirmationStorageKey);
-      } catch {}
-    }
-  }, [distributionConfirmed, distributionConfirmationStorageKey, isAccomplishedReady]);
+  }, [distributionConfirmed, isAccomplishedReady]);
 
   const stageMeta = useMemo(() => {
     if (editMode || showEditor) return getStageMeta('preparation');
     if (!latestRequest) return getStageMeta('preparation');
+    if (normalizeStage(distributionState.request?.currentStage || latestRequest?.currentStage || journey.stage) === 'accomplished') {
+      return {
+        label: 'Accomplished Report',
+        tone: 'completed',
+        activeStep: 7,
+        completedSteps: 6
+      };
+    }
+
     if (hasCompletedReceiptState) {
       if (isAccomplishedReady && distributionConfirmed) {
         return {
@@ -1337,6 +1329,7 @@ export default function ReliefRequestForm() {
     editMode,
     showEditor,
     latestRequest,
+    distributionState.request?.currentStage,
     hasCompletedReceiptState,
     journey.stage,
     hasAnyDistributionRecords,
@@ -1395,10 +1388,10 @@ export default function ReliefRequestForm() {
   }, [journey?.stage, latestRequest?.status, stageMeta.label]);
 
   const canShowRequestAgainButton = useMemo(() => {
-    if (journey.canRequestAgain) return true;
-    if (!latestRequest) return true;
     if (hasCompletedReceiptState) return false;
     if (stageMeta.activeStep >= 5) return false;
+    if (journey.canRequestAgain) return true;
+    if (!latestRequest) return true;
 
     const normalizedStatus = normalizeStatus(latestRequest?.status);
     const normalizedStage = normalizeStatus(journey?.stage);
@@ -1930,26 +1923,45 @@ export default function ReliefRequestForm() {
 
   const resetDistributionConfirmation = useCallback(() => {
     setDistributionConfirmed(false);
-    if (!distributionConfirmationStorageKey) return;
-    try {
-      window.sessionStorage.removeItem(distributionConfirmationStorageKey);
-    } catch {}
-  }, [distributionConfirmationStorageKey]);
+  }, []);
 
-  const handleConfirmDistributionStep = useCallback(() => {
-    if (!isAccomplishedReady) {
+  const handleConfirmDistributionStep = useCallback(async () => {
+    if (!isAccomplishedReady || !latestRequest?._id) {
       setErrorFeedback('Complete the DAFAC distribution totals first before confirming.');
       return;
     }
 
-    setDistributionConfirmed(true);
-    if (distributionConfirmationStorageKey) {
-      try {
-        window.sessionStorage.setItem(distributionConfirmationStorageKey, '1');
-      } catch {}
+    try {
+      setSubmittingAction(true);
+      clearFeedback();
+
+      const res = await fetch(
+        `${BASE_URL}/api/relief-distributions/${latestRequest._id}/confirm-accomplished`,
+        {
+          method: 'POST',
+          credentials: 'include'
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.message || 'Failed to confirm the accomplished report.');
+      }
+
+      setDistributionConfirmed(true);
+      setSuccessFeedback(
+        data?.message || 'DAFAC distribution confirmed. You can now review the accomplished report.'
+      );
+      await loadJourneyData({ silent: true });
+      await loadDistributionData({ silent: true });
+    } catch (err) {
+      console.error(err);
+      setErrorFeedback(err.message || 'Failed to confirm the accomplished report.');
+    } finally {
+      setSubmittingAction(false);
     }
-    setSuccessFeedback('DAFAC distribution confirmed. You can now review the accomplished report.');
-  }, [distributionConfirmationStorageKey, isAccomplishedReady]);
+  }, [isAccomplishedReady, latestRequest?._id, loadDistributionData, loadJourneyData]);
 
   const updateDistributionEditorCard = (localId, updater) => {
     setDistributionEditorCards((prev) =>

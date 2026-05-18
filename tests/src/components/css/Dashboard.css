@@ -3715,6 +3715,7 @@
   box-shadow: 0 10px 20px rgba(16, 40, 25, 0.06);
   margin-bottom: 14px;
   align-self: flex-start;
+  text-align: left;
 }
 
 .legend-overlay .public-map-legend {
@@ -3730,11 +3731,12 @@
 
 .public-map-legend-items {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-start;
   text-align: left;
   gap: 10px;
   flex-wrap: wrap;
+  width: 100%;
 }
 
 .public-map-legend-item {
@@ -3745,6 +3747,7 @@
   color: #456353;
   font-size: 0.82rem;
   font-weight: 800;
+  width: 100%;
 }
 
 .public-map-dot {

@@ -1,5 +1,6 @@
 const ReliefRequest = require("../models/ReliefRequest");
 const ReliefRelease = require("../models/ReliefRelease");
+const ReliefDistributionRecord = require("../models/ReliefDistributionRecord");
 const FoodPackTemplate = require("../models/FoodPackTemplate");
 const InventoryItem = require("../models/InventoryItem");
 const createNotification = require("../utils/createNotification");
@@ -44,6 +45,67 @@ const formatMonetaryAmount = (value) =>
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
+
+const normalizeStatus = (value) => normalizeString(value).toLowerCase();
+
+const normalizeApplianceUnits = (record = {}) => {
+  const directUnits = record?.distribution?.applianceUnitsReceived;
+  if (directUnits !== undefined && directUnits !== null && directUnits !== "") {
+    return toNumber(directUnits);
+  }
+
+  if (!Array.isArray(record?.distribution?.applianceItems)) {
+    return 0;
+  }
+
+  return record.distribution.applianceItems.reduce(
+    (sum, item) => sum + toNumber(item?.quantityReceived),
+    0
+  );
+};
+
+const buildFamilyHeadDisplayName = (record = {}) => {
+  const surname = normalizeString(record?.headOfFamily?.surname);
+  const firstName = normalizeString(record?.headOfFamily?.firstName);
+  const middleName = normalizeString(record?.headOfFamily?.middleName);
+  const givenNames = [firstName, middleName].filter(Boolean).join(" ");
+
+  if (surname && givenNames) {
+    return `${surname}, ${givenNames}`;
+  }
+
+  return (
+    surname ||
+    givenNames ||
+    normalizeString(record?.signOff?.familyHeadPrintedName) ||
+    "-"
+  );
+};
+
+const buildDistributionReviewSummary = ({ records = [], supportTypes = [] }) => {
+  const normalizedSupportTypes = normalizeSupportTypes(supportTypes);
+  const completedRecords = (Array.isArray(records) ? records : []).filter(
+    (record) => normalizeStatus(record?.distributionStatus) === "completed"
+  );
+
+  return {
+    completedCount: completedRecords.length,
+    perFamilyRows: completedRecords.map((record) => ({
+      recordId: record?._id,
+      serialNo: normalizeString(record?.serialNo) || "-",
+      familyName: buildFamilyHeadDisplayName(record),
+      distributionDate: record?.distributionDate || record?.createdAt || null,
+      foodPacksReceived: toNumber(record?.distribution?.foodPacksReceived),
+      monetaryAmountReceived: toNumber(record?.distribution?.monetaryAmountReceived),
+      applianceUnitsReceived: normalizeApplianceUnits(record),
+    })),
+    visibility: {
+      showsFoodPacks: normalizedSupportTypes.includes(SUPPORT_TYPE_FOODPACKS),
+      showsMonetary: normalizedSupportTypes.includes(SUPPORT_TYPE_MONETARY),
+      showsAppliances: normalizedSupportTypes.includes(SUPPORT_TYPE_APPLIANCE),
+    },
+  };
+};
 
 const buildDemandSummaryLabel = (request = {}) => {
   const supportTypes = getSupportTypesFromRequest(request);
@@ -222,9 +284,10 @@ const buildOperationalStatusLabel = (request = {}) => {
   if (
     status === "received" ||
     status === "cancelled" ||
+    currentStage === "accomplished" ||
     currentStage === "completed"
   ) {
-    return "Completed";
+    return currentStage === "accomplished" ? "Accomplished" : "Completed";
   }
 
   return "Pending Review";
@@ -543,6 +606,10 @@ const getRequestReviewDetails = async (req, res) => {
       reliefRequestId: request._id,
       isArchived: false,
     }).sort({ createdAt: -1 });
+    const distributionRecords = await ReliefDistributionRecord.find({
+      reliefRequestId: request._id,
+      isArchived: false,
+    }).sort({ createdAt: -1 });
 
     const inventorySummary = await summarizeInventoryByCategory();
     const templates = await summarizeTemplatesForRequest(
@@ -550,10 +617,19 @@ const getRequestReviewDetails = async (req, res) => {
     );
 
     const enrichedRequest = enrichRequestForQueue(request);
+    const supportTypes = getSupportTypesFromRequest(request);
 
     res.json({
       request: enrichedRequest,
       releases,
+      distributions: {
+        records: distributionRecords,
+        summary: buildDistributionReviewSummary({
+          records: distributionRecords,
+          supportTypes,
+        }),
+        supportTypes,
+      },
       inventorySummary,
       templates,
     });

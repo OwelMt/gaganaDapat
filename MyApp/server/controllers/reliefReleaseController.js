@@ -639,6 +639,9 @@ const buildFulfillmentFromReleases = (releases = []) => {
 
 const deriveCurrentStage = (request) => {
   if (!request) return "preparation";
+  if (normalizeString(request.currentStage).toLowerCase() === "accomplished") {
+    return "accomplished";
+  }
 
   if (request.status === "pending") return "pending_review";
   if (request.status === "rejected") return "rejected";
@@ -720,7 +723,10 @@ const refreshRequestProgress = async (requestId, session = null) => {
 
     if (fullyReceived) {
       request.status = "received";
-      request.currentStage = "completed";
+      request.currentStage =
+        normalizeString(request.currentStage).toLowerCase() === "accomplished"
+          ? "accomplished"
+          : "completed";
       if (!request.receivedAt) {
         request.receivedAt = new Date();
       }
@@ -751,7 +757,10 @@ const refreshRequestProgress = async (requestId, session = null) => {
       request.receivedAt = null;
     } else if (hasReceivedRelease) {
       request.status = "received";
-      request.currentStage = "completed";
+      request.currentStage =
+        normalizeString(request.currentStage).toLowerCase() === "accomplished"
+          ? "accomplished"
+          : "completed";
       if (!request.receivedAt) {
         request.receivedAt = new Date();
       }

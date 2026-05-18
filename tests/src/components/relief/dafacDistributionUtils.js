@@ -50,14 +50,17 @@ const buildFamilyName = (record = {}) => {
 
 const getDafacAidVisibility = ({ supportTypes = [], caps = {} } = {}) => {
   const normalizedSupportTypes = new Set(normalizeSupportTypes(supportTypes));
+  const allowsFood =
+    normalizedSupportTypes.has(SUPPORT_TYPE_FOODPACKS) || Boolean(caps?.allowsFood);
+  const allowsMonetary =
+    normalizedSupportTypes.has(SUPPORT_TYPE_MONETARY) || Boolean(caps?.allowsMonetary);
+  const allowsAppliances =
+    normalizedSupportTypes.has(SUPPORT_TYPE_APPLIANCE) || Boolean(caps?.allowsAppliance);
 
   return {
-    showsFoodPacks:
-      normalizedSupportTypes.has(SUPPORT_TYPE_FOODPACKS) && toWholeNumber(caps?.foodPacks) > 0,
-    showsMonetary:
-      normalizedSupportTypes.has(SUPPORT_TYPE_MONETARY) && toNumber(caps?.monetaryAmount) > 0,
-    showsAppliances:
-      normalizedSupportTypes.has(SUPPORT_TYPE_APPLIANCE) && toWholeNumber(caps?.applianceUnits) > 0,
+    showsFoodPacks: allowsFood,
+    showsMonetary: allowsMonetary,
+    showsAppliances: allowsAppliances,
   };
 };
 

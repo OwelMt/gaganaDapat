@@ -35,7 +35,7 @@ test("paginates family cards in groups of three and clamps the requested page", 
   });
 });
 
-test("shows only support sections that were actually released for the request", () => {
+test("shows request-aware support sections for the relief type being distributed", () => {
   assert.deepStrictEqual(
     getDafacAidVisibility({
       supportTypes: [
@@ -51,7 +51,7 @@ test("shows only support sections that were actually released for the request", 
     }),
     {
       showsFoodPacks: true,
-      showsMonetary: false,
+      showsMonetary: true,
       showsAppliances: true,
     }
   );

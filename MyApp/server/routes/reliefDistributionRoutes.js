@@ -21,6 +21,12 @@ router.post(
   controller.importDistributionWorkbook
 );
 
+router.post(
+  "/:reliefRequestId/confirm-accomplished",
+  requireLogin,
+  controller.confirmAccomplishedDistribution
+);
+
 router.get(
   "/:reliefRequestId",
   requireLogin,

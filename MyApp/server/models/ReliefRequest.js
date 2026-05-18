@@ -275,7 +275,8 @@ const reliefRequestSchema = new mongoose.Schema(
     "approved_waiting_release",
     "partially_released",
     "released_waiting_receipt",
-    "completed"
+    "completed",
+    "accomplished"
   ],
   default: "pending_review"
 },

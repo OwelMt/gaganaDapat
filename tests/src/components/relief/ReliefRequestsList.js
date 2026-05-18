@@ -31,6 +31,7 @@ import {
   getVisibleRows,
 } from './requestListUtils';
 import { isConfirmationSubmitDisabled } from './requestReviewUtils';
+import * as dafacDistributionUtils from './dafacDistributionUtils';
 
 const BASE_URL =
   process.env.REACT_APP_API_URL || 'https://gaganadapat.onrender.com';
@@ -138,6 +139,9 @@ const getRequestSyncKey = (request) =>
 
 const getFlowTone = (request) => {
   const status = normalize(request?.status);
+  const currentStage = normalize(request?.currentStage);
+
+  if (currentStage === 'accomplished') return 'received';
 
   if (status === 'pending') return 'pending';
   if (status === 'approved') return 'approved';
@@ -156,6 +160,14 @@ const getStatusOrder = (status) => {
   if (normalized === 'released') return 3;
   if (normalized === 'received') return 4;
   return 99;
+};
+
+const getDisplayedStatusLabel = (request) => {
+  if (normalize(request?.currentStage) === 'accomplished') {
+    return 'Accomplished';
+  }
+
+  return formatStatusLabel(request?.status);
 };
 
 const sortOperationalQueue = (items = []) =>
@@ -291,6 +303,7 @@ export default function ReliefRequestsList() {
   const [notifications, setNotifications] = useState([]);
   const [confirmState, setConfirmState] = useState(EMPTY_CONFIRM_STATE);
   const [rejectReason, setRejectReason] = useState('');
+  const [accomplishedPage, setAccomplishedPage] = useState(1);
 
   const notificationTimeoutsRef = useRef({});
   const lastSelectedRequestIdRef = useRef(null);
@@ -400,7 +413,7 @@ export default function ReliefRequestsList() {
         params.set('status', queueFilter);
 
         const receivedParams = new URLSearchParams();
-        receivedParams.set('status', 'received');
+        receivedParams.set('status', 'completed');
 
         const [res, receivedRes] = await Promise.all([
           fetch(`${BASE_URL}/api/drrmo/requests/queue?${params.toString()}`, {
@@ -420,9 +433,16 @@ export default function ReliefRequestsList() {
         const receivedData = receivedRes.ok ? await receivedRes.json() : null;
         const receivedRequests = Array.isArray(receivedData?.requests)
           ? sortOperationalQueue(
-              receivedData.requests.filter(
-                (item) => normalize(item?.status) === 'received'
-              )
+              receivedData.requests.filter((item) => {
+                const status = normalize(item?.status);
+                const currentStage = normalize(item?.currentStage);
+                return (
+                  status === 'received' ||
+                  status === 'completed' ||
+                  currentStage === 'completed' ||
+                  currentStage === 'accomplished'
+                );
+              })
             )
           : [];
 
@@ -650,16 +670,6 @@ export default function ReliefRequestsList() {
     ? reviewDetails?.request || visibleSelectedRequest
     : null;
 
-  const inventorySummary =
-    visibleSelectedRequest
-      ? feasibility?.inventorySummary || reviewDetails?.inventorySummary || null
-      : null;
-
-  const lowStockWarnings =
-    visibleSelectedRequest && Array.isArray(feasibility?.lowStockWarnings)
-      ? feasibility.lowStockWarnings
-      : [];
-
   const receivedSummaryBarangay =
     barangayFilter || String(displayedRequest?.barangayName || '').trim();
 
@@ -743,6 +753,53 @@ export default function ReliefRequestsList() {
         }))
     );
   }, [reviewDetails?.releases]);
+  const displayedDistributionSummary = useMemo(() => {
+    const reviewDistribution = reviewDetails?.distributions;
+    const supportTypes =
+      reviewDistribution?.supportTypes || displayedSupportTypes || [];
+
+    if (reviewDistribution?.summary) {
+      return {
+        visibility:
+          reviewDistribution.summary.visibility ||
+          dafacDistributionUtils.getDafacAidVisibility({ supportTypes, caps: {} }),
+        perFamilyRows: Array.isArray(reviewDistribution.summary.perFamilyRows)
+          ? reviewDistribution.summary.perFamilyRows
+          : [],
+      };
+    }
+
+    return dafacDistributionUtils.buildAccomplishedDistributionSummary({
+      supportTypes,
+      caps: {},
+      records: Array.isArray(reviewDistribution?.records) ? reviewDistribution.records : [],
+    });
+  }, [reviewDetails?.distributions, displayedSupportTypes]);
+  const displayedAccomplishedRows = Array.isArray(displayedDistributionSummary?.perFamilyRows)
+    ? displayedDistributionSummary.perFamilyRows
+    : [];
+  const displayedAccomplishedVisibility = displayedDistributionSummary?.visibility || {};
+  const canShowAccomplishedEvidence =
+    displayedReceiptProofItems.length > 0 || displayedAccomplishedRows.length > 0;
+  const accomplishedPageSize = 2;
+  const accomplishedTotalPages = Math.max(
+    1,
+    Math.ceil(displayedAccomplishedRows.length / accomplishedPageSize)
+  );
+  const displayedAccomplishedRowsPage = displayedAccomplishedRows.slice(
+    (accomplishedPage - 1) * accomplishedPageSize,
+    accomplishedPage * accomplishedPageSize
+  );
+
+  useEffect(() => {
+    setAccomplishedPage(1);
+  }, [displayedRequest?._id]);
+
+  useEffect(() => {
+    if (accomplishedPage > accomplishedTotalPages) {
+      setAccomplishedPage(accomplishedTotalPages);
+    }
+  }, [accomplishedPage, accomplishedTotalPages]);
 
   const selectedIndividuals =
     displayedVisibleTotals.male +
@@ -760,9 +817,6 @@ export default function ReliefRequestsList() {
     displayedRequest?.createdAt ||
     displayedRequest?.requestDate ||
     null;
-
-  const lowStockCount = lowStockWarnings.length;
-  const totalStockUnits = Number(inventorySummary?.totalStockUnits || 0);
 
   useLayoutEffect(() => {
     if (!detailsCardRef.current || typeof ResizeObserver === 'undefined') {
@@ -1190,7 +1244,7 @@ export default function ReliefRequestsList() {
                     </div>
 
                     <div className={`rrl-status-banner rrl-status-banner-${selectedTone}`}>
-                      {formatStatusLabel(displayedRequest.status)}
+                      {getDisplayedStatusLabel(displayedRequest)}
                     </div>
                   </div>
 
@@ -1319,90 +1373,6 @@ export default function ReliefRequestsList() {
                         </div>
                       </div>
 
-                      <div className="rrl-panel rrl-remarks-panel">
-                        <div className="rrl-section-head">
-                          <h3>Remarks</h3>
-                        </div>
-                        <div className="rrl-remarks-box">
-                          <div className="rrl-remarks-primary">
-                            {displayedRequest?.remarks || 'No remarks provided.'}
-                          </div>
-
-                          {displayedReceiptProofItems.length > 0 ? (
-                            <div className="rrl-receipt-proof-section">
-                              <div className="rrl-section-subhead">
-                                <span>Receipt Proof</span>
-                                <strong>{displayedReceiptProofItems.length} image(s)</strong>
-                              </div>
-                              <div className="rrl-receipt-proof-grid">
-                                {displayedReceiptProofItems.map((proof) => (
-                                  <a
-                                    key={proof.key}
-                                    href={proof.url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="rrl-receipt-proof-card"
-                                    title={proof.label}
-                                  >
-                                    <img src={proof.url} alt={proof.label} />
-                                  </a>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-
-                          <div className="rrl-remarks-summary-grid">
-                            {displayedNeedsMonetary ? (
-                              <div className="rrl-remarks-summary-card">
-                                <span>Requested Monetary</span>
-                                <strong>PHP {formatMoney(displayedRequestedMonetaryAmount)}</strong>
-                              </div>
-                            ) : null}
-                            {displayedNeedsAppliance ? (
-                              <div className="rrl-remarks-summary-card">
-                                <span>Requested Appliances</span>
-                                <strong>
-                                  {displayedRequestedApplianceQuantity} unit(s) across{' '}
-                                  {displayedRequestedApplianceCount} item type(s)
-                                </strong>
-                              </div>
-                            ) : null}
-                          </div>
-
-                          {displayedNeedsAppliance &&
-                          Array.isArray(displayedRequest?.requestedAppliances) &&
-                          displayedRequest.requestedAppliances.length > 0 ? (
-                            <div className="rrl-appliance-request-list">
-                              {displayedRequest.requestedAppliances
-                                .map((item, index) => {
-                                  const itemName = String(item?.itemName || '').trim();
-                                  const category = String(item?.category || '').trim();
-                                  const quantity = Number(item?.quantityRequested || 0);
-                                  const itemRemarks = String(item?.remarks || '').trim();
-
-                                  if (!itemName) return null;
-
-                                  return (
-                                    <div
-                                      key={`${itemName}-${index}`}
-                                      className="rrl-appliance-request-card"
-                                    >
-                                      <div className="rrl-appliance-request-head">
-                                        <strong>{itemName}</strong>
-                                        <span>{quantity} unit(s)</span>
-                                      </div>
-                                      <div className="rrl-appliance-request-meta">
-                                        <span>{category || 'Uncategorized'}</span>
-                                        <span>{itemRemarks || 'No item remarks'}</span>
-                                      </div>
-                                    </div>
-                                  );
-                                })
-                                .filter(Boolean)}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
                     </div>
 
                     <div className="rrl-review-side">
@@ -1410,32 +1380,6 @@ export default function ReliefRequestsList() {
                         <div className="rrl-section-head">
                           <h3>Decision Panel</h3>
                         </div>
-
-                        {loadingDetails ? (
-                          <div className="rrl-mini-empty">Loading support data...</div>
-                        ) : (
-                          <div className="rrl-readiness-compact">
-                            <div className="rrl-readiness-compact-row">
-                              <span>Stock Units</span>
-                              <strong>{totalStockUnits}</strong>
-                            </div>
-                            <div className="rrl-readiness-compact-row">
-                              <span>Monetary Pool</span>
-                              <strong>
-                                PHP{' '}
-                                {formatMoney(
-                                  feasibility?.inventorySummary?.totalMonetaryAmount || 0
-                                )}
-                              </strong>
-                            </div>
-                            <div
-                              className={`rrl-readiness-compact-row ${lowStockCount > 0 ? 'warn' : ''}`}
-                            >
-                              <span>Low Stock</span>
-                              <strong>{lowStockCount}</strong>
-                            </div>
-                          </div>
-                        )}
 
                         <div className="rrl-decision-actions">
                           {canReject ? (
@@ -1517,11 +1461,196 @@ export default function ReliefRequestsList() {
                             Download PDF
                           </a>
                         </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </section>
-              )}
+
+                    <div className="rrl-review-full">
+                      <div className="rrl-panel rrl-remarks-panel">
+                        <div className="rrl-section-head">
+                          <h3>Remarks</h3>
+                        </div>
+                        <div className="rrl-remarks-box">
+                          <div className="rrl-remarks-primary">
+                            {displayedRequest?.remarks || 'No remarks provided.'}
+                          </div>
+
+                          {canShowAccomplishedEvidence ? (
+                            <div className="rrl-accomplished-evidence-row">
+                              <div className="rrl-receipt-proof-section">
+                                <div className="rrl-section-subhead">
+                                  <span>Receipt Proof</span>
+                                  <strong>{displayedReceiptProofItems.length} image(s)</strong>
+                                </div>
+                                {displayedReceiptProofItems.length > 0 ? (
+                                  <div className="rrl-receipt-proof-grid">
+                                    {displayedReceiptProofItems.map((proof) => (
+                                      <a
+                                        key={proof.key}
+                                        href={proof.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="rrl-receipt-proof-card"
+                                        title={proof.label}
+                                      >
+                                        <img src={proof.url} alt={proof.label} />
+                                      </a>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="rrl-mini-empty">
+                                    No receipt proof uploaded yet.
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="rrl-accomplished-summary-section">
+                                <div className="rrl-section-subhead">
+                                  <span>Per-Family Distribution Summary</span>
+                                  <strong>{displayedAccomplishedRows.length} family card(s)</strong>
+                                </div>
+
+                                {displayedAccomplishedRows.length > 0 ? (
+                                  <>
+                                    <div className="rrl-accomplished-summary-table-wrap">
+                                      <table className="rrl-accomplished-summary-table">
+                                        <thead>
+                                          <tr>
+                                            <th>Serial No.</th>
+                                            <th>Family Head</th>
+                                            {displayedAccomplishedVisibility.showsFoodPacks ? (
+                                              <th>Food Packs</th>
+                                            ) : null}
+                                            {displayedAccomplishedVisibility.showsMonetary ? (
+                                              <th>Monetary</th>
+                                            ) : null}
+                                            {displayedAccomplishedVisibility.showsAppliances ? (
+                                              <th>Appliance</th>
+                                            ) : null}
+                                            <th>Distribution Date</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {displayedAccomplishedRowsPage.map((row) => (
+                                            <tr key={row.recordId || row.serialNo}>
+                                              <td>{row.serialNo || '-'}</td>
+                                              <td className="rrl-accomplished-left-cell">
+                                                <strong>{row.familyName || '-'}</strong>
+                                              </td>
+                                              {displayedAccomplishedVisibility.showsFoodPacks ? (
+                                                <td>{row.foodPacksReceived || 0}</td>
+                                              ) : null}
+                                              {displayedAccomplishedVisibility.showsMonetary ? (
+                                                <td>PHP {formatMoney(row.monetaryAmountReceived || 0)}</td>
+                                              ) : null}
+                                              {displayedAccomplishedVisibility.showsAppliances ? (
+                                                <td>{row.applianceUnitsReceived || 0}</td>
+                                              ) : null}
+                                              <td>
+                                                {row.distributionDate
+                                                  ? new Date(row.distributionDate).toLocaleDateString()
+                                                  : '-'}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+
+                                    {accomplishedTotalPages > 1 ? (
+                                      <div className="rrl-accomplished-pagination">
+                                        <button
+                                          type="button"
+                                          className="rrl-btn rrl-btn-secondary"
+                                          onClick={() =>
+                                            setAccomplishedPage((current) => Math.max(1, current - 1))
+                                          }
+                                          disabled={accomplishedPage === 1}
+                                        >
+                                          Prev
+                                        </button>
+                                        <span className="rrl-accomplished-pagination-label">
+                                          Page {accomplishedPage} of {accomplishedTotalPages}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          className="rrl-btn rrl-btn-secondary"
+                                          onClick={() =>
+                                            setAccomplishedPage((current) =>
+                                              Math.min(accomplishedTotalPages, current + 1)
+                                            )
+                                          }
+                                          disabled={accomplishedPage === accomplishedTotalPages}
+                                        >
+                                          Next
+                                        </button>
+                                      </div>
+                                    ) : null}
+                                  </>
+                                ) : (
+                                  <div className="rrl-mini-empty">
+                                    No completed family distribution records yet.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ) : null}
+
+                          <div className="rrl-remarks-summary-grid">
+                            {displayedNeedsMonetary ? (
+                              <div className="rrl-remarks-summary-card">
+                                <span>Requested Monetary</span>
+                                <strong>PHP {formatMoney(displayedRequestedMonetaryAmount)}</strong>
+                              </div>
+                            ) : null}
+                            {displayedNeedsAppliance ? (
+                              <div className="rrl-remarks-summary-card">
+                                <span>Requested Appliances</span>
+                                <strong>
+                                  {displayedRequestedApplianceQuantity} unit(s) across{' '}
+                                  {displayedRequestedApplianceCount} item type(s)
+                                </strong>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          {displayedNeedsAppliance &&
+                          Array.isArray(displayedRequest?.requestedAppliances) &&
+                          displayedRequest.requestedAppliances.length > 0 ? (
+                            <div className="rrl-appliance-request-list">
+                              {displayedRequest.requestedAppliances
+                                .map((item, index) => {
+                                  const itemName = String(item?.itemName || '').trim();
+                                  const category = String(item?.category || '').trim();
+                                  const quantity = Number(item?.quantityRequested || 0);
+                                  const itemRemarks = String(item?.remarks || '').trim();
+
+                                  if (!itemName) return null;
+
+                                  return (
+                                    <div
+                                      key={`${itemName}-${index}`}
+                                      className="rrl-appliance-request-card"
+                                    >
+                                      <div className="rrl-appliance-request-head">
+                                        <strong>{itemName}</strong>
+                                        <span>{quantity} unit(s)</span>
+                                      </div>
+                                      <div className="rrl-appliance-request-meta">
+                                        <span>{category || 'Uncategorized'}</span>
+                                        <span>{itemRemarks || 'No item remarks'}</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                                .filter(Boolean)}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                )}
             </div>
           </section>
         </div>

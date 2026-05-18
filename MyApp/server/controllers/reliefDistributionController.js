@@ -22,6 +22,8 @@ const {
   getSupportTypeLabel,
   getSupportTypesFromRequest,
 } = require("../utils/reliefSupportTypes");
+const createNotification = require("../utils/createNotification");
+const createAuditEvent = require("../utils/createAuditEvent");
 
 const VALID_DISTRIBUTION_STATUSES = new Set(["draft", "completed"]);
 const requestMutationLocks = new Map();
@@ -640,6 +642,56 @@ const countCompletedRecords = (records = []) =>
     (record) => normalizeStatus(record?.distributionStatus) === "completed"
   ).length;
 
+const isAccomplishedReadyForContext = (context) => {
+  const completedCount = countCompletedRecords(context?.records);
+  if (completedCount <= 0) {
+    return false;
+  }
+
+  const caps = context?.caps || {};
+  const completedSummary = context?.completedSummary || {};
+  const supportTypes = Array.isArray(context?.supportTypes) ? context.supportTypes : [];
+
+  const needsFood = supportTypes.includes("foodpacks");
+  const needsMonetary = supportTypes.includes("monetary");
+  const needsAppliance = supportTypes.includes("appliance");
+
+  const foodReady =
+    !needsFood ||
+    Math.max(
+      0,
+      toNumber(caps?.foodPacks) - toNumber(completedSummary?.foodPacksDistributed)
+    ) <= 0;
+  const monetaryReady =
+    !needsMonetary ||
+    Math.max(
+      0,
+      toNumber(caps?.monetaryAmount) - toNumber(completedSummary?.monetaryDistributed)
+    ) <= 0;
+  const applianceReady =
+    !needsAppliance ||
+    Math.max(
+      0,
+      toNumber(caps?.applianceUnits) - toNumber(completedSummary?.applianceUnitsDistributed)
+    ) <= 0;
+
+  return foodReady && monetaryReady && applianceReady;
+};
+
+const getRequestOwnerRole = (request = {}) =>
+  normalizeStatus(request?.requestType) === "monetary" ? "admin" : "drrmo";
+
+const getRequestQueueLink = (request = {}) =>
+  getRequestOwnerRole(request) === "admin"
+    ? "/admin/relief-lists"
+    : "/drrmo/relief-lists";
+
+const persistRequestStage = async ({ request, currentStage }) => {
+  if (!request || !normalizeString(currentStage)) return;
+  request.currentStage = currentStage;
+  await request.save();
+};
+
 const buildRequestSummary = ({ request, releases, records, caps, completedSummary }) => ({
   requestType: deriveLegacyRequestType(getSupportTypesFromRequest(request || {})),
   totalReleases: Array.isArray(releases) ? releases.length : 0,
@@ -795,6 +847,9 @@ const createDistributionRecord = async (req, res) => {
 
       const { ReliefDistributionRecord } = getModels();
       await ReliefDistributionRecord.create(payload);
+      if (normalizeStatus(context.request?.currentStage) === "accomplished") {
+        await persistRequestStage({ request: context.request, currentStage: "completed" });
+      }
 
       const refreshedContext = await loadRequestContextForBarangayUser(req);
       return res.status(201).json(
@@ -844,6 +899,9 @@ const updateDistributionRecord = async (req, res) => {
 
       existingRecord.set(payload);
       await existingRecord.save();
+      if (normalizeStatus(context.request?.currentStage) === "accomplished") {
+        await persistRequestStage({ request: context.request, currentStage: "completed" });
+      }
 
       const refreshedContext = await loadRequestContextForBarangayUser(req);
       return res.json(
@@ -872,6 +930,9 @@ const deleteDistributionRecord = async (req, res) => {
 
       record.isArchived = true;
       await record.save();
+      if (normalizeStatus(context.request?.currentStage) === "accomplished") {
+        await persistRequestStage({ request: context.request, currentStage: "completed" });
+      }
 
       const refreshedContext = await loadRequestContextForBarangayUser(req);
       return res.json(
@@ -995,6 +1056,10 @@ const importDistributionWorkbook = async (req, res) => {
         throw err;
       }
 
+      if (normalizeStatus(context.request?.currentStage) === "accomplished") {
+        await persistRequestStage({ request: context.request, currentStage: "completed" });
+      }
+
       const refreshedContext = await loadRequestContextForBarangayUser(req);
       return res.status(201).json(
         buildDistributionResponse(refreshedContext, {
@@ -1006,6 +1071,86 @@ const importDistributionWorkbook = async (req, res) => {
     });
   } catch (err) {
     return handleControllerError(res, "Import Distribution Workbook Error", err);
+  }
+};
+
+const confirmAccomplishedDistribution = async (req, res) => {
+  try {
+    return await withRequestMutationLock(req.params.reliefRequestId, async () => {
+      const context = await loadRequestContextForBarangayUser(req);
+      if (context.error) {
+        return res.status(context.error.status).json({ message: context.error.message });
+      }
+
+      if (!isAccomplishedReadyForContext(context)) {
+        return res.status(400).json({
+          message: "Complete the DAFAC distribution totals first before confirming.",
+        });
+      }
+
+      await persistRequestStage({ request: context.request, currentStage: "accomplished" });
+
+      await createAuditEvent({
+        module: "relief",
+        type: "relief_request_accomplished",
+        priority: "normal",
+        title: "Relief request accomplished",
+        message: `${context.request.barangayName} completed the accomplished report for ${context.request.requestNo}.`,
+        actorId: context.request.barangayId,
+        actorName: context.request.barangayName,
+        actorRole: "barangay",
+        barangayId: context.request.barangayId,
+        barangayName: context.request.barangayName,
+        requestNo: context.request.requestNo,
+        disaster: context.request.disaster,
+        status: context.request.status,
+        referenceId: context.request._id,
+        referenceModel: "ReliefRequest",
+        targetLabel: context.request.requestNo,
+        metadata: {
+          requestType: context.requestType,
+          completedDistributionRecords: countCompletedRecords(context.records),
+          foodPacksDistributed: toNumber(context.completedSummary?.foodPacksDistributed),
+          monetaryDistributed: toNumber(context.completedSummary?.monetaryDistributed),
+          applianceUnitsDistributed: toNumber(
+            context.completedSummary?.applianceUnitsDistributed
+          ),
+          currentStage: "accomplished",
+        },
+      });
+
+      await createNotification({
+        recipientRole: getRequestOwnerRole(context.request),
+        senderUser: context.request.barangayId,
+        senderRole: "barangay",
+        senderName: context.request.barangayName,
+        module: "relief",
+        type: "relief_request_accomplished",
+        priority: "normal",
+        title: "Relief request accomplished",
+        message: `${context.request.barangayName} completed the accomplished report for ${context.request.requestNo}.`,
+        link: getRequestQueueLink(context.request),
+        referenceId: context.request._id,
+        referenceModel: "ReliefRequest",
+        audit: false,
+        metadata: {
+          requestNo: context.request.requestNo,
+          barangayName: context.request.barangayName,
+          disaster: context.request.disaster,
+          requestType: context.requestType,
+          currentStage: "accomplished",
+        },
+      });
+
+      const refreshedContext = await loadRequestContextForBarangayUser(req);
+      return res.json(
+        buildDistributionResponse(refreshedContext, {
+          message: "DAFAC distribution confirmed. You can now review the accomplished report.",
+        })
+      );
+    });
+  } catch (err) {
+    return handleControllerError(res, "Confirm Accomplished Distribution Error", err);
   }
 };
 
@@ -1162,6 +1307,7 @@ module.exports = {
   updateDistributionRecord,
   deleteDistributionRecord,
   importDistributionWorkbook,
+  confirmAccomplishedDistribution,
   downloadDistributionTemplate,
   exportAccomplishedReportPdf,
 };
