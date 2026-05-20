@@ -40,6 +40,7 @@ const actorRoleLabels = {
   all: "All roles",
   admin: "Admin",
   drrmo: "DRRMO",
+  accountant: "Accountant",
   barangay: "Barangay",
   system: "System",
 };

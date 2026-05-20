@@ -6,6 +6,12 @@ import { useAuth } from "../../context/AuthContext";
 import DashboardShell from "../layout/DashboardShell";
 import "../css/Inventory.css";
 import {
+  canEditInventoryType,
+  getInventoryViewTypes,
+  getReliefReviewerLabel,
+  normalizeRole,
+} from "../auth/roleAccessUtils";
+import {
   buildReleasePreviewSummary,
   buildReleaseRequestPayload,
 } from "./releasePlannerUtils";
@@ -85,19 +91,17 @@ export default function Inventory() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const role = String(user?.role || localStorage.getItem("role") || "")
-    .trim()
-    .toLowerCase();
+  const role = normalizeRole(user?.role || localStorage.getItem("role"));
   const isAdmin = role === "admin";
   const isDrrmo = role === "drrmo";
-  const releaseActorLabel = isAdmin ? "Admin" : "DRRMO";
-  const canSeeCentralInventory = role === "admin" || role === "drrmo";
-  const canRelease = isAdmin || isDrrmo;
+  const isAccountant = role === "accountant";
+  const releaseActorLabel = getReliefReviewerLabel(role);
+  const canSeeCentralInventory = isAdmin || isDrrmo || isAccountant;
+  const canRelease = isAdmin || isDrrmo || isAccountant;
   const canManageTemplates = isDrrmo;
   const allowedViewTypes = useMemo(
-    () =>
-      isAdmin ? ["monetary"] : isDrrmo ? ["goods", "appliance"] : [],
-    [isAdmin, isDrrmo]
+    () => getInventoryViewTypes(role),
+    [role]
   );
   const defaultViewType = allowedViewTypes[0] || "goods";
 
@@ -2218,51 +2222,65 @@ useEffect(() => {
   };
 
   const renderRowActions = (item) => {
+    const canManageItem = canEditInventoryType(role, item?.type);
+
     if (mode === "active") {
       return (
         <div className="row-actions row-actions-tight">
-          <button
-            type="button"
-            className="btn btn-edit btn-sm"
-            disabled={actionLoading}
-            onClick={() => openItemEditModal(item)}
-          >
-            <FaEdit className="btn-icon" />
-            Edit
-          </button>
-          <button
-            type="button"
-            className="btn btn-archive btn-sm"
-            disabled={actionLoading}
-            onClick={() => handleArchive(item._id)}
-          >
-            <FaArchive className="btn-icon" />
-            Archive
-          </button>
+          {canManageItem ? (
+            <>
+              <button
+                type="button"
+                className="btn btn-edit btn-sm"
+                disabled={actionLoading}
+                onClick={() => openItemEditModal(item)}
+              >
+                <FaEdit className="btn-icon" />
+                Edit
+              </button>
+              <button
+                type="button"
+                className="btn btn-archive btn-sm"
+                disabled={actionLoading}
+                onClick={() => handleArchive(item._id)}
+              >
+                <FaArchive className="btn-icon" />
+                Archive
+              </button>
+            </>
+          ) : (
+            <span className="inventory-muted-note">View only</span>
+          )}
         </div>
       );
     }
 
     return (
       <div className="row-actions">
-        <button
-          type="button"
-          className="btn btn-secondary btn-sm"
-          disabled={actionLoading}
-          onClick={() => handleRestore(item._id)}
-        >
-          <FaUndo className="btn-icon" />
-          Restore
-        </button>
-        <button
-          type="button"
-          className="btn btn-danger btn-sm"
-          disabled={actionLoading}
-          onClick={() => handlePermanentDelete(item._id)}
-        >
-          <FaTrash className="btn-icon" />
-          Delete
-        </button>
+        {canManageItem ? (
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={actionLoading}
+              onClick={() => handleRestore(item._id)}
+            >
+              <FaUndo className="btn-icon" />
+              Restore
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              disabled={actionLoading}
+              onClick={() => handlePermanentDelete(item._id)}
+            >
+              <FaTrash className="btn-icon" />
+              Delete
+            </button>
+          </>
+        ) : (
+          <span className="inventory-muted-note">View only</span>
+        )}
       </div>
     );
   };
@@ -2530,93 +2548,79 @@ useEffect(() => {
 
             {mode === "active" && (
               <div className="inventory-summary inventory-summary-6">
-                {isAdmin ? (
-                  <>
-                    <div className="summary-card info">
-                      <div className="summary-card-top">
-                        <span className="summary-label">Monetary Total</span>
-                        <span className="summary-icon"><FaMoneyBillWave /></span>
-                      </div>
-                      <h3 className="summary-value">
-                        {formatMoney(activeSummary.totalMonetaryAmount)}
-                      </h3>
-                      <span className="summary-note">
-                        {activeSummary.monetaryCount} monetary record(s)
-                      </span>
+                <>
+                  <div className="summary-card info">
+                    <div className="summary-card-top">
+                      <span className="summary-label">Monetary Total</span>
+                      <span className="summary-icon"><FaMoneyBillWave /></span>
                     </div>
-                    <div className="summary-card accent">
-                      <div className="summary-card-top">
-                        <span className="summary-label">Pending Monetary Releases</span>
-                        <span className="summary-icon"><FaClipboardCheck /></span>
-                      </div>
-                      <h3 className="summary-value">
-                        {filteredApprovedRequests.length.toLocaleString()}
-                      </h3>
-                      <span className="summary-note">Approved requests waiting for admin</span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="summary-card summary-card-emphasis success">
-                      <div className="summary-card-top">
-                        <span className="summary-label">Goods Stock</span>
-                        <span className="summary-icon"><FaBoxes /></span>
-                      </div>
-                      <h3 className="summary-value">
-                        {activeSummary.totalGoodsQuantity.toLocaleString()}
-                      </h3>
-                      <span className="summary-note">
-                        {activeSummary.goodsCount} goods record(s)
-                      </span>
-                    </div>
+                    <h3 className="summary-value">
+                      {formatMoney(activeSummary.totalMonetaryAmount)}
+                    </h3>
+                    <span className="summary-note">
+                      {activeSummary.monetaryCount} monetary record(s)
+                    </span>
+                  </div>
 
-                    <div className="summary-card accent">
-                      <div className="summary-card-top">
-                        <span className="summary-label">Food Template Items</span>
-                        <span className="summary-icon"><FaUtensils /></span>
-                      </div>
-                      <h3 className="summary-value">
-                        {activeSummary.foodEligibleCount.toLocaleString()}
-                      </h3>
-                      <span className="summary-note">Eligible for food packs</span>
+                  <div className="summary-card summary-card-emphasis success">
+                    <div className="summary-card-top">
+                      <span className="summary-label">Goods Stock</span>
+                      <span className="summary-icon"><FaBoxes /></span>
                     </div>
+                    <h3 className="summary-value">
+                      {activeSummary.totalGoodsQuantity.toLocaleString()}
+                    </h3>
+                    <span className="summary-note">
+                      {activeSummary.goodsCount} goods record(s)
+                    </span>
+                  </div>
 
-                    <div className="summary-card muted">
-                      <div className="summary-card-top">
-                        <span className="summary-label">Appliance Items</span>
-                        <span className="summary-icon"><FaBoxOpen /></span>
-                      </div>
-                      <h3 className="summary-value">
-                        {activeSummary.applianceCount.toLocaleString()}
-                      </h3>
-                      <span className="summary-note">
-                        Total quantity: {activeSummary.totalApplianceQuantity.toLocaleString()}
-                      </span>
+                  <div className="summary-card accent">
+                    <div className="summary-card-top">
+                      <span className="summary-label">Food Template Items</span>
+                      <span className="summary-icon"><FaUtensils /></span>
                     </div>
+                    <h3 className="summary-value">
+                      {activeSummary.foodEligibleCount.toLocaleString()}
+                    </h3>
+                    <span className="summary-note">Eligible for food packs</span>
+                  </div>
 
-                    <div className="summary-card danger">
-                      <div className="summary-card-top">
-                        <span className="summary-label">Expired Goods</span>
-                        <span className="summary-icon"><FaTimes /></span>
-                      </div>
-                      <h3 className="summary-value">
-                        {activeSummary.expiredCount.toLocaleString()}
-                      </h3>
-                      <span className="summary-note">Needs review or removal</span>
+                  <div className="summary-card muted">
+                    <div className="summary-card-top">
+                      <span className="summary-label">Appliance Items</span>
+                      <span className="summary-icon"><FaBoxOpen /></span>
                     </div>
+                    <h3 className="summary-value">
+                      {activeSummary.applianceCount.toLocaleString()}
+                    </h3>
+                    <span className="summary-note">
+                      Total quantity: {activeSummary.totalApplianceQuantity.toLocaleString()}
+                    </span>
+                  </div>
 
-                    <div className="summary-card warning">
-                      <div className="summary-card-top">
-                        <span className="summary-label">Expiring Soon</span>
-                        <span className="summary-icon"><FaExclamationTriangle /></span>
-                      </div>
-                      <h3 className="summary-value">
-                        {activeSummary.expiringSoonCount.toLocaleString()}
-                      </h3>
-                      <span className="summary-note">30 days or less</span>
+                  <div className="summary-card danger">
+                    <div className="summary-card-top">
+                      <span className="summary-label">Expired Goods</span>
+                      <span className="summary-icon"><FaTimes /></span>
                     </div>
-                  </>
-                )}
+                    <h3 className="summary-value">
+                      {activeSummary.expiredCount.toLocaleString()}
+                    </h3>
+                    <span className="summary-note">Needs review or removal</span>
+                  </div>
+
+                  <div className="summary-card warning">
+                    <div className="summary-card-top">
+                      <span className="summary-label">Expiring Soon</span>
+                      <span className="summary-icon"><FaExclamationTriangle /></span>
+                    </div>
+                    <h3 className="summary-value">
+                      {activeSummary.expiringSoonCount.toLocaleString()}
+                    </h3>
+                    <span className="summary-note">30 days or less</span>
+                  </div>
+                </>
               </div>
             )}
 
@@ -4695,56 +4699,68 @@ useEffect(() => {
 
                           {mode === "active" ? (
                             <>
-                              <button
-                                type="button"
-                                className="btn btn-edit"
-                                onClick={() => {
-                                  setSelectedItem(null);
-                                  openItemEditModal(selectedItem);
-                                }}
-                              >
-                                <FaEdit className="btn-icon" />
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-archive"
-                                disabled={actionLoading}
-                                onClick={() => {
-                                  handleArchive(selectedItem._id);
-                                  setSelectedItem(null);
-                                }}
-                              >
-                                <FaArchive className="btn-icon" />
-                                Archive
-                              </button>
+                              {canEditInventoryType(role, selectedItem?.type) ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="btn btn-edit"
+                                    onClick={() => {
+                                      setSelectedItem(null);
+                                      openItemEditModal(selectedItem);
+                                    }}
+                                  >
+                                    <FaEdit className="btn-icon" />
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-archive"
+                                    disabled={actionLoading}
+                                    onClick={() => {
+                                      handleArchive(selectedItem._id);
+                                      setSelectedItem(null);
+                                    }}
+                                  >
+                                    <FaArchive className="btn-icon" />
+                                    Archive
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="inventory-muted-note">View only</span>
+                              )}
                             </>
                           ) : (
                             <>
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            disabled={actionLoading}
-                            onClick={() => {
-                              handleRestore(selectedItem._id);
-                              setSelectedItem(null);
-                            }}
-                          >
-                            <FaUndo className="btn-icon" />
-                            Restore
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-danger"
-                            disabled={actionLoading}
-                            onClick={() => {
-                              handlePermanentDelete(selectedItem._id);
-                              setSelectedItem(null);
-                            }}
-                          >
-                            <FaTrash className="btn-icon" />
-                            Delete
-                          </button>
+                          {canEditInventoryType(role, selectedItem?.type) ? (
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              disabled={actionLoading}
+                              onClick={() => {
+                                handleRestore(selectedItem._id);
+                                setSelectedItem(null);
+                              }}
+                            >
+                              <FaUndo className="btn-icon" />
+                              Restore
+                            </button>
+                          ) : (
+                            <span className="inventory-muted-note">View only</span>
+                          )}
+                          {canEditInventoryType(role, selectedItem?.type) ? (
+                            <button
+                              type="button"
+                              className="btn btn-danger"
+                              disabled={actionLoading}
+                              onClick={() => {
+                                handlePermanentDelete(selectedItem._id);
+                                setSelectedItem(null);
+                              }}
+                            >
+                              <FaTrash className="btn-icon" />
+                              Delete
+                            </button>
+                          ) : null}
                             </>
                           )}
                         </div>

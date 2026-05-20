@@ -590,3 +590,45 @@
     justify-content: flex-end;
   }
 }
+
+:root[data-theme="dark"] .notification-page {
+  background:
+    radial-gradient(circle at top right, rgba(63, 185, 80, 0.12), transparent 24%),
+    linear-gradient(180deg, #082611 0%, #0c2814 100%) !important;
+}
+
+:root[data-theme="dark"] .notification-shell,
+:root[data-theme="dark"] .notification-header-card,
+:root[data-theme="dark"] .notification-filters,
+:root[data-theme="dark"] .notification-summary-card,
+:root[data-theme="dark"] .notification-preferences,
+:root[data-theme="dark"] .notification-card,
+:root[data-theme="dark"] .notification-empty,
+:root[data-theme="dark"] .notification-loading,
+:root[data-theme="dark"] .notification-select,
+:root[data-theme="dark"] .notification-button {
+  background: linear-gradient(180deg, rgba(19, 49, 27, 0.98) 0%, rgba(23, 58, 32, 0.98) 100%) !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.18) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.2) !important;
+}
+
+:root[data-theme="dark"] .notification-title,
+:root[data-theme="dark"] .notification-eyebrow,
+:root[data-theme="dark"] .notification-pref-title,
+:root[data-theme="dark"] .notification-summary-value,
+:root[data-theme="dark"] .notification-card-title,
+:root[data-theme="dark"] .notification-card-message,
+:root[data-theme="dark"] .notification-pill,
+:root[data-theme="dark"] .notification-filter-label {
+  color: var(--content-text) !important;
+}
+
+:root[data-theme="dark"] .notification-subtitle,
+:root[data-theme="dark"] .notification-toolbar-note,
+:root[data-theme="dark"] .notification-summary-label,
+:root[data-theme="dark"] .notification-meta,
+:root[data-theme="dark"] .notification-time,
+:root[data-theme="dark"] .notification-empty-copy {
+  color: var(--text-soft) !important;
+}

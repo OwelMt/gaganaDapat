@@ -8,6 +8,10 @@ const { callAiAnalyticsProvider } = require("../utils/aiAnalyticsProvider");
 const {
   validateInventoryExpirationDate,
 } = require("../utils/inventoryExpiryValidation");
+const {
+  getInventoryAccessError,
+  normalizeRole,
+} = require("../utils/roleAccessUtils");
 
 const VALID_TYPES = ["goods", "monetary", "appliance"];
 const VALID_SOURCE_TYPES = ["external", "government", "internal"];
@@ -60,25 +64,12 @@ const normalizeLower = (value, fallback) => {
   return String(value).trim().toLowerCase();
 };
 
-const getSessionRole = (req) => normalizeLower(req?.session?.role, "");
-
-const isRoleAllowedForInventoryType = (role, type) => {
-  if (role === "admin") return type === "monetary";
-  if (role === "drrmo") return type === "goods" || type === "appliance";
-  return false;
-};
+const getSessionRole = (req) => normalizeRole(req?.session?.role);
 
 const getInventoryRoleAccessError = (req, type) => {
   const role = getSessionRole(req);
   if (!role) return "Not authenticated.";
-  if (isRoleAllowedForInventoryType(role, type)) return "";
-  if (role === "admin") {
-    return "Admin can only manage monetary inventory records here.";
-  }
-  if (role === "drrmo") {
-    return "DRRMO can only manage goods and appliance inventory records here.";
-  }
-  return "Inventory access is not allowed for this account.";
+  return getInventoryAccessError(role, type);
 };
 
 const resolveInventoryType = (item = {}) => {

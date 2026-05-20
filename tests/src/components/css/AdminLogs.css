@@ -624,3 +624,20 @@ body,
 :root[data-theme="dark"] .admin-results-text {
   color: var(--text-soft) !important;
 }
+
+:root[data-theme="dark"] .admin-logs-table tbody tr:hover td,
+:root[data-theme="dark"] .admin-empty-row td,
+:root[data-theme="dark"] .admin-mobile-card,
+:root[data-theme="dark"] .admin-pagination,
+:root[data-theme="dark"] .admin-btn,
+:root[data-theme="dark"] .admin-btn-clear,
+:root[data-theme="dark"] .admin-btn-refresh {
+  background: #13311b !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.22) !important;
+}
+
+:root[data-theme="dark"] .admin-muted,
+:root[data-theme="dark"] .admin-mobile-row span {
+  color: var(--text-soft) !important;
+}

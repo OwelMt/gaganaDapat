@@ -817,3 +817,19 @@
   color: var(--content-text) !important;
   border-color: rgba(157, 203, 168, 0.24) !important;
 }
+
+:root[data-theme="dark"] .ea-username,
+:root[data-theme="dark"] .ea-head-main,
+:root[data-theme="dark"] .ea-meta-card strong,
+:root[data-theme="dark"] .ea-profile-topline,
+:root[data-theme="dark"] .ea-field-hint {
+  color: var(--content-text) !important;
+}
+
+:root[data-theme="dark"] .ea-email,
+:root[data-theme="dark"] .ea-meta-card span,
+:root[data-theme="dark"] .ea-head-copy,
+:root[data-theme="dark"] .ea-placeholder,
+:root[data-theme="dark"] .ea-placeholder--centered {
+  color: var(--text-soft) !important;
+}

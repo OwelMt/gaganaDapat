@@ -170,3 +170,29 @@ html, body, #root { height: 100%; margin: 0; }
 @media (max-width: 900px) {
   .rr-main { padding: 12px; }
 }
+
+:root[data-theme="dark"] .rr-wrap,
+:root[data-theme="dark"] .rr-hero,
+:root[data-theme="dark"] .rr-card,
+:root[data-theme="dark"] .rr-table-wrap,
+:root[data-theme="dark"] .rr-modal-card,
+:root[data-theme="dark"] .rr-field,
+:root[data-theme="dark"] .rr-action {
+  background: linear-gradient(180deg, rgba(19, 49, 27, 0.98) 0%, rgba(23, 58, 32, 0.98) 100%) !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.18) !important;
+}
+
+:root[data-theme="dark"] .rr-title,
+:root[data-theme="dark"] .rr-modal-title,
+:root[data-theme="dark"] .rr-form label,
+:root[data-theme="dark"] .rr-table thead th,
+:root[data-theme="dark"] .rr-table tbody td,
+:root[data-theme="dark"] .rr-affected {
+  color: var(--content-text) !important;
+}
+
+:root[data-theme="dark"] .rr-sub,
+:root[data-theme="dark"] .rr-empty {
+  color: var(--text-soft) !important;
+}

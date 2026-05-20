@@ -518,3 +518,19 @@
   border-color: rgba(157, 203, 168, 0.24) !important;
   box-shadow: none !important;
 }
+
+:root[data-theme="dark"] .account-notification-stack .notification-toast,
+:root[data-theme="dark"] .acc-search,
+:root[data-theme="dark"] .acc-filter,
+:root[data-theme="dark"] .account-modal-meta,
+:root[data-theme="dark"] .account-modal-actions {
+  background: linear-gradient(180deg, rgba(19, 49, 27, 0.98) 0%, rgba(23, 58, 32, 0.98) 100%) !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.18) !important;
+}
+
+:root[data-theme="dark"] .acc-search::placeholder,
+:root[data-theme="dark"] .account-modal-text,
+:root[data-theme="dark"] .account-modal-meta span {
+  color: var(--text-soft) !important;
+}

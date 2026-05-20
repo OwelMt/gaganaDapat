@@ -8,6 +8,10 @@ const {
   hasNormalizedDonationReference,
   normalizeDonationReferenceNumber,
 } = require("../utils/donationReferenceUtils");
+const {
+  getDonationAccessError,
+  normalizeRole,
+} = require("../utils/roleAccessUtils");
 
 const VALID_STATUSES = [
   "pending",
@@ -51,24 +55,7 @@ function normalizeDonationStatus(value) {
 }
 
 function getSessionRole(req) {
-  return sanitizeText(req?.session?.role, 40).toLowerCase();
-}
-
-function isRoleAllowedForDonation(role, inventoryType) {
-  if (role === "admin") return inventoryType === "monetary";
-  if (role === "drrmo") return inventoryType !== "monetary";
-  return true;
-}
-
-function getDonationAccessError(role, inventoryType) {
-  if (isRoleAllowedForDonation(role, inventoryType)) return "";
-  if (role === "admin") {
-    return "Admin can only manage monetary donations in this queue.";
-  }
-  if (role === "drrmo") {
-    return "DRRMO can only manage goods and appliance donations in this queue.";
-  }
-  return "Donation queue access is not allowed for this account.";
+  return normalizeRole(req?.session?.role);
 }
 
 function normalizeSourceType(value) {

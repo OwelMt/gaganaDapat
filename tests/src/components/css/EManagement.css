@@ -2951,3 +2951,60 @@
 :root[data-theme="dark"] .filter-field span {
   color: var(--ev-text-soft) !important;
 }
+
+:root[data-theme="dark"] .evac-dashboard-header,
+:root[data-theme="dark"] .summary-card,
+:root[data-theme="dark"] .evac-loading-card,
+:root[data-theme="dark"] .evac-modal-card,
+:root[data-theme="dark"] .evac-form-section,
+:root[data-theme="dark"] .evac-confirm-card,
+:root[data-theme="dark"] .details-body,
+:root[data-theme="dark"] .details-body-section,
+:root[data-theme="dark"] .side-panel-tabs,
+:root[data-theme="dark"] .side-panel-body,
+:root[data-theme="dark"] .side-panel-empty,
+:root[data-theme="dark"] .details-empty,
+:root[data-theme="dark"] .history-empty,
+:root[data-theme="dark"] .landing-visibility-toggle,
+:root[data-theme="dark"] .mobile-collapse-toggle,
+:root[data-theme="dark"] .stat-chip {
+  background: linear-gradient(180deg, rgba(19, 49, 27, 0.98) 0%, rgba(23, 58, 32, 0.98) 100%) !important;
+  color: var(--ev-text) !important;
+  border-color: rgba(157, 203, 168, 0.18) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24) !important;
+}
+
+:root[data-theme="dark"] .summary-card h3,
+:root[data-theme="dark"] .summary-card strong,
+:root[data-theme="dark"] .summary-card-value,
+:root[data-theme="dark"] .evac-dashboard-heading h1,
+:root[data-theme="dark"] .evac-modal-header h3,
+:root[data-theme="dark"] .evac-confirm-card h3,
+:root[data-theme="dark"] .section-title,
+:root[data-theme="dark"] .details-section-title,
+:root[data-theme="dark"] .history-title {
+  color: var(--ev-text) !important;
+}
+
+:root[data-theme="dark"] .summary-card p,
+:root[data-theme="dark"] .summary-card span,
+:root[data-theme="dark"] .evac-dashboard-heading p,
+:root[data-theme="dark"] .evac-modal-header p,
+:root[data-theme="dark"] .evac-confirm-card p,
+:root[data-theme="dark"] .landing-visibility-badge,
+:root[data-theme="dark"] .status-note,
+:root[data-theme="dark"] .details-section-copy,
+:root[data-theme="dark"] .history-copy {
+  color: var(--ev-text-soft) !important;
+}
+
+:root[data-theme="dark"] .evac-form-section input,
+:root[data-theme="dark"] .evac-form-section select,
+:root[data-theme="dark"] .evac-form-section textarea,
+:root[data-theme="dark"] .evac-modal-close,
+:root[data-theme="dark"] .landing-visibility-badge.visible,
+:root[data-theme="dark"] .landing-visibility-badge.hidden {
+  background: #13311b !important;
+  color: var(--ev-text) !important;
+  border-color: rgba(157, 203, 168, 0.22) !important;
+}

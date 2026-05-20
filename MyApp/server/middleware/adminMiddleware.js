@@ -1,3 +1,5 @@
+const { isPrivilegedStaffRole } = require("../utils/roleAccessUtils");
+
 const requireLogin = (req, res, next) => {
   if (!req.session || !req.session.userId) {
     return res.status(401).json({ message: "Not authenticated" });
@@ -28,14 +30,10 @@ const requireDrrmo = (req, res, next) => {
 const requireAdminOrDrrmo = (req, res, next) => {
   console.log("SESSION IN requireAdminOrDrrmo:", req.session);
 
-  if (
-    !req.session ||
-    !req.session.role ||
-    !["admin", "drrmo"].includes(req.session.role)
-  ) {
+  if (!req.session || !isPrivilegedStaffRole(req.session.role)) {
     return res
       .status(403)
-      .json({ message: "Admin or DRRMO access required" });
+      .json({ message: "Admin, DRRMO, or accountant access required" });
   }
 
   next();

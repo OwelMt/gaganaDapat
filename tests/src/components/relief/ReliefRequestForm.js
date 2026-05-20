@@ -1388,6 +1388,14 @@ export default function ReliefRequestForm() {
   }, [journey?.stage, latestRequest?.status, stageMeta.label]);
 
   const canShowRequestAgainButton = useMemo(() => {
+    const currentRequestStage = normalizeStage(
+      distributionState.request?.currentStage || latestRequest?.currentStage || journey?.stage
+    );
+
+    if (currentRequestStage === 'accomplished' || stageMeta.activeStep === 7) {
+      return true;
+    }
+
     if (hasCompletedReceiptState) return false;
     if (stageMeta.activeStep >= 5) return false;
     if (journey.canRequestAgain) return true;
@@ -1405,6 +1413,7 @@ export default function ReliefRequestForm() {
         )
       );
     }, [
+      distributionState.request?.currentStage,
       journey.canRequestAgain,
       journey.stage,
       latestRequest,

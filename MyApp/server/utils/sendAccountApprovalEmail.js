@@ -8,7 +8,12 @@ const sendAccountApprovalEmail = ({
   barangayName,
   requestedBy,
 }) => {
-  const roleLabel = role === "barangay" ? "Barangay" : "DRRMO";
+  const roleLabel =
+    role === "barangay"
+      ? "Barangay"
+      : role === "accountant"
+        ? "Accountant"
+        : "DRRMO";
   const barangayLine =
     role === "barangay" && barangayName
       ? `<p><strong>Barangay:</strong> ${barangayName}</p>`

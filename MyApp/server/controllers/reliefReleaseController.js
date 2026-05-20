@@ -29,6 +29,10 @@ const {
   getSupportTypesFromRequest,
   hasSupportType,
 } = require("../utils/reliefSupportTypes");
+const {
+  canManageReliefRequest,
+  normalizeRole,
+} = require("../utils/roleAccessUtils");
 
 const RELIEF_PROOF_UPLOAD_DIR = path.join(__dirname, "..", "uploads", "proofs");
 
@@ -178,28 +182,11 @@ const getRequestDemandProfile = (request = {}) => {
   };
 };
 
-const isMonetaryOnlyRequest = (request = {}) => {
-  const supportTypes = getSupportTypesFromRequest(request);
-  return (
-    hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY) &&
-    !hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS) &&
-    !hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE)
-  );
-};
-
-const canRoleManageReleaseRequest = (role = "", request = {}) => {
-  const normalizedRole = normalizeLower(role);
-  if (normalizedRole === "admin") {
-    return isMonetaryOnlyRequest(request);
-  }
-  if (normalizedRole === "drrmo") {
-    return !hasSupportType(getSupportTypesFromRequest(request), SUPPORT_TYPE_MONETARY);
-  }
-  return false;
-};
+const canRoleManageReleaseRequest = (role = "", request = {}) =>
+  canManageReliefRequest(role, request);
 
 const getRequestOwnerRole = (request = {}) =>
-  isMonetaryOnlyRequest(request) ? "admin" : "drrmo";
+  canManageReliefRequest("admin", request) ? "admin" : "drrmo";
 
 const getRequestOwnerLabel = (request = {}) =>
   getRequestOwnerRole(request) === "admin" ? "Admin" : "DRRMO";
@@ -778,7 +765,7 @@ const refreshRequestProgress = async (requestId, session = null) => {
 /* GET REQUESTS READY FOR RELEASE */
 const getApprovedRequestsForRelease = async (req, res) => {
   try {
-    const sessionRole = normalizeLower(req.session?.role);
+    const sessionRole = normalizeRole(req.session?.role);
     const requests = await ReliefRequest.find({
       status: { $in: ["approved", "partially_released"] },
       isArchived: false,
@@ -849,7 +836,7 @@ const createReliefRelease = async (req, res) => {
 
   try {
     const username = String(req.session?.username || req.session?.userId || "");
-    const sessionRole = normalizeLower(req.session?.role);
+    const sessionRole = normalizeRole(req.session?.role);
     const body = parseIncomingReleaseBody(req.body);
     const {
       reliefRequestId,

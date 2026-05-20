@@ -19,6 +19,7 @@ import ArchivedAccounts from './components/auth/ArchivedAccounts';
 import BarangayDashboard from "./components/dashboards/BarangayDashboard";
 import DRRMODashboard from "./components/dashboards/DRRMODashboard";
 import AdminDashboard from "./components/dashboards/AdminDashboard";
+import AccountantDashboard from "./components/dashboards/AccountantDashboard";
 import ReliefRequestForm from "./components/relief/ReliefRequestForm";
 import ReliefRequestsList from "./components/relief/ReliefRequestsList";
 import ReliefTracking from "./components/relief/ReliefTracking";
@@ -40,28 +41,23 @@ import Inventory from './components/Donations/Inventory';
 import InventoryAdd from './components/Donations/InventoryAdd';
 import DonationValidationQueue from './components/Donations/DonationValidationQueue';
 import SplashScreen from './components/splashscreen/SplashScreen';
+import {
+  getHomePathForRole,
+  normalizeRole,
+} from "./components/auth/roleAccessUtils";
 
 const BASE_URL =
   process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
 
 const ADMIN_ONLY = ["admin"];
+const ACCOUNTANT_ONLY = ["accountant"];
 const BARANGAY_ONLY = ["barangay"];
 const DRRMO_ONLY = ["drrmo"];
 const ADMIN_DRRMO = ["admin", "drrmo"];
-const ALL_AUTH = ["admin", "drrmo", "barangay"];
-
-const ROLE_HOME = {
-  admin: "/admin/dashboard",
-  drrmo: "/drrmo/dashboard",
-  barangay: "/barangay/dashboard"
-};
-
-function normalizeRole(role) {
-  return String(role || "").toLowerCase();
-}
+const ALL_AUTH = ["admin", "drrmo", "barangay", "accountant"];
 
 function homeForRole(role) {
-  return ROLE_HOME[normalizeRole(role)] || "/Login";
+  return getHomePathForRole(role);
 }
 
 function SessionGate({ allowedRoles = ALL_AUTH, children }) {
@@ -238,6 +234,13 @@ const ROUTES = [
   { path: "/admin/analytics", element: <AdminAnalytics />, roles: ADMIN_ONLY },
   { path: "/admin/announcements", element: <Announcement />, roles: ADMIN_ONLY },
   { path: "/admin/notifications", element: <Notification />, roles: ADMIN_ONLY },
+  { path: "/accountant/dashboard", element: <AccountantDashboard />, roles: ACCOUNTANT_ONLY },
+  { path: "/accountant/analytics", element: <AdminAnalytics />, roles: ACCOUNTANT_ONLY },
+  { path: "/accountant/inventory", element: <Inventory />, roles: ACCOUNTANT_ONLY },
+  { path: "/accountant/inventory/add", element: <InventoryAdd />, roles: ACCOUNTANT_ONLY },
+  { path: "/accountant/donations/queue", element: <DonationValidationQueue />, roles: ACCOUNTANT_ONLY },
+  { path: "/accountant/relief-lists", element: <ReliefRequestsList />, roles: ACCOUNTANT_ONLY },
+  { path: "/accountant/notifications", element: <Notification />, roles: ACCOUNTANT_ONLY },
   { path: "/drrmo/digital-twin", element: <UnityDigitalTwin />, roles: ADMIN_DRRMO },
   { path: "/digital-twin-mobile", element: <UnityDigitalTwin1 /> },
   { path: "/idk", element: <HomeGuidelines />, roles: ALL_AUTH },

@@ -336,24 +336,6 @@ export default function SidebarBarangay({
         </button>
       </div>
 
-      {!collapsed && (
-        <div className="sidebar-role-card">
-          <div className="sidebar-role-avatar">
-            {(username || roleLabel || "U").charAt(0).toUpperCase()}
-          </div>
-
-          <div className="sidebar-role-meta">
-            <span className="sidebar-role-kicker">Signed in as</span>
-
-            <strong className="sidebar-role-name">
-              {username || "Unknown User"}
-            </strong>
-
-            <span className="sidebar-role-subtext">{roleLabel}</span>
-          </div>
-        </div>
-      )}
-
       <nav className="sidebar-nav" role="navigation">
         <div
           className="sidebar-nav-scroll"

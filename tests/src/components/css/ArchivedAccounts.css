@@ -546,3 +546,12 @@ body,
 :root[data-theme="dark"] .archived-results-text {
   color: var(--text-soft) !important;
 }
+
+:root[data-theme="dark"] .archived-table tbody tr:hover td,
+:root[data-theme="dark"] .archived-empty-row td,
+:root[data-theme="dark"] .archived-toolbar,
+:root[data-theme="dark"] .archived-pagination {
+  background: #13311b !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.18) !important;
+}

@@ -323,7 +323,7 @@ const register = async (req, res) => {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    if (!['barangay', 'drrmo'].includes(cleanRole)) {
+    if (!['barangay', 'drrmo', 'accountant'].includes(cleanRole)) {
       return res.status(400).json({ message: 'Invalid account role' });
     }
 
@@ -442,7 +442,9 @@ const register = async (req, res) => {
       message:
         cleanRole === 'barangay'
           ? `${req.session.username || 'Admin'} requested email approval for barangay account ${cleanUsername} (${cleanBarangay}).`
-          : `${req.session.username || 'Admin'} requested email approval for DRRMO account ${cleanUsername}.`,
+          : `${req.session.username || 'Admin'} requested email approval for ${
+              cleanRole === 'accountant' ? 'Accountant' : 'DRRMO'
+            } account ${cleanUsername}.`,
       actorId: req.session.userId || null,
       actorName: req.session.username || 'Admin',
       actorRole: req.session.role || 'admin',
@@ -629,7 +631,9 @@ const approveAccountRequest = async (req, res) => {
       message:
         approvalRequest.role === 'barangay'
           ? `${approvalRequest.email} approved barangay account ${createdAccount.username} (${approvalRequest.barangayName}).`
-          : `${approvalRequest.email} approved DRRMO account ${createdAccount.username}.`,
+          : `${approvalRequest.email} approved ${
+              approvalRequest.role === 'accountant' ? 'Accountant' : 'DRRMO'
+            } account ${createdAccount.username}.`,
       actorId: null,
       actorName: approvalRequest.email,
       actorRole: 'external',
@@ -787,7 +791,9 @@ const approveAccountUpdateRequest = async (req, res) => {
       message:
         approvalRequest.role === 'barangay'
           ? `${approvalRequest.email} approved updates for barangay account ${account.username}.`
-          : `${approvalRequest.email} approved updates for DRRMO account ${account.username}.`,
+          : `${approvalRequest.email} approved updates for ${
+              approvalRequest.role === 'accountant' ? 'Accountant' : 'DRRMO'
+            } account ${account.username}.`,
       actorId: null,
       actorName: approvalRequest.email,
       actorRole: 'external',
@@ -1101,7 +1107,9 @@ const updateAccount = async (req, res) => {
       message:
         account instanceof Barangay
           ? `${req.session.username || 'Admin'} requested email approval to update barangay account ${account.username}.`
-          : `${req.session.username || 'Admin'} requested email approval to update DRRMO account ${account.username}.`,
+          : `${req.session.username || 'Admin'} requested email approval to update ${
+              account.role === 'accountant' ? 'Accountant' : 'DRRMO'
+            } account ${account.username}.`,
       actorId: req.session.userId || null,
       actorName: req.session.username || 'Admin',
       actorRole: req.session.role || 'admin',

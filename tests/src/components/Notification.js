@@ -48,6 +48,7 @@ const priorityLabels = {
 
 const roleModuleAllowlist = {
   admin: ["all", "evacuation", "inventory", "announcement", "account", "analytics", "system"],
+  accountant: ["all", "relief", "inventory", "donation", "analytics", "system"],
   drrmo: [
     "all",
     "relief",
@@ -528,12 +529,14 @@ export default function Notification() {
       typeName === "announcement_published"
     ) {
       if (role === "admin") return "/admin/announcements";
+      if (role === "accountant") return "/accountant/relief-lists";
       if (role === "drrmo") return "/drrmo/announcements";
       return "/";
     }
 
     if (rawLink === "/donations") {
       if (role === "drrmo") return "/drrmo/inventory/add";
+      if (role === "accountant") return "/accountant/inventory/add";
       if (role === "admin") return "/admin/inventory/add";
       return "/";
     }

@@ -220,6 +220,8 @@ if (data.barangay) {
 
 if (data.role === 'admin') {
   navigate('/admin/dashboard');
+} else if (data.role === 'accountant') {
+  navigate('/accountant/dashboard');
 } else if (data.role === 'drrmo') {
   navigate('/drrmo/dashboard');
 } else {

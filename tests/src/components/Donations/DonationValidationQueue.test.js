@@ -6,6 +6,14 @@ jest.mock("../layout/DashboardShell", () => ({
   default: ({ children }) => <div>{children}</div>,
 }));
 
+jest.mock("../../context/AuthContext", () => ({
+  useAuth: () => ({
+    user: {
+      role: "admin",
+    },
+  }),
+}));
+
 const createJsonResponse = (data) =>
   Promise.resolve({
     ok: true,
@@ -34,7 +42,11 @@ describe("DonationValidationQueue", () => {
 
   it("keeps the right panel empty when the active queue is empty", async () => {
     global.fetch = jest.fn((url) => {
-      if (String(url).endsWith("/api/donations?limit=300")) {
+      if (
+        String(url).includes(
+          "/api/donations?limit=300&type=monetary&scope=validation_queue"
+        )
+      ) {
         return createJsonResponse([receivedDonation]);
       }
 

@@ -15,6 +15,11 @@ const {
   hasSupportType,
   normalizeSupportTypes,
 } = require("../utils/reliefSupportTypes");
+const {
+  canManageReliefRequest,
+  getReviewerLabel,
+  normalizeRole,
+} = require("../utils/roleAccessUtils");
 
 const normalizeString = (value) => {
   if (value === undefined || value === null) return "";
@@ -132,32 +137,6 @@ const buildDemandSummaryLabel = (request = {}) => {
 
   return parts.join(" and ") || "No quantified support";
 };
-
-const isMonetaryOnlyRequest = (request = {}) => {
-  const supportTypes = getSupportTypesFromRequest(request);
-  return (
-    hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY) &&
-    !hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS) &&
-    !hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE)
-  );
-};
-
-const canRoleManageRequest = (role = "", request = {}) => {
-  const normalizedRole = normalizeString(role).toLowerCase();
-
-  if (normalizedRole === "admin") {
-    return isMonetaryOnlyRequest(request);
-  }
-
-  if (normalizedRole === "drrmo") {
-    return !hasSupportType(getSupportTypesFromRequest(request), SUPPORT_TYPE_MONETARY);
-  }
-
-  return false;
-};
-
-const getReviewerLabel = (role = "") =>
-  normalizeString(role).toLowerCase() === "admin" ? "Admin" : "DRRMO";
 
 const computePrioritySnapshot = (request) => {
   const totals = request?.totals || {};
@@ -484,14 +463,14 @@ const sortMappedRequests = (requests, sort) => {
 /* GET PENDING RELIEF REQUESTS */
 const getPendingRequests = async (req, res) => {
   try {
-    const sessionRole = normalizeString(req.session?.role).toLowerCase();
+    const sessionRole = normalizeRole(req.session?.role);
     const requests = await ReliefRequest.find({
       status: "pending",
       isArchived: false,
     }).sort({ createdAt: -1 });
 
     const enriched = requests
-      .filter((request) => canRoleManageRequest(sessionRole, request))
+      .filter((request) => canManageReliefRequest(sessionRole, request))
       .map(enrichRequestForQueue);
 
     res.json(enriched);
@@ -504,7 +483,7 @@ const getPendingRequests = async (req, res) => {
 /* GET DRRMO QUEUE */
 const getRequestQueue = async (req, res) => {
   try {
-    const sessionRole = normalizeString(req.session?.role).toLowerCase();
+    const sessionRole = normalizeRole(req.session?.role);
     const statusFilter = normalizeString(req.query.status).toLowerCase();
     const search = normalizeString(req.query.search).toLowerCase();
     const sort = normalizeString(req.query.sort).toLowerCase() || "priority";
@@ -534,7 +513,7 @@ const getRequestQueue = async (req, res) => {
     }
 
     let requests = await ReliefRequest.find(query).sort({ createdAt: -1 });
-    requests = requests.filter((request) => canRoleManageRequest(sessionRole, request));
+    requests = requests.filter((request) => canManageReliefRequest(sessionRole, request));
 
     if (search) {
       requests = requests.filter((request) => {
@@ -589,14 +568,14 @@ const getRequestQueue = async (req, res) => {
 /* GET SINGLE REQUEST REVIEW DETAILS */
 const getRequestReviewDetails = async (req, res) => {
   try {
-    const sessionRole = normalizeString(req.session?.role).toLowerCase();
+    const sessionRole = normalizeRole(req.session?.role);
     const request = await ReliefRequest.findById(req.params.requestId);
 
     if (!request || request.isArchived) {
       return res.status(404).json({ message: "Relief request not found" });
     }
 
-    if (!canRoleManageRequest(sessionRole, request)) {
+    if (!canManageReliefRequest(sessionRole, request)) {
       return res.status(403).json({
         message: "You are not allowed to review this request.",
       });
@@ -642,14 +621,14 @@ const getRequestReviewDetails = async (req, res) => {
 /* GET REQUEST FEASIBILITY */
 const getRequestFeasibility = async (req, res) => {
   try {
-    const sessionRole = normalizeString(req.session?.role).toLowerCase();
+    const sessionRole = normalizeRole(req.session?.role);
     const request = await ReliefRequest.findById(req.params.requestId);
 
     if (!request || request.isArchived) {
       return res.status(404).json({ message: "Relief request not found" });
     }
 
-    if (!canRoleManageRequest(sessionRole, request)) {
+    if (!canManageReliefRequest(sessionRole, request)) {
       return res.status(403).json({
         message: "You are not allowed to review this request.",
       });
@@ -703,7 +682,7 @@ const getRequestFeasibility = async (req, res) => {
 const updateReliefStatus = async (req, res) => {
   try {
     const username = req.session?.username || req.session?.userId || "";
-    const sessionRole = normalizeString(req.session?.role).toLowerCase();
+    const sessionRole = normalizeRole(req.session?.role);
     const reviewerLabel = getReviewerLabel(sessionRole);
     const action = normalizeString(req.body.action).toLowerCase();
     const remarks = normalizeString(req.body.remarks);
@@ -713,7 +692,7 @@ const updateReliefStatus = async (req, res) => {
       return res.status(404).json({ message: "Relief request not found" });
     }
 
-    if (!canRoleManageRequest(sessionRole, request)) {
+    if (!canManageReliefRequest(sessionRole, request)) {
       return res.status(403).json({
         message: "You are not allowed to update this request.",
       });
@@ -754,7 +733,7 @@ const updateReliefStatus = async (req, res) => {
         message: `${username} approved relief request ${request.requestNo} for ${request.barangayName}.`,
         actorId: req.session?.userId || null,
         actorName: username,
-        actorRole: sessionRole || "drrmo",
+        actorRole: sessionRole || "system",
         barangayId: request.barangayId,
         barangayName: request.barangayName,
         requestNo: request.requestNo,
@@ -779,7 +758,7 @@ const updateReliefStatus = async (req, res) => {
         recipientBarangayName: request.barangayName,
 
         senderUser: req.session?.userId || null,
-        senderRole: "drrmo",
+        senderRole: sessionRole || "system",
         senderName: username,
 
         module: "relief",
@@ -848,7 +827,7 @@ const updateReliefStatus = async (req, res) => {
         message: `${username} rejected relief request ${request.requestNo} for ${request.barangayName}.`,
         actorId: req.session?.userId || null,
         actorName: username,
-        actorRole: sessionRole || "drrmo",
+        actorRole: sessionRole || "system",
         barangayId: request.barangayId,
         barangayName: request.barangayName,
         requestNo: request.requestNo,
@@ -873,7 +852,7 @@ const updateReliefStatus = async (req, res) => {
         recipientBarangayName: request.barangayName,
 
         senderUser: req.session?.userId || null,
-        senderRole: "drrmo",
+        senderRole: sessionRole || "system",
         senderName: username,
 
         module: "relief",

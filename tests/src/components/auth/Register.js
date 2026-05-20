@@ -288,7 +288,8 @@ export default function Register() {
         setAvailableBarangays((prev) => prev.filter((name) => name !== barangay));
       }
 
-      const createdRoleLabel = role === 'barangay' ? 'Barangay' : 'DRRMO';
+      const createdRoleLabel =
+        role === 'barangay' ? 'Barangay' : role === 'accountant' ? 'Accountant' : 'DRRMO';
       showNotification(
         `${createdRoleLabel} approval email sent. The account will be created after the recipient confirms it.`,
         'success'
@@ -321,8 +322,9 @@ export default function Register() {
     return [
       {
         label: 'Account Type',
-        value: role === 'barangay' ? 'Barangay' : 'DRRMO',
-        tone: role === 'barangay' ? 'green' : 'blue'
+        value:
+          role === 'barangay' ? 'Barangay' : role === 'accountant' ? 'Accountant' : 'DRRMO',
+        tone: role === 'barangay' ? 'green' : role === 'accountant' ? 'amber' : 'blue'
       },
       {
         label: 'Available Barangays',
@@ -379,6 +381,13 @@ export default function Register() {
                   onClick={() => setRole('drrmo')}
                 >
                   DRRMO
+                </button>
+                <button
+                  type="button"
+                  className={`role-tab ${role === 'accountant' ? 'active' : ''}`}
+                  onClick={() => setRole('accountant')}
+                >
+                  Accountant
                 </button>
                 <button
                   type="button"
@@ -575,7 +584,11 @@ export default function Register() {
         title="Create account?"
         message="Please confirm the details below before creating this account."
         details={[
-          { label: 'Role', value: role === 'barangay' ? 'Barangay' : 'DRRMO' },
+          {
+            label: 'Role',
+            value:
+              role === 'barangay' ? 'Barangay' : role === 'accountant' ? 'Accountant' : 'DRRMO'
+          },
           ...(role === 'barangay'
             ? [{ label: 'Barangay', value: barangay || '-' }]
             : []),

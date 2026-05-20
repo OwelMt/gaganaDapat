@@ -176,3 +176,34 @@ html, body, #root { height: 100%; margin: 0; }
   .tio-toolbar-right { flex-wrap: wrap; gap: 8px; }
   .tio-table         { font-size: 13px; }
 }
+
+:root[data-theme="dark"] .tio-app {
+  background:
+    radial-gradient(circle at top right, rgba(63, 185, 80, 0.12), transparent 24%),
+    linear-gradient(180deg, #082611 0%, #0c2814 100%) !important;
+}
+
+:root[data-theme="dark"] .tio-toolbar,
+:root[data-theme="dark"] .tio-main,
+:root[data-theme="dark"] .tio-table-region,
+:root[data-theme="dark"] .tio-table-wrap,
+:root[data-theme="dark"] .tio-select,
+:root[data-theme="dark"] .tio-input,
+:root[data-theme="dark"] .tio-empty-row td,
+:root[data-theme="dark"] .tio-pagination,
+:root[data-theme="dark"] .tio-btn {
+  background: linear-gradient(180deg, rgba(19, 49, 27, 0.98) 0%, rgba(23, 58, 32, 0.98) 100%) !important;
+  color: var(--content-text) !important;
+  border-color: rgba(157, 203, 168, 0.18) !important;
+}
+
+:root[data-theme="dark"] .tio-table thead th,
+:root[data-theme="dark"] .tio-table tbody td,
+:root[data-theme="dark"] .tio-page {
+  color: var(--content-text) !important;
+}
+
+:root[data-theme="dark"] .tio-muted,
+:root[data-theme="dark"] .tio-meta {
+  color: var(--text-soft) !important;
+}

@@ -15,7 +15,7 @@ const accountUpdateApprovalRequestSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["drrmo", "barangay"],
+      enum: ["drrmo", "barangay", "accountant"],
       required: true,
       trim: true,
       lowercase: true,

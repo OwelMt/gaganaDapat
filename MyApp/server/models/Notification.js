@@ -4,7 +4,7 @@ const NotificationSchema = new mongoose.Schema(
   {
     recipientRole: {
       type: String,
-      enum: ["admin", "drrmo", "barangay", "all"],
+      enum: ["admin", "drrmo", "barangay", "accountant", "all"],
       required: true,
       lowercase: true,
       trim: true,

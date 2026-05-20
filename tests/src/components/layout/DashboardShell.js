@@ -26,12 +26,15 @@ export default function DashboardShell({ children, variant }) {
     variant ??
     (pathname.startsWith("/drrmo")
       ? "drrmo"
+      : pathname.startsWith("/accountant")
+      ? "accountant"
       : pathname.startsWith("/barangay")
       ? "barangay"
       : "admin");
 
   const roleLabel = useMemo(() => {
     if (resolved === "drrmo") return "DRRMO";
+    if (resolved === "accountant") return "Accountant";
     if (resolved === "barangay") return "Barangay";
     return "Administrator";
   }, [resolved]);
@@ -121,6 +124,7 @@ export default function DashboardShell({ children, variant }) {
 
       <div className={`sidebar-shell ${mobileOpen ? "is-open" : ""}`}>
         <SidebarComp
+          variant={resolved}
           collapsed={collapsed}
           onToggle={onToggle}
           onLogout={requestLogout}
@@ -131,8 +135,24 @@ export default function DashboardShell({ children, variant }) {
       </div>
 
       <main className="admin-main">
+        <header className="dashboard-topbar">
+          <div className="shell-profile-inline">
+            <div className="shell-profile-meta">
+              <span className="shell-profile-kicker">Signed in as</span>
+              <strong className="shell-profile-name">
+                {username || "Unknown User"}
+              </strong>
+              <span className="shell-profile-role">{roleLabel}</span>
+            </div>
+            <div className="shell-profile-avatar">
+              {(username || roleLabel || "U").charAt(0).toUpperCase()}
+            </div>
+          </div>
+        </header>
         <section className="admin-content">
-          <div className="admin-content-inner">{children}</div>
+          <div className="admin-content-inner">
+            <div className="shell-page-content">{children}</div>
+          </div>
         </section>
       </main>
 

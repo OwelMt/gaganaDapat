@@ -15,6 +15,11 @@ import "../css/ReliefRequestList.css";
 import "../css/DonationValidationQueue.css";
 import { groupDonationRowsByReference } from "./donationReferenceUtils";
 import { useAuth } from "../../context/AuthContext";
+import {
+  getDonationQueueOwnerLabel,
+  getDonationQueueTypeForRole,
+  normalizeRole,
+} from "../auth/roleAccessUtils";
 
 const LOCAL_BASE_URL = "http://localhost:8000";
 const REMOTE_BASE_URL =
@@ -157,12 +162,9 @@ const EMPTY_CONFIRM_STATE = {
 
 export default function DonationValidationQueue() {
   const { user } = useAuth();
-  const role = String(user?.role || localStorage.getItem("role") || "")
-    .trim()
-    .toLowerCase();
-  const isAdmin = role === "admin";
-  const queueTypeParam = isAdmin ? "monetary" : "non_monetary";
-  const queueOwnerLabel = isAdmin ? "Admin" : "DRRMO";
+  const role = normalizeRole(user?.role || localStorage.getItem("role"));
+  const queueTypeParam = getDonationQueueTypeForRole(role);
+  const queueOwnerLabel = getDonationQueueOwnerLabel(role);
   const [rows, setRows] = useState([]);
   const [loadingQueue, setLoadingQueue] = useState(true);
   const [selectedDonation, setSelectedDonation] = useState(null);
@@ -490,7 +492,7 @@ export default function DonationValidationQueue() {
               <div className="rrl-header-main">
                 <span className="rrl-kicker">Donation Validation</span>
                 <h1 className="rrl-header-title">
-                  {isAdmin
+                  {queueTypeParam === "monetary"
                     ? "Review mobile monetary donations before inventory intake"
                     : "Review mobile donations before inventory intake"}
                 </h1>

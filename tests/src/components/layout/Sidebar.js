@@ -89,6 +89,7 @@ const getNotificationCount = async (moduleName) => {
 };
 
 export default function Sidebar({
+  variant = "admin",
   collapsed,
   onToggle,
   onLogout,
@@ -100,8 +101,10 @@ export default function Sidebar({
   const { theme, toggleTheme } = useTheme();
   const dark = theme === "dark";
   const navScrollRef = useRef(null);
-  const SIDEBAR_SCROLL_KEY = "sidebar:admin:scrollTop";
-  const PAGE_SCROLL_KEY = "sidebar:admin:pageScrollY";
+  const isAccountant = variant === "accountant";
+  const basePath = isAccountant ? "/accountant" : "/admin";
+  const SIDEBAR_SCROLL_KEY = `sidebar:${variant}:scrollTop`;
+  const PAGE_SCROLL_KEY = `sidebar:${variant}:pageScrollY`;
   const cachedCountsRef = useRef(readCachedCounts());
 
   const [unreadCount, setUnreadCount] = useState(
@@ -259,7 +262,7 @@ export default function Sidebar({
       section: "Overview",
       items: [
         {
-          to: "/admin/analytics",
+          to: `${basePath}/analytics`,
           label: "Analytics",
           Icon: FaListUl,
           exact: true,
@@ -270,28 +273,32 @@ export default function Sidebar({
     {
       section: "Management",
       items: [
-        {
-          to: "/admin/accounts",
-          label: "Account Management",
-          Icon: FaBuilding,
-          exact: true,
-          badge: 0,
-        },
-        {
-          to: "/evacuation",
-          label: "Evacuation Centers",
-          Icon: FaBed,
-          exact: true,
-          badge: evacUnreadCount,
-          badgeKey: "evacuation",
-        },
+        ...(!isAccountant
+          ? [
+              {
+                to: "/admin/accounts",
+                label: "Account Management",
+                Icon: FaBuilding,
+                exact: true,
+                badge: 0,
+              },
+              {
+                to: "/evacuation",
+                label: "Evacuation Centers",
+                Icon: FaBed,
+                exact: true,
+                badge: evacUnreadCount,
+                badgeKey: "evacuation",
+              },
+            ]
+          : []),
       ],
     },
     {
       section: "Inventory",
       items: [
         {
-          to: "/admin/inventory",
+          to: `${basePath}/inventory`,
           label: "Inventory",
           Icon: FaClipboardList,
           exact: true,
@@ -299,14 +306,14 @@ export default function Sidebar({
           badgeKey: "inventory",
         },
         {
-          to: "/admin/inventory/add",
+          to: `${basePath}/inventory/add`,
           label: "Add Donations",
           Icon: FaPlusCircle,
           exact: true,
           badge: 0,
         },
         {
-          to: "/admin/donations/queue",
+          to: `${basePath}/donations/queue`,
           label: "Donation Queue",
           Icon: FaClipboardCheck,
           exact: true,
@@ -318,40 +325,44 @@ export default function Sidebar({
       section: "Operations",
       items: [
         {
-          to: "/admin/relief-lists",
+          to: `${basePath}/relief-lists`,
           label: "Relief Requests",
           Icon: FaClipboardCheck,
           exact: true,
           badge: 0,
         },
-        {
-          to: "/admin/announcements",
-          label: "Announcements",
-          Icon: FaBullhorn,
-          exact: true,
-          badge: 0,
-        },
-        {
-          to: "/admin/time-in-time-out",
-          label: "Time In & Time Out",
-          Icon: FaHistory,
-          exact: true,
-          badge: 0,
-        },
-        {
-          to: "/admin/audit-trail",
-          label: "Audit Trail",
-          Icon: FaHistory,
-          exact: true,
-          badge: 0,
-        },
+        ...(!isAccountant
+          ? [
+              {
+                to: "/admin/announcements",
+                label: "Announcements",
+                Icon: FaBullhorn,
+                exact: true,
+                badge: 0,
+              },
+              {
+                to: "/admin/time-in-time-out",
+                label: "Time In & Time Out",
+                Icon: FaHistory,
+                exact: true,
+                badge: 0,
+              },
+              {
+                to: "/admin/audit-trail",
+                label: "Audit Trail",
+                Icon: FaHistory,
+                exact: true,
+                badge: 0,
+              },
+            ]
+          : []),
       ],
     },
   ];
 
   const utilityLinks = [
     {
-      to: "/admin/notifications",
+      to: `${basePath}/notifications`,
       label: "Notifications",
       Icon: FaBell,
       exact: true,
@@ -409,22 +420,6 @@ export default function Sidebar({
           {collapsed ? "▶" : "◀"}
         </button>
       </div>
-
-      {!collapsed && (
-        <div className="sidebar-role-card">
-          <div className="sidebar-role-avatar">
-            {(username || roleLabel || "U").charAt(0).toUpperCase()}
-          </div>
-
-          <div className="sidebar-role-meta">
-            <span className="sidebar-role-kicker">Signed in as</span>
-            <strong className="sidebar-role-name">
-              {username || "Unknown User"}
-            </strong>
-            <span className="sidebar-role-subtext">{roleLabel}</span>
-          </div>
-        </div>
-      )}
 
       <nav className="sidebar-nav" role="navigation">
         <div

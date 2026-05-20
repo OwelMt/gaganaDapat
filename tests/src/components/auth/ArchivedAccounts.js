@@ -175,15 +175,17 @@ export default function ArchivedAccounts() {
         const role = String(item.role || '').toLowerCase();
         if (role === 'barangay') acc.barangay += 1;
         if (role === 'drrmo') acc.drrmo += 1;
+        if (role === 'accountant') acc.accountant += 1;
         return acc;
       },
-      { barangay: 0, drrmo: 0 }
+      { barangay: 0, drrmo: 0, accountant: 0 }
     );
   }, [archived]);
 
   const formatRole = (role) => {
     if (!role) return '-';
     if (String(role).toLowerCase() === 'drrmo') return 'DRRMO';
+    if (String(role).toLowerCase() === 'accountant') return 'Accountant';
     if (String(role).toLowerCase() === 'barangay') return 'Barangay';
     return role;
   };
@@ -198,6 +200,11 @@ export default function ArchivedAccounts() {
       label: 'Archived',
       value: loading ? '-' : archived.length,
       tone: 'green'
+    },
+    {
+      label: 'Accountant',
+      value: loading ? '-' : roleCounts.accountant,
+      tone: 'amber'
     },
     {
       label: 'Barangay',
@@ -266,6 +273,7 @@ export default function ArchivedAccounts() {
               <option value="">All Roles</option>
               <option value="barangay">Barangay</option>
               <option value="drrmo">DRRMO</option>
+              <option value="accountant">Accountant</option>
             </select>
           </div>
 
@@ -359,6 +367,8 @@ export default function ArchivedAccounts() {
                           className={`archived-role-pill ${
                             String(account.role || '').toLowerCase() === 'barangay'
                               ? 'barangay'
+                              : String(account.role || '').toLowerCase() === 'accountant'
+                              ? 'accountant'
                               : 'drrmo'
                           }`}
                         >

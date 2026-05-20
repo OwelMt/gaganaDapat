@@ -14,13 +14,14 @@ const moduleLabels = {
 const roleLabels = {
   admin: "Admin",
   drrmo: "DRRMO",
+  accountant: "Accountant",
   barangay: "Barangay",
   system: "System",
   all: "System",
 };
 
 const VALID_MODULES = new Set(Object.keys(moduleLabels));
-const VALID_ACTOR_ROLES = new Set(["admin", "drrmo", "barangay", "system"]);
+const VALID_ACTOR_ROLES = new Set(["admin", "drrmo", "accountant", "barangay", "system"]);
 const VALID_PRIORITIES = new Set(["low", "normal", "medium", "high", "critical"]);
 
 const normalizeString = (value) => {

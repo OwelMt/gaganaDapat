@@ -32,6 +32,11 @@ import {
 } from './requestListUtils';
 import { isConfirmationSubmitDisabled } from './requestReviewUtils';
 import * as dafacDistributionUtils from './dafacDistributionUtils';
+import {
+  getReliefBasePathForRole,
+  getReliefReviewerLabel,
+  normalizeRole,
+} from '../auth/roleAccessUtils';
 
 const BASE_URL =
   process.env.REACT_APP_API_URL || 'https://gaganadapat.onrender.com';
@@ -280,11 +285,10 @@ const EMPTY_CONFIRM_STATE = {
 
 export default function ReliefRequestsList() {
   const navigate = useNavigate();
-  const storedRole = normalize(localStorage.getItem('role'));
-  const isAdmin = storedRole === 'admin';
-  const queueBasePath = isAdmin ? '/admin' : '/drrmo';
+  const storedRole = normalizeRole(localStorage.getItem('role'));
+  const queueBasePath = getReliefBasePathForRole(storedRole);
   const inventoryReleaseRoute = `${queueBasePath}/inventory`;
-  const reviewerLabel = isAdmin ? 'Admin' : 'DRRMO';
+  const reviewerLabel = getReliefReviewerLabel(storedRole);
 
   const [rows, setRows] = useState([]);
   const [receivedRows, setReceivedRows] = useState([]);

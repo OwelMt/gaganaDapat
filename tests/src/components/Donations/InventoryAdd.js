@@ -7,6 +7,11 @@ import "../css/InventoryAdd.css";
 import DashboardShell from "../layout/DashboardShell";
 import { useAuth } from "../../context/AuthContext";
 import {
+  canEditInventoryType,
+  getInventoryViewTypes,
+  normalizeRole,
+} from "../auth/roleAccessUtils";
+import {
   FaBlender,
   FaArchive,
   FaBell,
@@ -80,19 +85,20 @@ const stripReferenceFromDescription = (description = "") =>
 const InventoryAdd = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const role = String(user?.role || localStorage.getItem("role") || "")
-    .trim()
-    .toLowerCase();
+  const role = normalizeRole(user?.role || localStorage.getItem("role"));
   const isAdmin = role === "admin";
   const isDrrmo = role === "drrmo";
+  const isAccountant = role === "accountant";
   const allowedDonationTypes = useMemo(
-    () => (isAdmin ? ["monetary"] : isDrrmo ? ["goods", "appliance"] : []),
-    [isAdmin, isDrrmo]
+    () => (isAdmin ? ["monetary"] : getInventoryViewTypes(role)),
+    [isAdmin, role]
   );
-  const defaultDonationType = allowedDonationTypes[0] || "goods";
-  const canAccessInventoryAdd = isAdmin || isDrrmo;
+  const defaultDonationType = isAccountant ? "monetary" : allowedDonationTypes[0] || "goods";
+  const canAccessInventoryAdd = isAdmin || isDrrmo || isAccountant;
   const donationQueuePath = isAdmin
     ? "/admin/donations/queue"
+    : isAccountant
+    ? "/accountant/donations/queue"
     : "/drrmo/inventory/add";
   const [items, setItems] = useState([]);
   const [archivedItems, setArchivedItems] = useState([]);
@@ -102,6 +108,7 @@ const InventoryAdd = () => {
   const [showForm, setShowForm] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [donationType, setDonationType] = useState(defaultDonationType);
+  const canEditSelectedType = canEditInventoryType(role, donationType);
   const [editingItemId, setEditingItemId] = useState("");
   const fileInputRef = useRef(null);
   const importFileInputRef = useRef(null);
@@ -1433,19 +1440,23 @@ const InventoryAdd = () => {
 
                 <button
                   className="btn btn-primary"
+                  disabled={!canEditSelectedType}
                   onClick={() => {
+                    if (!canEditSelectedType) return;
                     setEditingItemId("");
                     setShowForm(true);
                   }}
                 >
                   <FaPlus className="btn-icon" />
-                  Add{" "}
-                  {donationType === "goods"
-                    ? "Goods"
-                    : donationType === "appliance"
-                    ? "Appliance"
-                    : "Monetary"}{" "}
-                  Donation
+                  {canEditSelectedType
+                    ? `Add ${
+                        donationType === "goods"
+                          ? "Goods"
+                          : donationType === "appliance"
+                          ? "Appliance"
+                          : "Monetary"
+                      } Donation`
+                    : "View-only inventory"}
                 </button>
               </div>
             )}
@@ -1459,7 +1470,9 @@ const InventoryAdd = () => {
                   </div>
                   <h3 className="summary-value">{summary.totalItems}</h3>
                   <span className="summary-note">
-                    {isAdmin ? "All monetary donation entries" : "All goods and appliance entries"}
+                    {isAdmin || isAccountant
+                      ? "All monitored donation entries"
+                      : "All goods and appliance entries"}
                   </span>
                 </div>
 
@@ -2301,7 +2314,7 @@ const InventoryAdd = () => {
 
                         <th>Source</th>
                         <th>Description</th>
-                        <th>Files</th>
+                        <th>Proof</th>
 
                         <th onClick={() => handleSort("addedBy")} className="sortable">
                           Added By <span>{sortArrow("addedBy")}</span>
@@ -2411,7 +2424,7 @@ const InventoryAdd = () => {
                                       rel="noreferrer"
                                       className="file-link"
                                     >
-                                      View File {idx + 1}
+                                      View Proof {idx + 1}
                                     </a>
                                   ))}
                                 </div>
@@ -2432,37 +2445,49 @@ const InventoryAdd = () => {
                             <td>
                               {showArchived ? (
                                 <div className="row-action-stack">
-                                  <button
-                                    className="btn btn-secondary btn-sm"
-                                    onClick={() => handleUnarchive(item._id, item.name)}
-                                  >
-                                    <FaUndo className="btn-icon" />
-                                    Unarchive
-                                  </button>
-                                  <button
-                                    className="btn btn-delete btn-sm"
-                                    onClick={() => handlePermanentDelete(item._id, item.name)}
-                                  >
-                                    <FaTrash className="btn-icon" />
-                                    Delete
-                                  </button>
+                                  {canEditInventoryType(role, item.type) ? (
+                                    <>
+                                      <button
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={() => handleUnarchive(item._id, item.name)}
+                                      >
+                                        <FaUndo className="btn-icon" />
+                                        Unarchive
+                                      </button>
+                                      <button
+                                        className="btn btn-delete btn-sm"
+                                        onClick={() => handlePermanentDelete(item._id, item.name)}
+                                      >
+                                        <FaTrash className="btn-icon" />
+                                        Delete
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <span className="inventory-muted-note">View only</span>
+                                  )}
                                 </div>
                               ) : (
                                 <div className="row-action-stack">
-                                  <button
-                                    className="btn btn-outline btn-sm"
-                                    onClick={() => openEditForm(item)}
-                                  >
-                                    <FaPen className="btn-icon" />
-                                    Edit
-                                  </button>
-                                  <button
-                                    className="btn btn-archive btn-sm"
-                                    onClick={() => handleArchive(item._id, item.name)}
-                                  >
-                                    <FaArchive className="btn-icon" />
-                                    Archive
-                                  </button>
+                                  {canEditInventoryType(role, item.type) ? (
+                                    <>
+                                      <button
+                                        className="btn btn-outline btn-sm"
+                                        onClick={() => openEditForm(item)}
+                                      >
+                                        <FaPen className="btn-icon" />
+                                        Edit
+                                      </button>
+                                      <button
+                                        className="btn btn-archive btn-sm"
+                                        onClick={() => handleArchive(item._id, item.name)}
+                                      >
+                                        <FaArchive className="btn-icon" />
+                                        Archive
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <span className="inventory-muted-note">View only</span>
+                                  )}
                                 </div>
                               )}
                             </td>

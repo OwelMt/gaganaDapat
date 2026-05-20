@@ -9,6 +9,7 @@ const normalizeRole = (value) => normalizeString(value).toLowerCase();
 
 const ROLE_ALLOWED_MODULES = {
   admin: ["evacuation", "inventory", "announcement", "account", "analytics", "system"],
+  accountant: ["relief", "inventory", "donation", "analytics", "system"],
   drrmo: [
     "relief",
     "inventory",
@@ -147,6 +148,20 @@ const buildNotificationQuery = (req) => {
 
     visibilityOr.push({
       recipientRole: "drrmo",
+      recipientUser: userId,
+    });
+  }
+
+  if (role === "accountant") {
+    visibilityOr.push({
+      recipientRole: "accountant",
+      recipientUser: null,
+      recipientBarangay: null,
+      recipientBarangayName: "",
+    });
+
+    visibilityOr.push({
+      recipientRole: "accountant",
       recipientUser: userId,
     });
   }

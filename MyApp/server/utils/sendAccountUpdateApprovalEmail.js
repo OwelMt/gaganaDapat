@@ -17,7 +17,12 @@ const sendAccountUpdateApprovalEmail = ({
   requestedBy,
   changeSummary = [],
 }) => {
-  const roleLabel = role === "barangay" ? "Barangay" : "DRRMO";
+  const roleLabel =
+    role === "barangay"
+      ? "Barangay"
+      : role === "accountant"
+        ? "Accountant"
+        : "DRRMO";
   const summaryHtml = changeSummary.length
     ? `<ul style="margin: 12px 0 0; padding-left: 18px;">${changeSummary
         .map(
