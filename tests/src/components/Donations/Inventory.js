@@ -32,6 +32,7 @@ import {
 import { resolveInventoryType } from "./inventoryTypeUtils";
 import {
   getTodayInputDate,
+  getInventoryExpiryStatus,
   validateFutureOrTodayInventoryDate,
 } from "./inventoryExpiryUtils";
 import {
@@ -85,6 +86,45 @@ const DEFAULT_NON_EXPIRING_GOODS_CATEGORIES = new Set([
   "mosquito nets",
   "mosquito net"
 ]);
+const CUSTOM_CATEGORY_VALUE = "__custom__";
+const CUSTOM_UNIT_VALUE = "__custom_unit__";
+const MAX_QUANTITY = 1000000;
+const MAX_AMOUNT = 1000000000;
+const MAX_NAME_LENGTH = 80;
+const MAX_SOURCE_NAME_LENGTH = 120;
+const MAX_DESCRIPTION_LENGTH = 500;
+const MAX_UNIT_LENGTH = 24;
+const MAX_CUSTOM_CATEGORY_LENGTH = 40;
+const DEFAULT_APPLIANCE_CATEGORIES = [
+  "kitchen appliances",
+  "cleaning appliances",
+  "cooling appliances",
+  "lighting equipment",
+  "communication devices",
+  "power equipment",
+  "emergency equipment",
+];
+const CATEGORY_UNIT_HINTS = [
+  { keywords: ["rice", "grain", "corn"], units: ["kg", "sack", "bag"] },
+  { keywords: ["water", "drink", "juice", "milk"], units: ["bottle", "liter", "gallon", "box"] },
+  { keywords: ["canned", "sardines", "tuna"], units: ["can", "box", "pack"] },
+  { keywords: ["noodle", "biscuit", "snack", "food"], units: ["pack", "box", "piece"] },
+  { keywords: ["clothes", "blanket", "towel", "bedding", "mat"], units: ["piece", "set", "bundle"] },
+  { keywords: ["hygiene", "kit", "soap", "toothpaste"], units: ["piece", "pack", "box"] },
+];
+
+const sanitizeCompactText = (value, maxLength) =>
+  String(value || "")
+    .replace(/[^\w\s.,()/#&-]/g, "")
+    .replace(/\s+/g, " ")
+    .trimStart()
+    .slice(0, maxLength);
+
+const sanitizeNoteText = (value, maxLength) =>
+  String(value || "")
+    .replace(/[^\w\s.,()/#&:;!?'"%-]/g, "")
+    .replace(/\r/g, "")
+    .slice(0, maxLength);
 
 export default function Inventory() {
   const { user } = useAuth();
@@ -139,6 +179,7 @@ export default function Inventory() {
     type: "goods",
     name: "",
     category: "",
+    customCategory: "",
     requiresExpiration: true,
     quantity: "",
     unit: "",
@@ -202,23 +243,7 @@ export default function Inventory() {
   };
 
   const getExpiryStatus = (item) => {
-    if (!item?.expirationDate) return "none";
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const expiry = new Date(item.expirationDate);
-    if (Number.isNaN(expiry.getTime())) return "none";
-
-    expiry.setHours(0, 0, 0, 0);
-
-    const diffDays = Math.ceil(
-      (expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
-    if (diffDays < 0) return "expired";
-    if (diffDays <= 30) return "soon";
-    return "ok";
+    return getInventoryExpiryStatus(item?.expirationDate);
   };
 
   const getExpiryBadgeLabel = (item) => {
@@ -680,7 +705,21 @@ export default function Inventory() {
       if (incomingCreatedAt > existingCreatedAt) {
         existing.createdAt = item.createdAt;
         existing.updatedAt = item.updatedAt;
-        existing.expirationDate = item.expirationDate || existing.expirationDate;
+      }
+
+      if (item.expirationDate) {
+        const incomingExpiry = new Date(item.expirationDate);
+        const existingExpiry = existing.expirationDate
+          ? new Date(existing.expirationDate)
+          : null;
+
+        if (
+          !existingExpiry ||
+          Number.isNaN(existingExpiry.getTime()) ||
+          (!Number.isNaN(incomingExpiry.getTime()) && incomingExpiry < existingExpiry)
+        ) {
+          existing.expirationDate = item.expirationDate;
+        }
       }
     });
 
@@ -805,6 +844,55 @@ export default function Inventory() {
       )
     ].sort((a, b) => a.localeCompare(b));
   }, [archivedGoods, archivedAppliances, normalize, viewType]);
+
+  const editCategoryOptions = useMemo(() => {
+    const sourceItems =
+      itemForm.type === "appliance"
+        ? [...activeAppliances, ...archivedAppliances]
+        : [...activeGoods, ...archivedGoods];
+    const defaults =
+      itemForm.type === "appliance"
+        ? DEFAULT_APPLIANCE_CATEGORIES
+        : Array.from(DEFAULT_NON_EXPIRING_GOODS_CATEGORIES);
+    const merged = [
+      ...new Set(
+        [...defaults, ...sourceItems.map((item) => String(item.category || "").trim().toLowerCase())].filter(Boolean)
+      ),
+    ];
+    return merged.sort((a, b) => a.localeCompare(b));
+  }, [itemForm.type, activeAppliances, archivedAppliances, activeGoods, archivedGoods]);
+
+  const getFinalEditCategory = useCallback(() => {
+    if (itemForm.category === CUSTOM_CATEGORY_VALUE) {
+      return normalize(itemForm.customCategory);
+    }
+    return normalize(itemForm.category);
+  }, [itemForm.category, itemForm.customCategory, normalize]);
+
+  const editUnitOptions = useMemo(() => {
+    if (itemForm.type !== "goods") return [];
+
+    const finalCategory = getFinalEditCategory();
+    const sourceItems = [...activeGoods, ...archivedGoods];
+    const categoryUnits = sourceItems
+      .filter((item) => normalize(item.category) === finalCategory)
+      .map((item) => String(item.unit || "").trim().toLowerCase())
+      .filter(Boolean);
+    const hintedUnits = CATEGORY_UNIT_HINTS.flatMap((entry) =>
+      entry.keywords.some((keyword) => finalCategory.includes(keyword)) ? entry.units : []
+    );
+
+    return [...new Set([...hintedUnits, ...categoryUnits, "piece", "pack", "box"])].sort(
+      (a, b) => a.localeCompare(b)
+    );
+  }, [itemForm.type, getFinalEditCategory, activeGoods, archivedGoods, normalize]);
+
+  const selectedEditUnitValue = useMemo(() => {
+    if (itemForm.type !== "goods") return "";
+    if (itemForm.category === CUSTOM_CATEGORY_VALUE) return CUSTOM_UNIT_VALUE;
+    const currentUnit = String(itemForm.unit || "").trim().toLowerCase();
+    return editUnitOptions.includes(currentUnit) ? currentUnit : CUSTOM_UNIT_VALUE;
+  }, [itemForm.type, itemForm.category, itemForm.unit, editUnitOptions]);
 
   const filteredActiveGoods = useMemo(() => {
     let items = [...mergedActiveGoods];
@@ -1771,7 +1859,17 @@ useEffect(() => {
       name: item?.name || "",
       category:
         itemType === "goods" || itemType === "appliance"
-          ? item?.category || ""
+          ? editCategoryOptions.includes(normalize(item?.category))
+            ? normalize(item?.category)
+            : item?.category
+              ? CUSTOM_CATEGORY_VALUE
+              : ""
+          : "",
+      customCategory:
+        itemType === "goods" || itemType === "appliance"
+          ? editCategoryOptions.includes(normalize(item?.category))
+            ? ""
+            : item?.category || ""
           : "",
       requiresExpiration: itemType === "goods" ? item?.requiresExpiration !== false : true,
       quantity:
@@ -1812,6 +1910,7 @@ useEffect(() => {
       type: "goods",
       name: "",
       category: "",
+      customCategory: "",
       requiresExpiration: true,
       quantity: "",
       unit: "",
@@ -1831,19 +1930,34 @@ useEffect(() => {
 
     if (!itemForm.name.trim()) {
       errors.name = "Name is required.";
+    } else if (itemForm.name.trim().length > MAX_NAME_LENGTH) {
+      errors.name = `Name must be ${MAX_NAME_LENGTH} characters or less.`;
     }
 
     if (itemForm.type === "goods") {
-      if (!itemForm.category.trim()) {
+      const finalCategory = getFinalEditCategory();
+
+      if (!finalCategory) {
         errors.category = "Category is required.";
       }
 
-      if (itemForm.quantity === "" || Number(itemForm.quantity) < 0) {
-        errors.quantity = "Quantity must be 0 or higher.";
+      if (
+        itemForm.category === CUSTOM_CATEGORY_VALUE &&
+        !normalize(itemForm.customCategory)
+      ) {
+        errors.customCategory = "Please enter a custom category.";
+      }
+
+      if (itemForm.quantity === "" || Number(itemForm.quantity) <= 0) {
+        errors.quantity = "Quantity must be greater than 0.";
+      } else if (Number(itemForm.quantity) > MAX_QUANTITY) {
+        errors.quantity = `Quantity must not exceed ${MAX_QUANTITY.toLocaleString()}.`;
       }
 
       if (!itemForm.unit.trim()) {
         errors.unit = "Unit is required.";
+      } else if (itemForm.unit.trim().length > MAX_UNIT_LENGTH) {
+        errors.unit = `Unit must be ${MAX_UNIT_LENGTH} characters or less.`;
       }
 
       if (itemForm.expirationDate) {
@@ -1856,7 +1970,7 @@ useEffect(() => {
       }
 
       if (
-        isExpiryRequiredCategory(itemForm.category) &&
+        isExpiryRequiredCategory(finalCategory) &&
         !itemForm.expirationDate
       ) {
         errors.expirationDate =
@@ -1865,12 +1979,23 @@ useEffect(() => {
     }
 
     if (itemForm.type === "appliance") {
-      if (!itemForm.category.trim()) {
+      const finalCategory = getFinalEditCategory();
+
+      if (!finalCategory) {
         errors.category = "Category is required.";
+      }
+
+      if (
+        itemForm.category === CUSTOM_CATEGORY_VALUE &&
+        !normalize(itemForm.customCategory)
+      ) {
+        errors.customCategory = "Please enter a custom category.";
       }
 
       if (itemForm.quantity === "" || Number(itemForm.quantity) <= 0) {
         errors.quantity = "Quantity must be greater than 0.";
+      } else if (Number(itemForm.quantity) > MAX_QUANTITY) {
+        errors.quantity = `Quantity must not exceed ${MAX_QUANTITY.toLocaleString()}.`;
       }
 
       if (!itemForm.condition) {
@@ -1886,13 +2011,26 @@ useEffect(() => {
     }
 
     if (itemForm.type === "monetary") {
-      if (itemForm.amount === "" || Number(itemForm.amount) < 0) {
-        errors.amount = "Amount must be 0 or higher.";
+      if (itemForm.amount === "" || Number(itemForm.amount) <= 0) {
+        errors.amount = "Amount must be greater than 0.";
+      } else if (Number(itemForm.amount) > MAX_AMOUNT) {
+        errors.amount = "Amount is too large.";
       }
 
       if (!String(itemForm.referenceNumber || "").trim()) {
         errors.referenceNumber = "Reference number is required.";
       }
+    }
+
+    if (
+      (itemForm.type === "goods" || itemForm.type === "appliance") &&
+      String(itemForm.sourceName || "").trim().length > MAX_SOURCE_NAME_LENGTH
+    ) {
+      errors.sourceName = `Source name must be ${MAX_SOURCE_NAME_LENGTH} characters or less.`;
+    }
+
+    if (String(itemForm.description || "").trim().length > MAX_DESCRIPTION_LENGTH) {
+      errors.description = `Description must be ${MAX_DESCRIPTION_LENGTH} characters or less.`;
     }
 
     setItemFormErrors(errors);
@@ -1902,18 +2040,72 @@ useEffect(() => {
   const handleItemFormChange = (e) => {
     const { name, value } = e.target;
 
-    setItemForm((prev) => ({
-      ...prev,
-      [name]: value,
-      usageDuration:
-        name === "condition" && value === "brand_new" ? "" : prev.usageDuration
-    }));
+    if (name === "quantity" || name === "amount") {
+      if (value === "") {
+        setItemForm((prev) => ({ ...prev, [name]: "" }));
+      } else {
+        const parsedValue = Number(value);
+        const maxValue = name === "quantity" ? MAX_QUANTITY : MAX_AMOUNT;
+        if (!Number.isNaN(parsedValue) && parsedValue >= 0 && parsedValue <= maxValue) {
+          setItemForm((prev) => ({ ...prev, [name]: value }));
+        }
+      }
+    } else if (name === "name") {
+      setItemForm((prev) => ({
+        ...prev,
+        name: sanitizeCompactText(value, MAX_NAME_LENGTH),
+      }));
+    } else if (name === "sourceName") {
+      setItemForm((prev) => ({
+        ...prev,
+        sourceName: sanitizeCompactText(value, MAX_SOURCE_NAME_LENGTH),
+      }));
+    } else if (name === "description") {
+      setItemForm((prev) => ({
+        ...prev,
+        description: sanitizeNoteText(value, MAX_DESCRIPTION_LENGTH),
+      }));
+    } else if (name === "customCategory") {
+      setItemForm((prev) => ({
+        ...prev,
+        customCategory: sanitizeCompactText(value, MAX_CUSTOM_CATEGORY_LENGTH).toLowerCase(),
+      }));
+    } else if (name === "unit") {
+      setItemForm((prev) => ({
+        ...prev,
+        unit: sanitizeCompactText(value, MAX_UNIT_LENGTH).toLowerCase(),
+      }));
+    } else if (name === "unitSelect") {
+      setItemForm((prev) => ({
+        ...prev,
+        unit: value === CUSTOM_UNIT_VALUE ? "" : value,
+      }));
+    } else if (name === "category") {
+      setItemForm((prev) => ({
+        ...prev,
+        category: value,
+        customCategory: value === CUSTOM_CATEGORY_VALUE ? prev.customCategory : "",
+        unit: prev.type === "goods" ? "" : prev.unit,
+      }));
+    } else {
+      setItemForm((prev) => ({
+        ...prev,
+        [name]: value,
+        usageDuration:
+          name === "condition" && value === "brand_new" ? "" : prev.usageDuration
+      }));
+    }
 
     setItemFormErrors((prev) => ({
       ...prev,
       [name]: "",
+      customCategory: "",
+      unitSelect: "",
+      category: "",
       usageDuration: name === "condition" ? "" : prev.usageDuration,
-      condition: name === "condition" ? "" : prev.condition
+      condition: name === "condition" ? "" : prev.condition,
+      sourceName: "",
+      description: "",
     }));
   };
 
@@ -1933,7 +2125,7 @@ useEffect(() => {
       formData.append("sourceName", itemForm.sourceName.trim());
 
       if (itemForm.type === "goods") {
-        formData.append("category", itemForm.category.trim().toLowerCase());
+        formData.append("category", getFinalEditCategory());
         formData.append("quantity", itemForm.quantity);
         formData.append("unit", itemForm.unit.trim());
         formData.append("expirationDate", itemForm.expirationDate || "");
@@ -1942,7 +2134,7 @@ useEffect(() => {
           itemForm.requiresExpiration ? "true" : "false"
         );
       } else if (itemForm.type === "appliance") {
-        formData.append("category", itemForm.category.trim().toLowerCase());
+        formData.append("category", getFinalEditCategory());
         formData.append("quantity", itemForm.quantity);
         formData.append("condition", itemForm.condition);
         formData.append(
@@ -2720,6 +2912,7 @@ useEffect(() => {
                           type="text"
                           name="name"
                           className="input"
+                          maxLength={MAX_NAME_LENGTH}
                           value={itemForm.name}
                           onChange={handleItemFormChange}
                         />
@@ -2752,17 +2945,42 @@ useEffect(() => {
                         <>
                           <div className="release-selection-field">
                             <label>Category</label>
-                            <input
-                              type="text"
+                            <select
                               name="category"
                               className="input"
                               value={itemForm.category}
                               onChange={handleItemFormChange}
-                            />
+                            >
+                              <option value="">Select category</option>
+                              {editCategoryOptions.map((category) => (
+                                <option key={category} value={category}>
+                                  {getCategoryLabel(category)}
+                                </option>
+                              ))}
+                              <option value={CUSTOM_CATEGORY_VALUE}>Other / Custom Category</option>
+                            </select>
                             {itemFormErrors.category ? (
                               <span className="error-text">
                                 {itemFormErrors.category}
                               </span>
+                            ) : null}
+                            {itemForm.category === CUSTOM_CATEGORY_VALUE ? (
+                              <>
+                                <input
+                                  type="text"
+                                  name="customCategory"
+                                  className="input inventory-inline-input"
+                                  maxLength={MAX_CUSTOM_CATEGORY_LENGTH}
+                                  value={itemForm.customCategory}
+                                  onChange={handleItemFormChange}
+                                  placeholder="e.g. medicine, water, shelter kits"
+                                />
+                                {itemFormErrors.customCategory ? (
+                                  <span className="error-text">
+                                    {itemFormErrors.customCategory}
+                                  </span>
+                                ) : null}
+                              </>
                             ) : null}
                           </div>
 
@@ -2771,6 +2989,7 @@ useEffect(() => {
                             <input
                               type="number"
                               min="0"
+                              max={MAX_QUANTITY}
                               name="quantity"
                               className="input"
                               value={itemForm.quantity}
@@ -2785,13 +3004,31 @@ useEffect(() => {
 
                           <div className="release-selection-field">
                             <label>Unit</label>
-                            <input
-                              type="text"
-                              name="unit"
+                            <select
+                              name="unitSelect"
                               className="input"
-                              value={itemForm.unit}
+                              value={selectedEditUnitValue}
                               onChange={handleItemFormChange}
-                            />
+                            >
+                              <option value="">Select unit</option>
+                              {editUnitOptions.map((unit) => (
+                                <option key={unit} value={unit}>
+                                  {getCategoryLabel(unit)}
+                                </option>
+                              ))}
+                              <option value={CUSTOM_UNIT_VALUE}>Other / Custom Unit</option>
+                            </select>
+                            {selectedEditUnitValue === CUSTOM_UNIT_VALUE ? (
+                              <input
+                                type="text"
+                                name="unit"
+                                className="input inventory-inline-input"
+                                maxLength={MAX_UNIT_LENGTH}
+                                value={itemForm.unit}
+                                onChange={handleItemFormChange}
+                                placeholder="e.g. tray, bundle, pair"
+                              />
+                            ) : null}
                             {itemFormErrors.unit ? (
                               <span className="error-text">{itemFormErrors.unit}</span>
                             ) : null}
@@ -2821,17 +3058,42 @@ useEffect(() => {
                         <>
                           <div className="release-selection-field">
                             <label>Category</label>
-                            <input
-                              type="text"
+                            <select
                               name="category"
                               className="input"
                               value={itemForm.category}
                               onChange={handleItemFormChange}
-                            />
+                            >
+                              <option value="">Select category</option>
+                              {editCategoryOptions.map((category) => (
+                                <option key={category} value={category}>
+                                  {getCategoryLabel(category)}
+                                </option>
+                              ))}
+                              <option value={CUSTOM_CATEGORY_VALUE}>Other / Custom Category</option>
+                            </select>
                             {itemFormErrors.category ? (
                               <span className="error-text">
                                 {itemFormErrors.category}
                               </span>
+                            ) : null}
+                            {itemForm.category === CUSTOM_CATEGORY_VALUE ? (
+                              <>
+                                <input
+                                  type="text"
+                                  name="customCategory"
+                                  className="input inventory-inline-input"
+                                  maxLength={MAX_CUSTOM_CATEGORY_LENGTH}
+                                  value={itemForm.customCategory}
+                                  onChange={handleItemFormChange}
+                                  placeholder="e.g. radio equipment"
+                                />
+                                {itemFormErrors.customCategory ? (
+                                  <span className="error-text">
+                                    {itemFormErrors.customCategory}
+                                  </span>
+                                ) : null}
+                              </>
                             ) : null}
                           </div>
 
@@ -2840,6 +3102,7 @@ useEffect(() => {
                             <input
                               type="number"
                               min="0"
+                              max={MAX_QUANTITY}
                               name="quantity"
                               className="input"
                               value={itemForm.quantity}
@@ -2893,6 +3156,7 @@ useEffect(() => {
                               type="number"
                               min="0"
                               step="0.01"
+                              max={MAX_AMOUNT}
                               name="amount"
                               className="input"
                               value={itemForm.amount}
@@ -2939,9 +3203,13 @@ useEffect(() => {
                           type="text"
                           name="sourceName"
                           className="input"
+                          maxLength={MAX_SOURCE_NAME_LENGTH}
                           value={itemForm.sourceName}
                           onChange={handleItemFormChange}
                         />
+                        {itemFormErrors.sourceName ? (
+                          <span className="error-text">{itemFormErrors.sourceName}</span>
+                        ) : null}
                       </div>
 
                       <div className="release-selection-field release-selection-field-wide">
@@ -2949,9 +3217,16 @@ useEffect(() => {
                         <textarea
                           name="description"
                           className="release-textarea"
+                          maxLength={MAX_DESCRIPTION_LENGTH}
                           value={itemForm.description}
                           onChange={handleItemFormChange}
                         />
+                        <div className="inventory-textarea-meta">
+                          <span>{String(itemForm.description || "").length}/{MAX_DESCRIPTION_LENGTH}</span>
+                        </div>
+                        {itemFormErrors.description ? (
+                          <span className="error-text">{itemFormErrors.description}</span>
+                        ) : null}
                       </div>
                         </div>
 

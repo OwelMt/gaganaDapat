@@ -16,6 +16,13 @@ import {
 } from "react-icons/fa";
 import DashboardShell from "../layout/DashboardShell";
 import "../css/Guidelines.css";
+import {
+  MAX_CONTENT_DESCRIPTION_LENGTH,
+  MAX_CONTENT_TITLE_LENGTH,
+  sanitizeContentDescription,
+  sanitizeContentTitle,
+  validateContentFields
+} from "../contentTextUtils";
 
 const BASE_URL =
   process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
@@ -244,6 +251,8 @@ export default function HomeGuidelines() {
   );
 
   const activeStatuses = useMemo(() => ["draft", "published"], []);
+  const createContentError = validateContentFields(title, description);
+  const editContentError = validateContentFields(editTitle, editDescription);
 
   const fetchGuidelines = useCallback(async () => {
     try {
@@ -312,8 +321,8 @@ export default function HomeGuidelines() {
 
   const openEditModal = (item) => {
     setEditingGuideline(item);
-    setEditTitle(item?.title || "");
-    setEditDescription(item?.description || "");
+    setEditTitle(sanitizeContentTitle(item?.title || ""));
+    setEditDescription(sanitizeContentDescription(item?.description || ""));
     setEditCategory(item?.category || "general");
     setEditStatus(item?.status || "draft");
     setEditPriority(item?.priorityLevel || "medium");
@@ -364,8 +373,12 @@ export default function HomeGuidelines() {
   };
 
   const createGuideline = async () => {
-    if (!title.trim() || !description.trim()) {
-      pushNotification("Title and description are required.", "error");
+    const cleanTitle = sanitizeContentTitle(title);
+    const cleanDescription = sanitizeContentDescription(description);
+    const validationError = validateContentFields(cleanTitle, cleanDescription);
+
+    if (validationError) {
+      pushNotification(validationError, "error");
       return;
     }
 
@@ -373,8 +386,8 @@ export default function HomeGuidelines() {
       setSubmitting(true);
 
       const formData = new FormData();
-      formData.append("title", title.trim());
-      formData.append("description", description.trim());
+      formData.append("title", cleanTitle);
+      formData.append("description", cleanDescription);
       formData.append("category", category);
       formData.append("status", status);
       formData.append("priorityLevel", priorityLevel);
@@ -409,8 +422,12 @@ export default function HomeGuidelines() {
   const updateGuideline = async () => {
     if (!editingGuideline?._id) return;
 
-    if (!editTitle.trim() || !editDescription.trim()) {
-      pushNotification("Title and description are required.", "error");
+    const cleanTitle = sanitizeContentTitle(editTitle);
+    const cleanDescription = sanitizeContentDescription(editDescription);
+    const validationError = validateContentFields(cleanTitle, cleanDescription);
+
+    if (validationError) {
+      pushNotification(validationError, "error");
       return;
     }
 
@@ -423,8 +440,8 @@ export default function HomeGuidelines() {
 
       if (hasFileChanges) {
         const formData = new FormData();
-        formData.append("title", editTitle.trim());
-        formData.append("description", editDescription.trim());
+        formData.append("title", cleanTitle);
+        formData.append("description", cleanDescription);
         formData.append("category", editCategory);
         formData.append("status", editStatus);
         formData.append("priorityLevel", editPriority);
@@ -445,8 +462,8 @@ export default function HomeGuidelines() {
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({
-            title: editTitle.trim(),
-            description: editDescription.trim(),
+            title: cleanTitle,
+            description: cleanDescription,
             category: editCategory,
             status: editStatus,
             priorityLevel: editPriority
@@ -697,7 +714,7 @@ export default function HomeGuidelines() {
     );
   }, [guidelines]);
 
-  const isCreateDisabled = !title.trim() || !description.trim() || submitting;
+  const isCreateDisabled = Boolean(createContentError) || submitting;
 
   return (
     <DashboardShell>
@@ -805,7 +822,8 @@ export default function HomeGuidelines() {
                       className="gl-input"
                       placeholder="Enter guideline title"
                       value={title}
-                      onChange={(e) => setTitle(e.target.value)}
+                      onChange={(e) => setTitle(sanitizeContentTitle(e.target.value))}
+                      maxLength={MAX_CONTENT_TITLE_LENGTH}
                     />
                   </div>
 
@@ -815,7 +833,10 @@ export default function HomeGuidelines() {
                       className="gl-textarea"
                       placeholder="Write guideline details"
                       value={description}
-                      onChange={(e) => setDescription(e.target.value)}
+                      onChange={(e) =>
+                        setDescription(sanitizeContentDescription(e.target.value))
+                      }
+                      maxLength={MAX_CONTENT_DESCRIPTION_LENGTH}
                     />
                   </div>
 
@@ -1157,8 +1178,11 @@ export default function HomeGuidelines() {
                       <input
                         className="gl-input"
                         value={editTitle}
-                        onChange={(e) => setEditTitle(e.target.value)}
+                        onChange={(e) =>
+                          setEditTitle(sanitizeContentTitle(e.target.value))
+                        }
                         placeholder="Guideline title"
+                        maxLength={MAX_CONTENT_TITLE_LENGTH}
                       />
                     </div>
 
@@ -1167,8 +1191,11 @@ export default function HomeGuidelines() {
                       <textarea
                         className="gl-modal-textarea"
                         value={editDescription}
-                        onChange={(e) => setEditDescription(e.target.value)}
+                        onChange={(e) =>
+                          setEditDescription(sanitizeContentDescription(e.target.value))
+                        }
                         placeholder="Guideline description"
+                        maxLength={MAX_CONTENT_DESCRIPTION_LENGTH}
                       />
                     </div>
 
@@ -1310,7 +1337,7 @@ export default function HomeGuidelines() {
                       type="button"
                       className="gl-btn gl-btn-primary"
                       onClick={updateGuideline}
-                      disabled={submitting}
+                      disabled={submitting || Boolean(editContentError)}
                     >
                       <FaCheck />
                       {submitting ? "Saving..." : "Save Update"}

@@ -85,8 +85,8 @@ const BARANGAY_OPTIONS = [
   "Ulanin Pitak"
 ];
 
-const ACCOUNT_APPROVAL_TTL_MS = 24 * 60 * 60 * 1000;
-const ACCOUNT_UPDATE_TTL_MS = 24 * 60 * 60 * 1000;
+const ACCOUNT_APPROVAL_TTL_MS = 10 * 60 * 1000;
+const ACCOUNT_UPDATE_TTL_MS = 10 * 60 * 1000;
 
 function hashApprovalToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');

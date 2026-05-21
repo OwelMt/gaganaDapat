@@ -18,6 +18,13 @@ import {
 import DashboardShell from "./layout/DashboardShell";
 import "./css/Guidelines.css";
 import "./css/Announcement.css";
+import {
+  MAX_CONTENT_DESCRIPTION_LENGTH,
+  MAX_CONTENT_TITLE_LENGTH,
+  sanitizeContentDescription,
+  sanitizeContentTitle,
+  validateContentFields,
+} from "./contentTextUtils";
 
 const LOCAL_BASE_URL = "http://localhost:8000";
 const REMOTE_BASE_URL =
@@ -304,6 +311,8 @@ export default function Announcement() {
   );
 
   const priorities = useMemo(() => ["low", "medium", "high", "critical"], []);
+  const createContentError = validateContentFields(title, description);
+  const editContentError = validateContentFields(editTitle, editDescription);
 
   const fetchAnnouncements = useCallback(async () => {
     try {
@@ -371,8 +380,8 @@ export default function Announcement() {
 
   const openEditModal = (item) => {
     setEditingAnnouncement(item);
-    setEditTitle(item?.title || "");
-    setEditDescription(item?.description || "");
+    setEditTitle(sanitizeContentTitle(item?.title || ""));
+    setEditDescription(sanitizeContentDescription(item?.description || ""));
     setEditCategory(item?.category || "general");
     setEditStatus(item?.status || "draft");
     setEditPriority(item?.priorityLevel || "medium");
@@ -421,8 +430,12 @@ export default function Announcement() {
   };
 
   const createAnnouncement = async () => {
-    if (!title.trim() || !description.trim()) {
-      pushNotification("Title and description are required.", "error");
+    const cleanTitle = sanitizeContentTitle(title);
+    const cleanDescription = sanitizeContentDescription(description);
+    const validationError = validateContentFields(cleanTitle, cleanDescription);
+
+    if (validationError) {
+      pushNotification(validationError, "error");
       return;
     }
 
@@ -430,8 +443,8 @@ export default function Announcement() {
       setSubmitting(true);
 
       const formData = new FormData();
-      formData.append("title", title.trim());
-      formData.append("description", description.trim());
+      formData.append("title", cleanTitle);
+      formData.append("description", cleanDescription);
       formData.append("category", category);
       formData.append("status", status);
       formData.append("priorityLevel", priorityLevel);
@@ -463,8 +476,12 @@ export default function Announcement() {
   const updateAnnouncement = async () => {
     if (!editingAnnouncement?._id) return;
 
-    if (!editTitle.trim() || !editDescription.trim()) {
-      pushNotification("Title and description are required.", "error");
+    const cleanTitle = sanitizeContentTitle(editTitle);
+    const cleanDescription = sanitizeContentDescription(editDescription);
+    const validationError = validateContentFields(cleanTitle, cleanDescription);
+
+    if (validationError) {
+      pushNotification(validationError, "error");
       return;
     }
 
@@ -476,8 +493,8 @@ export default function Announcement() {
 
       if (hasFileChanges) {
         const formData = new FormData();
-        formData.append("title", editTitle.trim());
-        formData.append("description", editDescription.trim());
+        formData.append("title", cleanTitle);
+        formData.append("description", cleanDescription);
         formData.append("category", editCategory);
         formData.append("status", editStatus);
         formData.append("priorityLevel", editPriority);
@@ -495,8 +512,8 @@ export default function Announcement() {
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({
-            title: editTitle.trim(),
-            description: editDescription.trim(),
+            title: cleanTitle,
+            description: cleanDescription,
             category: editCategory,
             status: editStatus,
             priorityLevel: editPriority,
@@ -800,8 +817,9 @@ export default function Announcement() {
                     <input
                       className="gl-input"
                       value={title}
-                      onChange={(e) => setTitle(e.target.value)}
+                      onChange={(e) => setTitle(sanitizeContentTitle(e.target.value))}
                       placeholder="Enter announcement title"
+                      maxLength={MAX_CONTENT_TITLE_LENGTH}
                     />
                   </div>
 
@@ -810,8 +828,11 @@ export default function Announcement() {
                     <textarea
                       className="gl-textarea"
                       value={description}
-                      onChange={(e) => setDescription(e.target.value)}
+                      onChange={(e) =>
+                        setDescription(sanitizeContentDescription(e.target.value))
+                      }
                       placeholder="Write announcement details"
+                      maxLength={MAX_CONTENT_DESCRIPTION_LENGTH}
                     />
                   </div>
 
@@ -906,7 +927,7 @@ export default function Announcement() {
                       type="button"
                       className="gl-btn gl-btn-primary"
                       onClick={createAnnouncement}
-                      disabled={submitting}
+                      disabled={submitting || Boolean(createContentError)}
                     >
                       <FaUpload />
                       {submitting ? "Creating..." : "Create Announcement"}
@@ -1182,8 +1203,11 @@ export default function Announcement() {
                       <input
                         className="gl-input"
                         value={editTitle}
-                        onChange={(e) => setEditTitle(e.target.value)}
+                        onChange={(e) =>
+                          setEditTitle(sanitizeContentTitle(e.target.value))
+                        }
                         placeholder="Announcement title"
+                        maxLength={MAX_CONTENT_TITLE_LENGTH}
                       />
                     </div>
 
@@ -1192,8 +1216,11 @@ export default function Announcement() {
                       <textarea
                         className="gl-modal-textarea"
                         value={editDescription}
-                        onChange={(e) => setEditDescription(e.target.value)}
+                        onChange={(e) =>
+                          setEditDescription(sanitizeContentDescription(e.target.value))
+                        }
                         placeholder="Announcement description"
+                        maxLength={MAX_CONTENT_DESCRIPTION_LENGTH}
                       />
                     </div>
 
@@ -1331,7 +1358,7 @@ export default function Announcement() {
                       type="button"
                       className="gl-btn gl-btn-primary"
                       onClick={updateAnnouncement}
-                      disabled={submitting}
+                      disabled={submitting || Boolean(editContentError)}
                     >
                       <FaCheck />
                       {submitting ? "Saving..." : "Save Update"}

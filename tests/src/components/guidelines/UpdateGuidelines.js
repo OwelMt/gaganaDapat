@@ -1,9 +1,18 @@
 import React, { useState } from "react";
 import axios from "axios";
+import {
+  MAX_CONTENT_DESCRIPTION_LENGTH,
+  MAX_CONTENT_TITLE_LENGTH,
+  sanitizeContentDescription,
+  sanitizeContentTitle,
+  validateContentFields
+} from "../contentTextUtils";
 
 export default function UpdateGuideline({ guideline, onClose, onUpdated }) {
-const [title, setTitle] = useState(guideline.title);
-const [description, setDescription] = useState(guideline.description);
+const [title, setTitle] = useState(sanitizeContentTitle(guideline.title));
+const [description, setDescription] = useState(
+  sanitizeContentDescription(guideline.description)
+);
 const [category, setCategory] = useState(guideline.category);
 const [status, setStatus] = useState(guideline.status);
 const [priorityLevel, setPriorityLevel] = useState(guideline.priorityLevel);
@@ -12,9 +21,16 @@ const BASE_URL = process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.
 
 const updateGuideline = async () => {
 try {
+const validationError = validateContentFields(title, description);
+
+if (validationError) {
+  alert(validationError);
+  return;
+}
+
 const response = await axios.put(`${BASE_URL}${guideline._id}`, {
-title,
-description,
+title: sanitizeContentTitle(title),
+description: sanitizeContentDescription(description),
 category,
 status,
 priorityLevel
@@ -36,13 +52,15 @@ return ( <div style={styles.overlay}> <div style={styles.modal}> <h2>Update Guid
     <input
       style={styles.input}
       value={title}
-      onChange={(e) => setTitle(e.target.value)}
+      onChange={(e) => setTitle(sanitizeContentTitle(e.target.value))}
+      maxLength={MAX_CONTENT_TITLE_LENGTH}
     />
 
     <textarea
       style={styles.input}
       value={description}
-      onChange={(e) => setDescription(e.target.value)}
+      onChange={(e) => setDescription(sanitizeContentDescription(e.target.value))}
+      maxLength={MAX_CONTENT_DESCRIPTION_LENGTH}
     />
 
     <input

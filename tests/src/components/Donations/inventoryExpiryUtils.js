@@ -7,6 +7,26 @@ export function getTodayInputDate(baseDate = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+export function getInventoryExpiryStatus(expirationDate, baseDate = new Date()) {
+  if (!expirationDate) return "none";
+
+  const today = new Date(baseDate);
+  today.setHours(0, 0, 0, 0);
+
+  const expiry = new Date(expirationDate);
+  if (Number.isNaN(expiry.getTime())) return "none";
+
+  expiry.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.ceil(
+    (expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  if (diffDays < 0) return "expired";
+  if (diffDays <= 30) return "soon";
+  return "ok";
+}
+
 export function validateFutureOrTodayInventoryDate(value, baseDate = new Date()) {
   if (!value) return "";
 

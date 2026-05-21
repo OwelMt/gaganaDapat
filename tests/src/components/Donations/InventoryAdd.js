@@ -71,6 +71,64 @@ const DEFAULT_APPLIANCE_CATEGORIES = [
   "power equipment",
   "emergency equipment",
 ];
+const CUSTOM_UNIT_VALUE = "__custom_unit__";
+const MAX_QUANTITY = 1000000;
+const MAX_AMOUNT = 1000000000;
+const MAX_NAME_LENGTH = 80;
+const MAX_SOURCE_NAME_LENGTH = 120;
+const MAX_DESCRIPTION_LENGTH = 500;
+const MAX_UNIT_LENGTH = 24;
+const MAX_CUSTOM_CATEGORY_LENGTH = 40;
+const ALLOWED_PROOF_EXTENSIONS = [
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+  "pdf",
+  "doc",
+  "docx",
+];
+const DOCUMENT_PROOF_EXTENSIONS = ["pdf", "doc", "docx"];
+const IMAGE_PROOF_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
+const CATEGORY_UNIT_HINTS = [
+  { keywords: ["rice", "grain", "corn"], units: ["kg", "sack", "bag"] },
+  { keywords: ["water", "drink", "juice", "milk"], units: ["bottle", "liter", "gallon", "box"] },
+  { keywords: ["canned", "sardines", "tuna"], units: ["can", "box", "pack"] },
+  { keywords: ["noodle", "biscuit", "snack", "food"], units: ["pack", "box", "piece"] },
+  { keywords: ["clothes", "blanket", "towel", "bedding", "mat"], units: ["piece", "set", "bundle"] },
+  { keywords: ["hygiene", "kit", "soap", "toothpaste"], units: ["piece", "pack", "box"] },
+];
+
+const sanitizeCompactText = (value, maxLength) =>
+  String(value || "")
+    .replace(/[^\w\s.,()/#&-]/g, "")
+    .replace(/\s+/g, " ")
+    .trimStart()
+    .slice(0, maxLength);
+
+const sanitizeNoteText = (value, maxLength) =>
+  String(value || "")
+    .replace(/[^\w\s.,()/#&:;!?'"%-]/g, "")
+    .replace(/\r/g, "")
+    .slice(0, maxLength);
+
+const getFileExtension = (value = "") => {
+  const parts = String(value || "").toLowerCase().split(".");
+  return parts.length > 1 ? parts.pop() : "";
+};
+
+const isImageProofFile = (value = "") => {
+  const fileName = typeof value === "string" ? value : value?.name || "";
+  return IMAGE_PROOF_EXTENSIONS.includes(getFileExtension(fileName));
+};
+
+const isDocumentProofFile = (value = "") => {
+  const fileName = typeof value === "string" ? value : value?.name || "";
+  return DOCUMENT_PROOF_EXTENSIONS.includes(getFileExtension(fileName));
+};
+
+const getProofAcceptValue = () =>
+  ALLOWED_PROOF_EXTENSIONS.map((ext) => `.${ext}`).join(",");
 
 const extractReferenceFromDescription = (description = "") => {
   const match = String(description || "").match(/Reference Number:\s*(.+)$/im);
@@ -110,6 +168,7 @@ const InventoryAdd = () => {
   const [donationType, setDonationType] = useState(defaultDonationType);
   const canEditSelectedType = canEditInventoryType(role, donationType);
   const [editingItemId, setEditingItemId] = useState("");
+  const [existingProofCount, setExistingProofCount] = useState(0);
   const fileInputRef = useRef(null);
   const importFileInputRef = useRef(null);
   const toastTimersRef = useRef({});
@@ -341,6 +400,7 @@ const InventoryAdd = () => {
       sourceName: ""
     });
     setProofFiles([]);
+    setExistingProofCount(0);
     setFormErrors({});
     setEditingItemId("");
     setImportInfo({
@@ -379,6 +439,7 @@ const InventoryAdd = () => {
       sourceName: ""
     });
     setProofFiles([]);
+    setExistingProofCount(0);
     setFormErrors({});
     setImportInfo({
       hasImported: false,
@@ -463,13 +524,7 @@ const InventoryAdd = () => {
   };
 
   const getProofLabel = () => {
-    if (donationType === "monetary") {
-      return "Upload receipts, deposit slips, acknowledgement forms, or proof of transaction.";
-    }
-    if (donationType === "appliance") {
-      return "Upload receipts, turnover forms, condition photos, or appliance intake proof.";
-    }
-    return "Upload receipts, delivery photos, acknowledgement slips, or intake proof.";
+    return "Upload at least one document proof (PDF/DOC/DOCX) and one picture proof (JPG/PNG/WEBP). Videos and unsupported files are not allowed.";
   };
 
   const getImportButtonLabel = () => {
@@ -564,6 +619,34 @@ const InventoryAdd = () => {
     return value === 0 ? "" : value;
   };
 
+  const validateProofFiles = useCallback(() => {
+    const selectedFiles = proofFiles || [];
+
+    if (selectedFiles.length === 0 && existingProofCount > 0) {
+      return "";
+    }
+
+    if (selectedFiles.length < 2) {
+      return "Upload at least 2 proof files: 1 document proof and 1 picture proof.";
+    }
+
+    const unsupportedFile = selectedFiles.find(
+      (file) => !ALLOWED_PROOF_EXTENSIONS.includes(getFileExtension(file?.name))
+    );
+    if (unsupportedFile) {
+      return "Only PDF, DOC, DOCX, JPG, JPEG, PNG, and WEBP files are allowed for proof uploads.";
+    }
+
+    const hasDocumentProof = selectedFiles.some((file) => isDocumentProofFile(file));
+    const hasImageProof = selectedFiles.some((file) => isImageProofFile(file));
+
+    if (!hasDocumentProof || !hasImageProof) {
+      return "Proof uploads must include at least 1 document proof and 1 picture proof.";
+    }
+
+    return "";
+  }, [existingProofCount, proofFiles]);
+
   const getFinalGoodsCategory = useCallback(() => {
     if (form.category === CUSTOM_CATEGORY_VALUE) {
       return normalizeCategoryValue(form.customCategory);
@@ -587,15 +670,47 @@ const InventoryAdd = () => {
         setForm((prev) => ({ ...prev, [name]: "" }));
       } else {
         const parsedValue = Number(value);
-        if (!Number.isNaN(parsedValue) && parsedValue >= 0) {
+        const maxValue = name === "quantity" ? MAX_QUANTITY : MAX_AMOUNT;
+        if (!Number.isNaN(parsedValue) && parsedValue >= 0 && parsedValue <= maxValue) {
           setForm((prev) => ({ ...prev, [name]: value }));
         }
       }
+    } else if (name === "name") {
+      setForm((prev) => ({
+        ...prev,
+        name: sanitizeCompactText(value, MAX_NAME_LENGTH),
+      }));
+    } else if (name === "sourceName") {
+      setForm((prev) => ({
+        ...prev,
+        sourceName: sanitizeCompactText(value, MAX_SOURCE_NAME_LENGTH),
+      }));
+    } else if (name === "description") {
+      setForm((prev) => ({
+        ...prev,
+        description: sanitizeNoteText(value, MAX_DESCRIPTION_LENGTH),
+      }));
+    } else if (name === "customCategory") {
+      setForm((prev) => ({
+        ...prev,
+        customCategory: sanitizeCompactText(value, MAX_CUSTOM_CATEGORY_LENGTH).toLowerCase(),
+      }));
+    } else if (name === "unit") {
+      setForm((prev) => ({
+        ...prev,
+        unit: sanitizeCompactText(value, MAX_UNIT_LENGTH).toLowerCase(),
+      }));
+    } else if (name === "unitSelect") {
+      setForm((prev) => ({
+        ...prev,
+        unit: value === CUSTOM_UNIT_VALUE ? "" : value,
+      }));
     } else if (name === "category") {
       setForm((prev) => ({
         ...prev,
         category: value,
         customCategory: value === CUSTOM_CATEGORY_VALUE ? prev.customCategory : "",
+        unit: donationType === "goods" ? "" : prev.unit,
         requiresExpiration:
           value === CUSTOM_CATEGORY_VALUE ? prev.requiresExpiration : "required",
         expirationDate: value === CUSTOM_CATEGORY_VALUE ? prev.expirationDate : ""
@@ -613,17 +728,23 @@ const InventoryAdd = () => {
     setFormErrors((prev) => ({
       ...prev,
       [name]: "",
+      unitSelect: "",
       category: "",
       customCategory: "",
       expirationDate: "",
       usageDuration: "",
-      condition: ""
+      condition: "",
+      proofFiles: "",
     }));
   };
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || []);
     setProofFiles(files);
+    setFormErrors((prev) => ({
+      ...prev,
+      proofFiles: "",
+    }));
   };
 
   const handleImportFile = async (event) => {
@@ -724,6 +845,10 @@ const InventoryAdd = () => {
           : "Donor name is required.";
     }
 
+    if (form.name.trim().length > MAX_NAME_LENGTH) {
+      errors.name = `Name must be ${MAX_NAME_LENGTH} characters or less.`;
+    }
+
     if (donationType === "goods") {
       const finalCategory = getFinalGoodsCategory();
 
@@ -740,10 +865,14 @@ const InventoryAdd = () => {
 
       if (form.quantity === "" || Number(form.quantity) <= 0) {
         errors.quantity = "Quantity must be greater than 0.";
+      } else if (Number(form.quantity) > MAX_QUANTITY) {
+        errors.quantity = `Quantity must not exceed ${MAX_QUANTITY.toLocaleString()}.`;
       }
 
       if (!form.unit.trim()) {
         errors.unit = "Unit is required for goods donations.";
+      } else if (form.unit.trim().length > MAX_UNIT_LENGTH) {
+        errors.unit = `Unit must be ${MAX_UNIT_LENGTH} characters or less.`;
       }
 
       if (form.expirationDate) {
@@ -777,6 +906,8 @@ const InventoryAdd = () => {
 
       if (form.quantity === "" || Number(form.quantity) <= 0) {
         errors.quantity = "Quantity must be greater than 0.";
+      } else if (Number(form.quantity) > MAX_QUANTITY) {
+        errors.quantity = `Quantity must not exceed ${MAX_QUANTITY.toLocaleString()}.`;
       }
 
       if (!form.condition) {
@@ -791,6 +922,8 @@ const InventoryAdd = () => {
     if (donationType === "monetary") {
       if (form.amount === "" || Number(form.amount) <= 0) {
         errors.amount = "Amount must be greater than 0.";
+      } else if (Number(form.amount) > MAX_AMOUNT) {
+        errors.amount = "Amount is too large.";
       }
 
       if (!form.referenceNumber.trim()) {
@@ -800,6 +933,22 @@ const InventoryAdd = () => {
 
     if (!form.sourceType.trim()) {
       errors.sourceType = "Source type is required.";
+    }
+
+    if (
+      (donationType === "goods" || donationType === "appliance") &&
+      form.sourceName.trim().length > MAX_SOURCE_NAME_LENGTH
+    ) {
+      errors.sourceName = `Source name must be ${MAX_SOURCE_NAME_LENGTH} characters or less.`;
+    }
+
+    if (form.description.trim().length > MAX_DESCRIPTION_LENGTH) {
+      errors.description = `Description must be ${MAX_DESCRIPTION_LENGTH} characters or less.`;
+    }
+
+    const proofFilesError = validateProofFiles();
+    if (proofFilesError) {
+      errors.proofFiles = proofFilesError;
     }
 
     setFormErrors(errors);
@@ -814,6 +963,7 @@ const InventoryAdd = () => {
     setShowForm(true);
     setFormErrors({});
     setProofFiles([]);
+    setExistingProofCount(Array.isArray(item.proofFiles) ? item.proofFiles.length : 0);
 
     setForm({
       type: itemType,
@@ -1134,6 +1284,32 @@ const InventoryAdd = () => {
     const merged = [...new Set([...defaults, ...categories].filter(Boolean))];
     return merged.sort((a, b) => a.localeCompare(b));
   }, [categories, donationType]);
+
+  const unitOptions = useMemo(() => {
+    if (donationType !== "goods") return [];
+
+    const finalCategory = getFinalGoodsCategory();
+    const categoryUnits = allTypeItems
+      .filter((item) => normalizeCategoryValue(item.category) === finalCategory)
+      .map((item) => String(item.unit || "").trim().toLowerCase())
+      .filter(Boolean);
+
+    const hintedUnits = CATEGORY_UNIT_HINTS.flatMap((entry) =>
+      entry.keywords.some((keyword) => finalCategory.includes(keyword)) ? entry.units : []
+    );
+
+    return [...new Set([...hintedUnits, ...categoryUnits, "piece", "pack", "box"])].sort(
+      (a, b) => a.localeCompare(b)
+    );
+  }, [allTypeItems, donationType, getFinalGoodsCategory, normalizeCategoryValue]);
+
+  const selectedUnitValue = useMemo(() => {
+    if (donationType !== "goods") return "";
+    if (form.category === CUSTOM_CATEGORY_VALUE) return CUSTOM_UNIT_VALUE;
+    return unitOptions.includes(String(form.unit || "").trim().toLowerCase())
+      ? String(form.unit || "").trim().toLowerCase()
+      : CUSTOM_UNIT_VALUE;
+  }, [donationType, form.category, form.unit, unitOptions]);
 
   const addedByOptions = useMemo(() => {
     const unique = [
@@ -1669,6 +1845,7 @@ const InventoryAdd = () => {
                           id="name"
                           type="text"
                           name="name"
+                          maxLength={MAX_NAME_LENGTH}
                           placeholder={getPrimaryFieldPlaceholder()}
                           value={form.name}
                           onChange={handleChange}
@@ -1720,6 +1897,7 @@ const InventoryAdd = () => {
                                 id="customCategory"
                                 type="text"
                                 name="customCategory"
+                                maxLength={MAX_CUSTOM_CATEGORY_LENGTH}
                                 placeholder="e.g. medicine, water, shelter kits"
                                 value={form.customCategory}
                                 onChange={handleChange}
@@ -1767,6 +1945,7 @@ const InventoryAdd = () => {
                               type="number"
                               min="0"
                               step="1"
+                              max={MAX_QUANTITY}
                               name="quantity"
                               placeholder="e.g. 50"
                               value={getNumberInputValue(form.quantity)}
@@ -1788,17 +1967,36 @@ const InventoryAdd = () => {
                                 <label htmlFor="unit">
                                   Unit <span>*</span>
                                 </label>
-                                <input
+                                <select
                                   id="unit"
-                                  type="text"
-                                  name="unit"
-                                  placeholder="e.g. sacks, boxes, packs, pcs"
-                                  value={form.unit}
+                                  name="unitSelect"
+                                  value={selectedUnitValue}
                                   onChange={handleChange}
                                   className={`input ${
                                     formErrors.unit ? "input-error" : ""
                                   }`}
-                                />
+                                >
+                                  <option value="">Select unit</option>
+                                  {unitOptions.map((unit) => (
+                                    <option key={unit} value={unit}>
+                                      {formatCategory(unit)}
+                                    </option>
+                                  ))}
+                                  <option value={CUSTOM_UNIT_VALUE}>Other / Custom Unit</option>
+                                </select>
+                                {selectedUnitValue === CUSTOM_UNIT_VALUE ? (
+                                  <input
+                                    type="text"
+                                    name="unit"
+                                    maxLength={MAX_UNIT_LENGTH}
+                                    placeholder="e.g. tray, bundle, pair"
+                                    value={form.unit}
+                                    onChange={handleChange}
+                                    className={`input donation-inline-input ${
+                                      formErrors.unit ? "input-error" : ""
+                                    }`}
+                                  />
+                                ) : null}
                                 {formErrors.unit && (
                                   <span className="error-text">{formErrors.unit}</span>
                                 )}
@@ -1891,6 +2089,7 @@ const InventoryAdd = () => {
                               type="number"
                               min="0"
                               step="0.01"
+                              max={MAX_AMOUNT}
                               name="amount"
                               placeholder="e.g. 10000"
                               value={getNumberInputValue(form.amount)}
@@ -1971,11 +2170,15 @@ const InventoryAdd = () => {
                             id="sourceName"
                             type="text"
                             name="sourceName"
+                            maxLength={MAX_SOURCE_NAME_LENGTH}
                             placeholder={getSourceNamePlaceholder()}
                             value={form.sourceName}
                             onChange={handleChange}
-                            className="input"
+                            className={`input ${formErrors.sourceName ? "input-error" : ""}`}
                           />
+                          {formErrors.sourceName && (
+                            <span className="error-text">{formErrors.sourceName}</span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1994,6 +2197,7 @@ const InventoryAdd = () => {
                         <textarea
                           id="description"
                           name="description"
+                          maxLength={MAX_DESCRIPTION_LENGTH}
                           placeholder={
                             donationType === "goods"
                               ? "Add notes about packaging, expiry, condition, delivery details, or stock intake remarks..."
@@ -2003,9 +2207,15 @@ const InventoryAdd = () => {
                           }
                           value={form.description}
                           onChange={handleChange}
-                          className="textarea"
+                          className={`textarea ${formErrors.description ? "input-error" : ""}`}
                           rows="4"
                         />
+                        <div className="textarea-meta">
+                          <span>{form.description.length}/{MAX_DESCRIPTION_LENGTH}</span>
+                        </div>
+                        {formErrors.description && (
+                          <span className="error-text">{formErrors.description}</span>
+                        )}
                       </div>
                                             <div className="donation-form-group full-width">
                         <label htmlFor="proofFiles">Validation</label>
@@ -2019,6 +2229,7 @@ const InventoryAdd = () => {
                             ref={fileInputRef}
                             type="file"
                             multiple
+                            accept={getProofAcceptValue()}
                             onChange={handleFileChange}
                             className="file-input"
                           />
@@ -2046,11 +2257,19 @@ const InventoryAdd = () => {
                               <div key={`${file.name}-${index}`} className="donation-file-chip">
                                 <span className="donation-file-chip-name">{file.name}</span>
                                 <span className="donation-file-chip-size">
-                                  {(file.size / 1024).toFixed(1)} KB
+                                  {isImageProofFile(file) ? "Image proof" : "Document proof"} · {(file.size / 1024).toFixed(1)} KB
                                 </span>
                               </div>
                             ))}
                           </div>
+                        )}
+                        {editingItemId && existingProofCount > 0 && proofFiles.length === 0 ? (
+                          <span className="helper-text">
+                            This record already has {existingProofCount} saved proof file{existingProofCount > 1 ? "s" : ""}. Upload new files only if you want to replace or add proof.
+                          </span>
+                        ) : null}
+                        {formErrors.proofFiles && (
+                          <span className="error-text">{formErrors.proofFiles}</span>
                         )}
                       </div>
                     </div>
@@ -2422,9 +2641,22 @@ const InventoryAdd = () => {
                                       href={`${BASE_URL}/uploads/proofs/${file}`}
                                       target="_blank"
                                       rel="noreferrer"
-                                      className="file-link"
+                                      className={`proof-card ${isImageProofFile(file) ? "proof-card-image" : "proof-card-document"}`}
                                     >
-                                      View Proof {idx + 1}
+                                      {isImageProofFile(file) ? (
+                                        <img
+                                          src={`${BASE_URL}/uploads/proofs/${file}`}
+                                          alt={`Proof ${idx + 1}`}
+                                          className="proof-thumb"
+                                        />
+                                      ) : (
+                                        <div className="proof-doc-icon">
+                                          <FaFilePdf />
+                                        </div>
+                                      )}
+                                      <span className="proof-card-label">
+                                        {isImageProofFile(file) ? `Image Proof ${idx + 1}` : `Document Proof ${idx + 1}`}
+                                      </span>
                                     </a>
                                   ))}
                                 </div>

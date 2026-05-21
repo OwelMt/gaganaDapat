@@ -1330,6 +1330,18 @@
   letter-spacing: 0.04em;
 }
 
+.inventory-inline-input {
+  margin-top: 10px;
+}
+
+.inventory-textarea-meta {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+  color: var(--inv-text-soft);
+  font-size: 12px;
+}
+
 .release-static-value {
   min-height: 44px;
   display: flex;

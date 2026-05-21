@@ -1,26 +1,10 @@
+import { getInventoryExpiryStatus } from "./inventoryExpiryUtils";
+
 const LOW_STOCK_THRESHOLD = 20;
 
 const normalizeId = (value) => String(value || "").trim();
 
-export function getTemplateExpiryStatus(expirationDate) {
-  if (!expirationDate) return "none";
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const expiry = new Date(expirationDate);
-  if (Number.isNaN(expiry.getTime())) return "none";
-
-  expiry.setHours(0, 0, 0, 0);
-
-  const diffDays = Math.ceil(
-    (expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-  );
-
-  if (diffDays < 0) return "expired";
-  if (diffDays <= 30) return "soon";
-  return "ok";
-}
+export const getTemplateExpiryStatus = getInventoryExpiryStatus;
 
 export function isLowStockQuantity(quantity) {
   return Number(quantity || 0) < LOW_STOCK_THRESHOLD;

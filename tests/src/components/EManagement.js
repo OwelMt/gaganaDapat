@@ -44,6 +44,12 @@ const BASE_URL =
 
 const TOAST_LIMIT = 3;
 const TOAST_DURATION = 10000;
+const MAX_SEARCH_LENGTH = 120;
+const MAX_EVAC_NAME_LENGTH = 80;
+const MAX_LOCATION_LENGTH = 120;
+const MAX_REMARKS_LENGTH = 400;
+const MAX_CAPACITY_VALUE = 1000000;
+const MAX_FLOOR_AREA_VALUE = 1000000;
 
 const initialFormState = {
   name: "",
@@ -69,6 +75,28 @@ const initialFormState = {
 
 const sanitizeText = (value) => String(value ?? "").trim();
 const safeLower = (value) => String(value ?? "").toLowerCase().trim();
+const sanitizeInputText = (value, maxLength) =>
+  String(value ?? "")
+    .replace(/[^\w\s.,()/#&-]/g, "")
+    .replace(/\s+/g, " ")
+    .slice(0, maxLength);
+const sanitizeRemarksText = (value, maxLength) =>
+  String(value ?? "")
+    .replace(/[^\w\s.,()/#&:;!?'"%-]/g, "")
+    .replace(/\s+/g, " ")
+    .slice(0, maxLength);
+const sanitizeDigitsOnly = (value, maxLength = 7) =>
+  String(value ?? "")
+    .replace(/\D/g, "")
+    .slice(0, maxLength);
+const sanitizeDecimalValue = (value, maxWhole = 7, maxFraction = 2) => {
+  const cleaned = String(value ?? "").replace(/[^\d.]/g, "");
+  const [wholeRaw, ...fractionParts] = cleaned.split(".");
+  const whole = wholeRaw.slice(0, maxWhole);
+  const fraction = fractionParts.join("").slice(0, maxFraction);
+  if (!cleaned.includes(".")) return whole;
+  return `${whole}.${fraction}`;
+};
 
 const formatNumber = (value) => {
   const num = Number(value || 0);
@@ -1057,7 +1085,20 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
   const handleTextFieldChange = useCallback(
     (e) => {
       const { name, value } = e.target;
-      updateFormField(name, sanitizeText(value));
+      if (name === "remarks") {
+        updateFormField(name, sanitizeRemarksText(value, MAX_REMARKS_LENGTH));
+        return;
+      }
+
+      const maxLengthMap = {
+        name: MAX_EVAC_NAME_LENGTH,
+        location: MAX_LOCATION_LENGTH,
+      };
+
+      updateFormField(
+        name,
+        sanitizeInputText(value, maxLengthMap[name] || MAX_LOCATION_LENGTH)
+      );
     },
     [updateFormField]
   );
@@ -1069,7 +1110,13 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
         updateFormField(name, "");
         return;
       }
-      updateFormField(name, value.replace(/[^\d.]/g, ""));
+
+      if (name === "floorArea") {
+        updateFormField(name, sanitizeDecimalValue(value));
+        return;
+      }
+
+      updateFormField(name, sanitizeDigitsOnly(value));
     },
     [updateFormField]
   );
@@ -1302,12 +1349,26 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
   }, [selectedPlace, flyTo]);
 
   const validateForm = useCallback(() => {
-    if (!sanitizeText(formData.name)) {
+    const cleanName = sanitizeInputText(formData.name, MAX_EVAC_NAME_LENGTH).trim();
+    const cleanLocation = sanitizeInputText(
+      formData.location,
+      MAX_LOCATION_LENGTH
+    ).trim();
+    const cleanRemarks = sanitizeRemarksText(
+      formData.remarks,
+      MAX_REMARKS_LENGTH
+    ).trim();
+    const capacityIndividual = Number(formData.capacityIndividual || 0);
+    const capacityFamily = Number(formData.capacityFamily || 0);
+    const bedCapacity = Number(formData.bedCapacity || 0);
+    const floorArea = Number(formData.floorArea || 0);
+
+    if (!cleanName) {
       pushNotification("Evacuation area name is required.", "error");
       return false;
     }
 
-    if (!sanitizeText(formData.location)) {
+    if (!cleanLocation) {
       pushNotification("Location is required.", "error");
       return false;
     }
@@ -1329,6 +1390,58 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
 
     if (Number(formData.longitude) < -180 || Number(formData.longitude) > 180) {
       pushNotification("Longitude must be between -180 and 180.", "error");
+      return false;
+    }
+
+    if (
+      formData.capacityIndividual !== "" &&
+      (capacityIndividual <= 0 || capacityIndividual > MAX_CAPACITY_VALUE)
+    ) {
+      pushNotification(
+        `Individual capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`,
+        "error"
+      );
+      return false;
+    }
+
+    if (
+      formData.capacityFamily !== "" &&
+      (capacityFamily <= 0 || capacityFamily > MAX_CAPACITY_VALUE)
+    ) {
+      pushNotification(
+        `Family capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`,
+        "error"
+      );
+      return false;
+    }
+
+    if (
+      formData.bedCapacity !== "" &&
+      (bedCapacity <= 0 || bedCapacity > MAX_CAPACITY_VALUE)
+    ) {
+      pushNotification(
+        `Bed capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`,
+        "error"
+      );
+      return false;
+    }
+
+    if (
+      formData.floorArea !== "" &&
+      (floorArea <= 0 || floorArea > MAX_FLOOR_AREA_VALUE)
+    ) {
+      pushNotification(
+        `Floor area must be between 1 and ${formatNumber(MAX_FLOOR_AREA_VALUE)}.`,
+        "error"
+      );
+      return false;
+    }
+
+    if (cleanRemarks.length > MAX_REMARKS_LENGTH) {
+      pushNotification(
+        `Remarks must be ${MAX_REMARKS_LENGTH} characters or less.`,
+        "error"
+      );
       return false;
     }
 
@@ -1374,8 +1487,8 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       : formData.barangayName || barangayRecord?.name || localBarangayName || "";
 
     return {
-      name: sanitizeText(formData.name),
-      location: sanitizeText(formData.location),
+      name: sanitizeInputText(formData.name, MAX_EVAC_NAME_LENGTH).trim(),
+      location: sanitizeInputText(formData.location, MAX_LOCATION_LENGTH).trim(),
       barangayId: finalBarangayId,
       barangayName: sanitizeText(finalBarangayName),
       latitude: Number(formData.latitude),
@@ -1392,7 +1505,7 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       isPermanent: Boolean(formData.isPermanent),
       isCovidFacility: Boolean(formData.isCovidFacility),
       showOnLanding: isBarangayRole ? false : Boolean(formData.showOnLanding),
-      remarks: sanitizeText(formData.remarks),
+      remarks: sanitizeRemarksText(formData.remarks, MAX_REMARKS_LENGTH).trim(),
     };
   }, [
     barangays,
@@ -2051,6 +2164,7 @@ const handleSaveOccupancy = useCallback(async () => {
                     type="text"
                     name="name"
                     value={formData.name}
+                    maxLength={MAX_EVAC_NAME_LENGTH}
                     onChange={handleTextFieldChange}
                     placeholder="Enter evacuation area name"
                   />
@@ -2062,6 +2176,7 @@ const handleSaveOccupancy = useCallback(async () => {
                     type="text"
                     name="location"
                     value={formData.location}
+                    maxLength={MAX_LOCATION_LENGTH}
                     onChange={handleTextFieldChange}
                     placeholder="Street, sitio, purok, landmark"
                   />
@@ -2135,6 +2250,8 @@ const handleSaveOccupancy = useCallback(async () => {
                       type="text"
                       name="capacityIndividual"
                       value={formData.capacityIndividual}
+                      inputMode="numeric"
+                      maxLength={7}
                       onChange={handleNumericFieldChange}
                       placeholder="0"
                     />
@@ -2146,6 +2263,8 @@ const handleSaveOccupancy = useCallback(async () => {
                       type="text"
                       name="capacityFamily"
                       value={formData.capacityFamily}
+                      inputMode="numeric"
+                      maxLength={7}
                       onChange={handleNumericFieldChange}
                       placeholder="0"
                     />
@@ -2157,6 +2276,8 @@ const handleSaveOccupancy = useCallback(async () => {
                       type="text"
                       name="bedCapacity"
                       value={formData.bedCapacity}
+                      inputMode="numeric"
+                      maxLength={7}
                       onChange={handleNumericFieldChange}
                       placeholder="0"
                     />
@@ -2169,6 +2290,8 @@ const handleSaveOccupancy = useCallback(async () => {
                     type="text"
                     name="floorArea"
                     value={formData.floorArea}
+                    inputMode="decimal"
+                    maxLength={10}
                     onChange={handleNumericFieldChange}
                     placeholder="0"
                   />
@@ -2180,6 +2303,7 @@ const handleSaveOccupancy = useCallback(async () => {
                     name="remarks"
                     rows={5}
                     value={formData.remarks}
+                    maxLength={MAX_REMARKS_LENGTH}
                     onChange={handleTextFieldChange}
                     placeholder="Add notes, accessibility concerns, or suitability remarks"
                   />
@@ -2596,7 +2720,10 @@ const handleSaveOccupancy = useCallback(async () => {
               type="text"
               placeholder="Search evacuation area, location, barangay, remarks"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              maxLength={MAX_SEARCH_LENGTH}
+              onChange={(e) =>
+                setSearch(sanitizeInputText(e.target.value, MAX_SEARCH_LENGTH))
+              }
             />
           </div>
 
