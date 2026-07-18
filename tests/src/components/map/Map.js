@@ -72,6 +72,33 @@ const maskStyle = {
   interactive: false,
 };
 
+const hazardLayerStyles = {
+  susceptible: {
+    color: "rgba(75, 0, 130, 1)",
+    fillColor: "rgba(75, 0, 130, 1)",
+    weight: 1,
+    opacity: 0.9,
+    fillOpacity: 0.32,
+    interactive: false,
+  },
+  medium: {
+    color: "rgba(128, 0, 128, 1)",
+    fillColor: "rgba(128, 0, 128, 1)",
+    weight: 1,
+    opacity: 0.9,
+    fillOpacity: 0.28,
+    interactive: false,
+  },
+  safe: {
+    color: "rgba(135, 206, 235, 1)",
+    fillColor: "rgba(135, 206, 235, 1)",
+    weight: 1,
+    opacity: 0.85,
+    fillOpacity: 0.22,
+    interactive: false,
+  },
+};
+
 function getBarangayPaletteSeed(colorKey = "") {
   const normalized = safeLower(colorKey);
   if (!normalized) return 0;
@@ -717,6 +744,8 @@ const Map = ({
   pickMode = false,
   publicMode = false,
   markerLabelsVisible = true,
+  hazardLayers = null,
+  showHazardOverlay = false,
 }) => {
   const jaenBounds = useMemo(() => {
     if (!jaenGeoJSON) return null;
@@ -850,6 +879,18 @@ const Map = ({
       />
 
       <GeoJSON data={maskGeoJSON} style={maskStyle} />
+      {showHazardOverlay && hazardLayers?.safe ? (
+        <GeoJSON data={hazardLayers.safe} style={hazardLayerStyles.safe} />
+      ) : null}
+      {showHazardOverlay && hazardLayers?.medium ? (
+        <GeoJSON data={hazardLayers.medium} style={hazardLayerStyles.medium} />
+      ) : null}
+      {showHazardOverlay && hazardLayers?.susceptible ? (
+        <GeoJSON
+          data={hazardLayers.susceptible}
+          style={hazardLayerStyles.susceptible}
+        />
+      ) : null}
       <GeoJSON data={jaenGeoJSON} style={jaenStyle} />
 
       {pickMode && (
