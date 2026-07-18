@@ -128,6 +128,8 @@ const NAV_ITEMS = [
   { id: "hazard-focus", label: "Hazard" },
   { id: "incident-focus", label: "Incidents" },
   { id: "updates", label: "Updates" },
+  { id: "digital-twin", label: "Digital Twin" },
+  { id: "virtual-twin", label: "Virtual Twin" },
   { id: "footer-info", label: "Contacts" },
 ];
 
@@ -145,6 +147,15 @@ function safeLower(value) {
 
 function formatNumber(value) {
   return new Intl.NumberFormat().format(Number(value || 0));
+}
+
+function countGeoJsonFeatures(geojson) {
+  if (!geojson) return 0;
+  if (geojson.type === "FeatureCollection") {
+    return Array.isArray(geojson.features) ? geojson.features.length : 0;
+  }
+  if (geojson.type === "Feature") return 1;
+  return 0;
 }
 
 function formatDateTime(value) {
@@ -265,7 +276,7 @@ function getSeverityTone(level) {
   return "neutral";
 }
 
-function PublicMapLegend() {
+function PublicMapLegend({ showHazardOverlay = false }) {
   return (
     <div className="public-map-legend" aria-label="Map legend">
       <div className="public-map-legend-title">Map Legend</div>
@@ -285,6 +296,25 @@ function PublicMapLegend() {
           <span className="public-map-dot full" />
           <span>Full</span>
         </div>
+
+        {showHazardOverlay ? (
+          <>
+            <div className="public-map-legend-item">
+              <span className="public-map-swatch susceptible" />
+              <span>Susceptible</span>
+            </div>
+
+            <div className="public-map-legend-item">
+              <span className="public-map-swatch medium" />
+              <span>Medium</span>
+            </div>
+
+            <div className="public-map-legend-item">
+              <span className="public-map-swatch safe" />
+              <span>Safe</span>
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
   );
@@ -316,10 +346,15 @@ export default function Dashboard() {
   const [selectedPublicPlaceId, setSelectedPublicPlaceId] = useState(null);
   const [publicBarangayFilter, setPublicBarangayFilter] = useState("all");
   const [publicBarangayBounds, setPublicBarangayBounds] = useState([]);
+  const [hazardLayers, setHazardLayers] = useState(null);
+  const [hazardLoading, setHazardLoading] = useState(true);
+  const [hazardError, setHazardError] = useState("");
+  const [showHazardOverlay, setShowHazardOverlay] = useState(false);
 
   const [publicIncidents, setPublicIncidents] = useState([]);
   const [incidentsLoading, setIncidentsLoading] = useState(true);
   const [incidentsError, setIncidentsError] = useState("");
+  const [activeTwinView, setActiveTwinView] = useState("");
 
   const observerRef = useRef(null);
   const heroImageInputRef = useRef(null);
@@ -328,6 +363,7 @@ export default function Dashboard() {
   const isPrivilegedUser = useMemo(() => {
     return ["drrmo", "admin"].includes(safeLower(userRole));
   }, [userRole]);
+  const isTwinViewActive = Boolean(activeTwinView);
 
   const canEdit = isPrivilegedUser && !isVisitorMode;
   const isInlineEditing = canEdit && isEditorOpen;
@@ -428,6 +464,14 @@ export default function Dashboard() {
 
   const focusedBarangayLabel =
     publicBarangayFilter === "all" ? "All Barangays" : publicBarangayFilter;
+
+  const hazardSummary = useMemo(() => {
+    return {
+      safe: countGeoJsonFeatures(hazardLayers?.safe),
+      medium: countGeoJsonFeatures(hazardLayers?.medium),
+      susceptible: countGeoJsonFeatures(hazardLayers?.susceptible),
+    };
+  }, [hazardLayers]);
 
   const incidentSummary = useMemo(() => {
     const total = publicIncidents.length;
@@ -530,6 +574,12 @@ export default function Dashboard() {
   }, [filteredPublicPlaces, selectedPublicPlaceId]);
 
   useEffect(() => {
+    if (isTwinViewActive) {
+      observerRef.current?.disconnect();
+      setActiveSection(activeTwinView);
+      return undefined;
+    }
+
     const sectionIds = NAV_ITEMS.map((item) => item.id);
     const elements = sectionIds
       .map((id) => document.getElementById(id))
@@ -559,6 +609,8 @@ export default function Dashboard() {
 
     return () => observerRef.current?.disconnect();
   }, [
+    activeTwinView,
+    isTwinViewActive,
     filteredPublicPlaces.length,
     filteredIncidentFeedList,
     weatherLoading,
@@ -578,8 +630,22 @@ export default function Dashboard() {
   const scrollToUpdates = () => scrollToId("updates");
   const scrollToPreparedness = () => scrollToId("preparedness");
   const scrollToFooter = () => scrollToId("footer-info");
+  const openTwinView = (viewId) => {
+    setActiveTwinView(viewId);
+    setActiveSection(viewId);
+    setIsEditorOpen(false);
+  };
 
   function handleNavClick(id) {
+    if (id === "digital-twin" || id === "virtual-twin") {
+      openTwinView(id);
+      return;
+    }
+
+    if (isTwinViewActive) {
+      setActiveTwinView("");
+    }
+
     setActiveSection(id);
     scrollToId(id);
   }
@@ -811,6 +877,34 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchHazardLayers = useCallback(async () => {
+    setHazardLoading(true);
+    setHazardError("");
+
+    try {
+      const res = await fetch(`${BASE_URL}/api/hazard-layers`, {
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to load hazard layers.");
+      }
+
+      const data = await res.json();
+      setHazardLayers({
+        safe: data?.safe || null,
+        medium: data?.medium || null,
+        susceptible: data?.susceptible || null,
+      });
+    } catch (err) {
+      console.error("fetchHazardLayers error:", err);
+      setHazardError("Hazard layer is unavailable right now.");
+      setHazardLayers(null);
+    } finally {
+      setHazardLoading(false);
+    }
+  }, []);
+
   async function fetchPublicIncidents() {
     setIncidentsLoading(true);
     setIncidentsError("");
@@ -843,8 +937,9 @@ export default function Dashboard() {
     fetchWeather();
     fetchPublicPlaces();
     fetchPublicBarangayBounds();
+    fetchHazardLayers();
     fetchPublicIncidents();
-  }, [fetchPublicBarangayBounds, fetchPublicPlaces]);
+  }, [fetchHazardLayers, fetchPublicBarangayBounds, fetchPublicPlaces]);
 
   function updateDraft(path, value) {
     setDraftContent((prev) => {
@@ -1275,7 +1370,33 @@ export default function Dashboard() {
           </div>
         </header>
 
-                {isPrivilegedUser && (
+        {isTwinViewActive ? (
+          <section className="landing-twin-shell" id={activeTwinView}>
+            <div className="landing-wide-shell">
+              <div className="landing-twin-stage">
+                {activeTwinView === "digital-twin" ? (
+                  <div className="landing-twin-frame-card">
+                    <iframe
+                      title="SagipBayan Digital Twin"
+                      src="/unity/digital-twin/index.html"
+                      className="landing-twin-frame"
+                      allowFullScreen
+                    />
+                  </div>
+                ) : (
+                  <div className="landing-twin-placeholder-card">
+                    <strong>Virtual Twin</strong>
+                    <p>
+                      Virtual Twin
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        ) : (
+          <>
+        {isPrivilegedUser && (
           <section className="mode-preview-bar">
             <div className="mode-preview-left">
               {isVisitorMode ? <FaEye /> : <FaEyeSlash />}
@@ -1886,6 +2007,19 @@ export default function Dashboard() {
                         {formatNumber(publicMapSummary.fullCount)} full
                       </span>
                     </div>
+
+                    <button
+                      type="button"
+                      className={`public-hazard-toggle ${
+                        showHazardOverlay ? "on" : "off"
+                      }`}
+                      onClick={() =>
+                        setShowHazardOverlay((current) => !current)
+                      }
+                      disabled={hazardLoading || Boolean(hazardError)}
+                    >
+                      {showHazardOverlay ? "Hide Hazard Layer" : "Show Hazard Layer"}
+                    </button>
                   </div>
 
                   {mapLoading ? (
@@ -1903,10 +2037,14 @@ export default function Dashboard() {
                             onSelectPlace={setSelectedPublicPlaceId}
                             readOnly
                             publicMode
+                            hazardLayers={hazardLayers}
+                            showHazardOverlay={showHazardOverlay}
                           />
 
                           <div className="public-map-overlay legend-overlay">
-                            <PublicMapLegend />
+                            <PublicMapLegend
+                              showHazardOverlay={showHazardOverlay}
+                            />
                           </div>
 
                           <div className="public-map-overlay place-overlay">
@@ -1977,11 +2115,42 @@ export default function Dashboard() {
                       <label>Full</label>
                       <strong>{formatNumber(publicMapSummary.fullCount)}</strong>
                     </div>
+
+                    <div className="focus-info-item">
+                      <label>Hazard Overlay</label>
+                      <strong>
+                        {hazardLoading
+                          ? "Loading"
+                          : hazardError
+                          ? "Unavailable"
+                          : showHazardOverlay
+                          ? "Visible"
+                          : "Hidden"}
+                      </strong>
+                    </div>
+
+                    <div className="focus-info-item">
+                      <label>Susceptible Zones</label>
+                      <strong>{formatNumber(hazardSummary.susceptible)}</strong>
+                    </div>
+
+                    <div className="focus-info-item">
+                      <label>Medium Zones</label>
+                      <strong>{formatNumber(hazardSummary.medium)}</strong>
+                    </div>
+
+                    <div className="focus-info-item">
+                      <label>Safe Zones</label>
+                      <strong>{formatNumber(hazardSummary.safe)}</strong>
+                    </div>
                   </div>
 
                   <p className="landing-empty-copy">
-                    Connect your real hazard layer here later for flood, storm
-                    surge, or other public risk overlays.
+                    {hazardError
+                      ? hazardError
+                      : showHazardOverlay
+                      ? "Flood hazard polygons are currently visible on the public map alongside evacuation area pins."
+                      : "Turn on the hazard layer to show Safe, Medium, and Susceptible flood zones on the public map."}
                   </p>
                 </section>
 
@@ -2603,6 +2772,8 @@ export default function Dashboard() {
             </div>
           </footer>
         </main>
+          </>
+        )}
       </div>
     </div>
   );
