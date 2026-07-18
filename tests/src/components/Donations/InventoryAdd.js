@@ -47,6 +47,19 @@ import {
   validateFutureOrTodayInventoryDate,
 } from "./inventoryExpiryUtils";
 import { API_BASE_URL } from "../../config/api";
+import { buildProofFileHref, isImageProofFile } from "./proofFileUtils";
+import {
+  MAX_INVENTORY_CATEGORY_LENGTH as MAX_CUSTOM_CATEGORY_LENGTH,
+  MAX_INVENTORY_DESCRIPTION_LENGTH as MAX_DESCRIPTION_LENGTH,
+  MAX_INVENTORY_NAME_LENGTH as MAX_NAME_LENGTH,
+  MAX_INVENTORY_SEARCH_LENGTH as MAX_SEARCH_LENGTH,
+  MAX_INVENTORY_SOURCE_NAME_LENGTH as MAX_SOURCE_NAME_LENGTH,
+  MAX_INVENTORY_UNIT_LENGTH as MAX_UNIT_LENGTH,
+  sanitizeInventoryCompactText,
+  sanitizeInventoryNoteText,
+  sanitizeInventoryReferenceText,
+  sanitizeInventorySearchText,
+} from "./inventoryTextUtils";
 
 const BASE_URL = API_BASE_URL;
 
@@ -74,11 +87,6 @@ const DEFAULT_APPLIANCE_CATEGORIES = [
 const CUSTOM_UNIT_VALUE = "__custom_unit__";
 const MAX_QUANTITY = 1000000;
 const MAX_AMOUNT = 1000000000;
-const MAX_NAME_LENGTH = 80;
-const MAX_SOURCE_NAME_LENGTH = 120;
-const MAX_DESCRIPTION_LENGTH = 500;
-const MAX_UNIT_LENGTH = 24;
-const MAX_CUSTOM_CATEGORY_LENGTH = 40;
 const ALLOWED_PROOF_EXTENSIONS = [
   "jpg",
   "jpeg",
@@ -89,7 +97,6 @@ const ALLOWED_PROOF_EXTENSIONS = [
   "docx",
 ];
 const DOCUMENT_PROOF_EXTENSIONS = ["pdf", "doc", "docx"];
-const IMAGE_PROOF_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
 const CATEGORY_UNIT_HINTS = [
   { keywords: ["rice", "grain", "corn"], units: ["kg", "sack", "bag"] },
   { keywords: ["water", "drink", "juice", "milk"], units: ["bottle", "liter", "gallon", "box"] },
@@ -99,27 +106,9 @@ const CATEGORY_UNIT_HINTS = [
   { keywords: ["hygiene", "kit", "soap", "toothpaste"], units: ["piece", "pack", "box"] },
 ];
 
-const sanitizeCompactText = (value, maxLength) =>
-  String(value || "")
-    .replace(/[^\w\s.,()/#&-]/g, "")
-    .replace(/\s+/g, " ")
-    .trimStart()
-    .slice(0, maxLength);
-
-const sanitizeNoteText = (value, maxLength) =>
-  String(value || "")
-    .replace(/[^\w\s.,()/#&:;!?'"%-]/g, "")
-    .replace(/\r/g, "")
-    .slice(0, maxLength);
-
 const getFileExtension = (value = "") => {
   const parts = String(value || "").toLowerCase().split(".");
   return parts.length > 1 ? parts.pop() : "";
-};
-
-const isImageProofFile = (value = "") => {
-  const fileName = typeof value === "string" ? value : value?.name || "";
-  return IMAGE_PROOF_EXTENSIONS.includes(getFileExtension(fileName));
 };
 
 const isDocumentProofFile = (value = "") => {
@@ -129,6 +118,17 @@ const isDocumentProofFile = (value = "") => {
 
 const getProofAcceptValue = () =>
   ALLOWED_PROOF_EXTENSIONS.map((ext) => `.${ext}`).join(",");
+
+const SOURCE_TYPE_LABELS = {
+  external: "Donated",
+  government: "Government",
+  internal: "LGU",
+};
+
+const getSourceTypeLabel = (value = "") => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return SOURCE_TYPE_LABELS[normalized] || String(value || "").trim() || "-";
+};
 
 const extractReferenceFromDescription = (description = "") => {
   const match = String(description || "").match(/Reference Number:\s*(.+)$/im);
@@ -147,6 +147,7 @@ const InventoryAdd = () => {
   const isAdmin = role === "admin";
   const isDrrmo = role === "drrmo";
   const isAccountant = role === "accountant";
+  const canReviewMobileDonations = isAdmin || isAccountant;
   const allowedDonationTypes = useMemo(
     () => (isAdmin ? ["monetary"] : getInventoryViewTypes(role)),
     [isAdmin, role]
@@ -157,7 +158,7 @@ const InventoryAdd = () => {
     ? "/admin/donations/queue"
     : isAccountant
     ? "/accountant/donations/queue"
-    : "/drrmo/inventory/add";
+    : "";
   const [items, setItems] = useState([]);
   const [archivedItems, setArchivedItems] = useState([]);
   const [proofFiles, setProofFiles] = useState([]);
@@ -678,27 +679,40 @@ const InventoryAdd = () => {
     } else if (name === "name") {
       setForm((prev) => ({
         ...prev,
-        name: sanitizeCompactText(value, MAX_NAME_LENGTH),
+        name: sanitizeInventoryCompactText(value, MAX_NAME_LENGTH),
       }));
     } else if (name === "sourceName") {
       setForm((prev) => ({
         ...prev,
-        sourceName: sanitizeCompactText(value, MAX_SOURCE_NAME_LENGTH),
+        sourceName: sanitizeInventoryCompactText(value, MAX_SOURCE_NAME_LENGTH, {
+          maxTokenLength: 32,
+        }),
       }));
     } else if (name === "description") {
       setForm((prev) => ({
         ...prev,
-        description: sanitizeNoteText(value, MAX_DESCRIPTION_LENGTH),
+        description: sanitizeInventoryNoteText(value, MAX_DESCRIPTION_LENGTH),
+      }));
+    } else if (name === "referenceNumber") {
+      setForm((prev) => ({
+        ...prev,
+        referenceNumber: sanitizeInventoryReferenceText(value),
       }));
     } else if (name === "customCategory") {
       setForm((prev) => ({
         ...prev,
-        customCategory: sanitizeCompactText(value, MAX_CUSTOM_CATEGORY_LENGTH).toLowerCase(),
+        customCategory: sanitizeInventoryCompactText(
+          value,
+          MAX_CUSTOM_CATEGORY_LENGTH,
+          { maxTokenLength: 20 }
+        ).toLowerCase(),
       }));
     } else if (name === "unit") {
       setForm((prev) => ({
         ...prev,
-        unit: sanitizeCompactText(value, MAX_UNIT_LENGTH).toLowerCase(),
+        unit: sanitizeInventoryCompactText(value, MAX_UNIT_LENGTH, {
+          maxTokenLength: 16,
+        }).toLowerCase(),
       }));
     } else if (name === "unitSelect") {
       setForm((prev) => ({
@@ -1190,7 +1204,10 @@ const InventoryAdd = () => {
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
-    setFilters((prev) => ({ ...prev, [name]: value }));
+    setFilters((prev) => ({
+      ...prev,
+      [name]: name === "search" ? sanitizeInventorySearchText(value) : value,
+    }));
     setCurrentPage(1);
   };
 
@@ -1741,14 +1758,16 @@ const InventoryAdd = () => {
                         </button>
                       </>
                     ) : null}
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => navigate(donationQueuePath)}
-                    >
-                      <FaClipboardCheck className="btn-icon" />
-                      Review Mobile Donations
-                    </button>
+                    {canReviewMobileDonations ? (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => navigate(donationQueuePath)}
+                      >
+                        <FaClipboardCheck className="btn-icon" />
+                        Review Mobile Donations
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="btn btn-secondary modal-back-btn"
@@ -2050,7 +2069,13 @@ const InventoryAdd = () => {
                                 )}
                               </div>
 
-                              <div className="donation-form-group">
+                              <div
+                                className={`donation-form-group ${
+                                  form.condition !== "used_item"
+                                    ? "donation-form-group-disabled"
+                                    : ""
+                                }`}
+                              >
                                 <label htmlFor="usageDuration">
                                   Usage Duration{" "}
                                   {form.condition === "used_item" ? <span>*</span> : null}
@@ -2067,6 +2092,11 @@ const InventoryAdd = () => {
                                     formErrors.usageDuration ? "input-error" : ""
                                   }`}
                                 />
+                                {form.condition !== "used_item" ? (
+                                  <small className="input-helper-text">
+                                    Enabled only when appliance condition is set to Used Item.
+                                  </small>
+                                ) : null}
                                 {formErrors.usageDuration && (
                                   <span className="error-text">
                                     {formErrors.usageDuration}
@@ -2114,6 +2144,7 @@ const InventoryAdd = () => {
                               placeholder="e.g. GCash ref, bank transfer ref"
                               value={form.referenceNumber}
                               onChange={handleChange}
+                              maxLength={40}
                               className={`input ${
                                 formErrors.referenceNumber ? "input-error" : ""
                               }`}
@@ -2135,15 +2166,15 @@ const InventoryAdd = () => {
                       <h3>Source Information</h3>
                       <p>
                         {donationType === "monetary"
-                          ? "Classify the source type for this monetary donation."
-                          : "Where the donation came from or who endorsed it."}
+                          ? "Classify the provider for this monetary donation."
+                          : "Identify who provided or endorsed this donation."}
                       </p>
                     </div>
 
                     <div className="donation-form-grid">
                       <div className="donation-form-group">
                         <label htmlFor="sourceType">
-                          Source Type <span>*</span>
+                          Provider <span>*</span>
                         </label>
                         <select
                           id="sourceType"
@@ -2154,9 +2185,9 @@ const InventoryAdd = () => {
                             formErrors.sourceType ? "input-error" : ""
                           }`}
                         >
-                          <option value="external">External</option>
+                          <option value="external">Donated</option>
                           <option value="government">Government</option>
-                          <option value="internal">Internal</option>
+                          <option value="internal">LGU</option>
                         </select>
                         {formErrors.sourceType && (
                           <span className="error-text">{formErrors.sourceType}</span>
@@ -2165,7 +2196,7 @@ const InventoryAdd = () => {
 
                       {(donationType === "goods" || donationType === "appliance") && (
                         <div className="donation-form-group">
-                          <label htmlFor="sourceName">Source Name</label>
+                          <label htmlFor="sourceName">Provider Name</label>
                           <input
                             id="sourceName"
                             type="text"
@@ -2373,7 +2404,7 @@ const InventoryAdd = () => {
                   </div>
                 </div>
 
-                <div className="filter-toolbar inventory-filter-toolbar-5">
+                <div className="filter-toolbar inventory-filter-toolbar-5 inventory-filter-toolbar-inventory">
                   <div className="filter-group search-group">
                     <label>Search</label>
                     <input
@@ -2388,6 +2419,7 @@ const InventoryAdd = () => {
                       }
                       value={filters.search}
                       onChange={handleFilterChange}
+                      maxLength={MAX_SEARCH_LENGTH}
                       className="input"
                     />
                   </div>
@@ -2465,7 +2497,7 @@ const InventoryAdd = () => {
                   </div>
                 </div>
 
-                <div className="table-topbar">
+                <div className="table-topbar inventory-table-topbar">
                   <div className="table-meta">
                     <span>
                       Showing <strong>{paginatedItems.length}</strong> of{" "}
@@ -2619,9 +2651,9 @@ const InventoryAdd = () => {
 
                             <td>
                               <div className="source-cell">
-                                <strong>{item.sourceType || "-"}</strong>
+                                <strong>{getSourceTypeLabel(item.sourceType)}</strong>
                                 {donationType !== "monetary" ? (
-                                  <small>{item.sourceName || "No source name"}</small>
+                                  <small>{item.sourceName || "No provider name"}</small>
                                 ) : null}
                               </div>
                             </td>
@@ -2638,14 +2670,14 @@ const InventoryAdd = () => {
                                   {item.proofFiles.map((file, idx) => (
                                     <a
                                       key={idx}
-                                      href={`${BASE_URL}/uploads/proofs/${file}`}
+                                      href={buildProofFileHref(file, BASE_URL)}
                                       target="_blank"
                                       rel="noreferrer"
                                       className={`proof-card ${isImageProofFile(file) ? "proof-card-image" : "proof-card-document"}`}
                                     >
                                       {isImageProofFile(file) ? (
                                         <img
-                                          src={`${BASE_URL}/uploads/proofs/${file}`}
+                                          src={buildProofFileHref(file, BASE_URL)}
                                           alt={`Proof ${idx + 1}`}
                                           className="proof-thumb"
                                         />

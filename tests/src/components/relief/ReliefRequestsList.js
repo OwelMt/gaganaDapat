@@ -30,6 +30,10 @@ import {
   getVisibleRowTotals,
   getVisibleRows,
 } from './requestListUtils';
+import {
+  buildProofFileHref,
+  buildProofFileHrefCandidates,
+} from '../Donations/proofFileUtils';
 import { isConfirmationSubmitDisabled } from './requestReviewUtils';
 import * as dafacDistributionUtils from './dafacDistributionUtils';
 import {
@@ -289,6 +293,39 @@ const EMPTY_CONFIRM_STATE = {
   action: '',
   request: null
 };
+
+function ReceiptProofPreview({ proof }) {
+  const candidates = useMemo(
+    () => buildProofFileHrefCandidates(proof?.sourceValue || proof?.url, BASE_URL),
+    [proof]
+  );
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const activeUrl = candidates[candidateIndex] || proof?.url || '';
+
+  useEffect(() => {
+    setCandidateIndex(0);
+  }, [proof?.key, proof?.url, proof?.sourceValue]);
+
+  return (
+    <a
+      href={activeUrl || proof?.url || '#'}
+      target="_blank"
+      rel="noreferrer"
+      className="rrl-receipt-proof-card"
+      title={proof?.label}
+    >
+      <img
+        src={activeUrl}
+        alt={proof?.label}
+        onError={() => {
+          setCandidateIndex((current) =>
+            current < candidates.length - 1 ? current + 1 : current
+          );
+        }}
+      />
+    </a>
+  );
+}
 
 export default function ReliefRequestsList() {
   const navigate = useNavigate();
@@ -761,22 +798,12 @@ export default function ReliefRequestsList() {
         .filter(Boolean)
         .map((proofPath, proofIndex) => ({
           key: `${release?._id || releaseIndex}-${proofIndex}`,
-          url: `${BASE_URL}/${String(proofPath).replace(/^\/+/, '')}`,
+          url: buildProofFileHref(proofPath, BASE_URL),
+          sourceValue: proofPath,
           label: `Receipt Proof ${proofIndex + 1}`,
         }))
     );
   }, [reviewDetails?.releases]);
-
-
-  useEffect(() => {
-    setAccomplishedPage(1);
-  }, [displayedRequest?._id]);
-
-  useEffect(() => {
-    if (accomplishedPage > accomplishedTotalPages) {
-      setAccomplishedPage(accomplishedTotalPages);
-    }
-  }, [accomplishedPage, accomplishedTotalPages]);
   const displayedDistributionSummary = useMemo(() => {
     const reviewDistribution = reviewDetails?.distributions;
     const supportTypes =
@@ -1269,7 +1296,6 @@ export default function ReliefRequestsList() {
 
                     <div className={`rrl-status-banner rrl-status-banner-${selectedTone}`}>
                       {getDisplayedStatusLabel(displayedRequest)}
-                      {getDisplayedStatusLabel(displayedRequest)}
                     </div>
                   </div>
 
@@ -1510,16 +1536,7 @@ export default function ReliefRequestsList() {
                                 {displayedReceiptProofItems.length > 0 ? (
                                   <div className="rrl-receipt-proof-grid">
                                     {displayedReceiptProofItems.map((proof) => (
-                                      <a
-                                        key={proof.key}
-                                        href={proof.url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="rrl-receipt-proof-card"
-                                        title={proof.label}
-                                      >
-                                        <img src={proof.url} alt={proof.label} />
-                                      </a>
+                                      <ReceiptProofPreview key={proof.key} proof={proof} />
                                     ))}
                                   </div>
                                 ) : (

@@ -38,6 +38,7 @@ import {
 } from '../shared/spreadsheetImportUtils';
 import '../css/ReliefRequestForm.css';
 import { API_BASE_URL } from "../../config/api";
+import { getTodayInputDate } from "../Donations/inventoryExpiryUtils";
 
 const BASE_URL = API_BASE_URL;
 
@@ -116,6 +117,12 @@ const formatDateTime = (value) => {
   } catch {
     return '-';
   }
+};
+
+const clampToTodayOrFutureDate = (value) => {
+  const today = getTodayInputDate();
+  if (!value) return today;
+  return value < today ? today : value;
 };
 
 const normalizeStage = (stage) => String(stage || '').toLowerCase();
@@ -256,11 +263,12 @@ export default function ReliefRequestForm() {
     createRequestedAppliance()
   ]);
   const [requestDate, setRequestDate] = useState(
-    new Date().toISOString().slice(0, 10)
+    getTodayInputDate()
   );
   const [remarks, setRemarks] = useState('');
   const [rows, setRows] = useState([]);
   const [bootstrapRows, setBootstrapRows] = useState([]);
+  const minAllowedDate = useMemo(() => getTodayInputDate(), []);
 
   const [journey, setJourney] = useState({
     request: null,
@@ -822,6 +830,12 @@ export default function ReliefRequestForm() {
       errors.disaster = 'Disaster or incident is required.';
     }
 
+    if (!requestDate) {
+      errors.requestDate = 'Request date is required.';
+    } else if (requestDate < minAllowedDate) {
+      errors.requestDate = 'Request date cannot be in the past.';
+    }
+
     if (includesMonetary && requestedMonetaryValue <= 0) {
       errors.requestedMonetaryAmount = 'Enter a valid monetary amount.';
     }
@@ -859,6 +873,8 @@ export default function ReliefRequestForm() {
   }, [
     supportTypes,
     disaster,
+    requestDate,
+    minAllowedDate,
     includesMonetary,
     requestedMonetaryValue,
     remarks,
@@ -2434,8 +2450,14 @@ export default function ReliefRequestForm() {
                                 id="requestDate"
                                 type="date"
                                 value={requestDate}
-                                onChange={(e) => setRequestDate(e.target.value)}
+                                min={minAllowedDate}
+                                onChange={(e) =>
+                                  setRequestDate(clampToTodayOrFutureDate(e.target.value))
+                                }
                               />
+                              {inlineErrors.requestDate ? (
+                                <small className="rrf-inline-error">{inlineErrors.requestDate}</small>
+                              ) : null}
                             </div>
 
                             <div className="rrf-field rrf-support-type-field">

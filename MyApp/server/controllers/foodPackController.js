@@ -17,6 +17,41 @@ const toNumber = (value) => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
+const getInventoryExpiryStatus = (expirationDate) => {
+  if (!expirationDate) return "no_expiry";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const expiry = new Date(expirationDate);
+  expiry.setHours(0, 0, 0, 0);
+
+  const diffMs = expiry.getTime() - today.getTime();
+  const daysUntilExpiration = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  if (daysUntilExpiration < 0) return "expired";
+  if (daysUntilExpiration <= 30) return "soon";
+  return "ok";
+};
+
+const sortInventoryDocsForTemplate = (docs = []) =>
+  docs.slice().sort((left, right) => {
+    const leftExpiry = left?.expirationDate
+      ? new Date(left.expirationDate).getTime()
+      : Number.POSITIVE_INFINITY;
+    const rightExpiry = right?.expirationDate
+      ? new Date(right.expirationDate).getTime()
+      : Number.POSITIVE_INFINITY;
+
+    if (leftExpiry !== rightExpiry) {
+      return leftExpiry - rightExpiry;
+    }
+
+    const leftCreated = left?.createdAt ? new Date(left.createdAt).getTime() : 0;
+    const rightCreated = right?.createdAt ? new Date(right.createdAt).getTime() : 0;
+    return leftCreated - rightCreated;
+  });
+
 const validateTemplateItems = async (items = []) => {
   if (!Array.isArray(items) || items.length === 0) {
     return "At least one item is required.";
@@ -266,32 +301,43 @@ const previewFoodPackTemplateRelease = async (req, res) => {
 
     for (const item of template.items || []) {
       const totalRequired = Number(item.quantityPerPack || 0) * foodPacks;
-
-      const inventoryDoc = await InventoryItem.findOne({
-        _id: item.inventoryItemId,
-        isArchive: false,
-        type: "goods",
-      });
-
+      const matchingInventoryDocs = sortInventoryDocsForTemplate(
+        await InventoryItem.find({
+          isArchive: false,
+          type: "goods",
+          name: item.itemName,
+          category: item.category,
+          unit: item.unit,
+        })
+      );
+      const inventoryDoc =
+        matchingInventoryDocs.find((doc) => Number(doc.quantity || 0) > 0) || null;
       const availableQuantity = Number(inventoryDoc?.quantity || 0);
+      const expiryStatus = inventoryDoc
+        ? getInventoryExpiryStatus(inventoryDoc.expirationDate)
+        : "no_expiry";
+      const sufficient =
+        availableQuantity >= totalRequired && expiryStatus !== "expired";
 
       previewItems.push({
-        inventoryItemId: item.inventoryItemId,
+        inventoryItemId: inventoryDoc?._id || item.inventoryItemId,
         itemName: item.itemName,
         category: item.category,
         unit: item.unit,
         quantityPerPack: Number(item.quantityPerPack || 0),
         quantityRequired: totalRequired,
         availableQuantity,
-        sufficient: availableQuantity >= totalRequired,
+        sufficient,
+        expiryStatus,
       });
 
-      if (availableQuantity < totalRequired) {
+      if (!inventoryDoc || availableQuantity < totalRequired || expiryStatus === "expired") {
         stockIssues.push({
           itemName: item.itemName,
           required: totalRequired,
           available: availableQuantity,
           unit: item.unit,
+          expiryStatus,
         });
       }
     }

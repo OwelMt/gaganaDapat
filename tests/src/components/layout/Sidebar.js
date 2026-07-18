@@ -101,6 +101,7 @@ export default function Sidebar({
   const { theme, toggleTheme } = useTheme();
   const dark = theme === "dark";
   const navScrollRef = useRef(null);
+  const isAdmin = variant === "admin";
   const isAccountant = variant === "accountant";
   const basePath = isAccountant ? "/accountant" : "/admin";
   const SIDEBAR_SCROLL_KEY = `sidebar:${variant}:scrollTop`;
@@ -312,13 +313,17 @@ export default function Sidebar({
           exact: true,
           badge: 0,
         },
-        {
-          to: `${basePath}/donations/queue`,
-          label: "Donation Queue",
-          Icon: FaClipboardCheck,
-          exact: true,
-          badge: 0,
-        },
+        ...((isAdmin || isAccountant)
+          ? [
+              {
+                to: `${basePath}/donations/queue`,
+                label: "Donation Queue",
+                Icon: FaClipboardCheck,
+                exact: true,
+                badge: 0,
+              },
+            ]
+          : []),
       ],
     },
     {

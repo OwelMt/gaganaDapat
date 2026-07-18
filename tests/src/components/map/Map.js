@@ -418,12 +418,7 @@ function FitToJaenBounds({ bounds, publicMode = false }) {
     map.fitBounds(bounds, {
       padding: publicMode ? [28, 28] : [20, 20],
     });
-
-    if (!publicMode) {
-      map.setMaxBounds(bounds);
-    } else {
-      map.setMaxBounds(null);
-    }
+    map.setMaxBounds(bounds);
 
     const timer = setTimeout(() => {
       if (!cancelled && map?._container) {
@@ -651,6 +646,7 @@ function FlyToOnClickMarker({
   onSelectLocation,
   onSelectPlace,
   allowedBounds,
+  markerLabelsVisible = true,
   publicMode = false,
 }) {
   const map = useMap();
@@ -677,15 +673,28 @@ function FlyToOnClickMarker({
         click: handleMarkerClick,
       }}
     >
-      <Tooltip
-        direction="top"
-        offset={[0, -28]}
-        opacity={1}
-        permanent
-        className="evac-marker-label"
-      >
-        <div className="evac-marker-label__text">{place.name}</div>
-      </Tooltip>
+      {markerLabelsVisible ? (
+        <Tooltip
+          key="marker-label-permanent"
+          direction="top"
+          offset={[0, -28]}
+          opacity={1}
+          permanent
+          className="evac-marker-label"
+        >
+          <div className="evac-marker-label__text">{place.name}</div>
+        </Tooltip>
+      ) : (
+        <Tooltip
+          key="marker-label-hover"
+          direction="top"
+          offset={[0, -28]}
+          opacity={1}
+          className="evac-marker-label"
+        >
+          <div className="evac-marker-label__text">{place.name}</div>
+        </Tooltip>
+      )}
 
       {publicMode ? renderPublicPopup(place) : renderOperationalPopup(place)}
     </Marker>
@@ -707,6 +716,7 @@ const Map = ({
   routeCoords = [],
   pickMode = false,
   publicMode = false,
+  markerLabelsVisible = true,
 }) => {
   const jaenBounds = useMemo(() => {
     if (!jaenGeoJSON) return null;
@@ -799,11 +809,11 @@ const Map = ({
   return (
     <MapContainer
       center={initialCenter}
-      zoom={publicMode ? 12 : 14}
-      minZoom={publicMode ? 11 : 13}
+      zoom={publicMode ? 13 : 14}
+      minZoom={13}
       maxZoom={18}
       maxBounds={effectiveBounds || jaenBounds || undefined}
-      maxBoundsViscosity={publicMode ? 0.35 : 1.0}
+      maxBoundsViscosity={1.0}
       style={{ height: "100%", width: "100%" }}
       whenCreated={(map) => {
         const timer = setTimeout(() => {
@@ -861,6 +871,7 @@ const Map = ({
             onSelectLocation={onSelectLocation}
             onSelectPlace={onSelectPlace}
             allowedBounds={effectiveBounds}
+            markerLabelsVisible={markerLabelsVisible}
             publicMode={publicMode}
           />
         );

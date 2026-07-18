@@ -29,7 +29,6 @@ const {
   hasSupportType,
   getSupportTypeLabel,
 } = require("../utils/reliefSupportTypes");
-
 const ACTIVE_REQUEST_STATUSES = ["pending", "approved", "partially_released", "released"];
 const VIEWABLE_REQUEST_STATUSES = [
   "pending",
@@ -69,6 +68,9 @@ const normalizeString = (value) => {
   if (value === undefined || value === null) return "";
   return String(value).trim();
 };
+
+const escapeRegExp = (value) =>
+  normalizeString(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const normalizeStatus = (value) => normalizeString(value).toLowerCase();
 
@@ -222,10 +224,887 @@ const getRequestOwnerRole = (request = {}) =>
 const getRequestOwnerLabel = (request = {}) =>
   getRequestOwnerRole(request) === "admin" ? "Admin" : "DRRMO";
 
+const STAFF_TIMELINE_ROLE = "staff";
+
+const STAFF_ROLE_LABELS = {
+  admin: "Admin",
+  accountant: "Accountant",
+  barangay: "Barangay",
+  drrmo: "DRRMO",
+  staff: "Staff",
+};
+
+const buildStoredStaffActor = ({ roleCandidates = [], nameCandidates = [] } = {}) => {
+  const actorRole =
+    roleCandidates
+      .map((value) => normalizeString(value).toLowerCase())
+      .find(Boolean) || STAFF_TIMELINE_ROLE;
+  const actorName = nameCandidates.map((value) => normalizeString(value)).find(Boolean) || "";
+  const actorLabel =
+    STAFF_ROLE_LABELS[actorRole] ||
+    actorName ||
+    STAFF_ROLE_LABELS[STAFF_TIMELINE_ROLE];
+
+  return {
+    actorRole,
+    actorName: actorName || actorLabel,
+    actorLabel,
+    actorDisplayName: actorName || actorLabel,
+  };
+};
+
 const getRequestQueueLink = (request = {}) =>
   getRequestOwnerRole(request) === "admin"
     ? "/admin/relief-lists"
     : "/drrmo/relief-lists";
+
+const canViewReliefHistoryRole = (role) =>
+  ["admin", "accountant", "drrmo"].includes(normalizeString(role).toLowerCase());
+
+const getVisibleSupportTypesForHistoryRole = (supportTypes = [], role) => {
+  const normalizedRole = normalizeString(role).toLowerCase();
+  const normalizedSupportTypes = normalizeSupportTypes(supportTypes);
+
+  if (normalizedRole !== "drrmo") {
+    return normalizedSupportTypes;
+  }
+
+  return normalizedSupportTypes.filter(
+    (supportType) => supportType !== SUPPORT_TYPE_MONETARY
+  );
+};
+
+const shouldHideHistoryRequestForRole = (request = {}, role) =>
+  getVisibleSupportTypesForHistoryRole(getSupportTypesFromRequest(request), role).length === 0;
+
+const buildHistorySupportSummaryFromEvent = (
+  event = {},
+  supportTypes = [],
+  options = {}
+) => {
+  const { prefixRequested = false } = options;
+  const normalizedSupportTypes = normalizeSupportTypes(supportTypes);
+  const parts = [];
+  const foodPackCount = toNumber(event.foodPackCount);
+  const monetaryAmount = toNumber(event.monetaryAmount);
+  const applianceItems = (Array.isArray(event.applianceItems) ? event.applianceItems : [])
+    .map((item) => buildTimelineEventApplianceItem(item, "quantity"))
+    .filter(Boolean);
+  const applianceQuantity = applianceItems.reduce(
+    (sum, item) => sum + toNumber(item.quantity),
+    0
+  );
+
+  if (
+    hasSupportType(normalizedSupportTypes, SUPPORT_TYPE_FOODPACKS) &&
+    foodPackCount > 0
+  ) {
+    parts.push(`${foodPackCount} food pack(s)`);
+  }
+
+  if (
+    hasSupportType(normalizedSupportTypes, SUPPORT_TYPE_MONETARY) &&
+    monetaryAmount > 0
+  ) {
+    parts.push(`PHP ${formatMonetaryAmount(monetaryAmount)}`);
+  }
+
+  if (
+    hasSupportType(normalizedSupportTypes, SUPPORT_TYPE_APPLIANCE) &&
+    applianceQuantity > 0 &&
+    applianceItems.length
+  ) {
+    parts.push(
+      `${applianceQuantity} appliance unit(s) across ${applianceItems.length} item(s)`
+    );
+  }
+
+  if (!parts.length) return "";
+
+  const summary = parts.join(" and ");
+  return prefixRequested ? `Requested ${summary}` : summary;
+};
+
+const replaceGeneratedHistorySummary = (
+  message = "",
+  generatedSummary = "",
+  visibleSummary = ""
+) =>
+  normalizeString(message)
+    .replace(
+      generatedSummary ? new RegExp(` ${escapeRegExp(generatedSummary)}\\.$`) : /$^/,
+      visibleSummary ? ` ${visibleSummary}.` : ""
+    )
+    .replace(
+      generatedSummary ? new RegExp(`${escapeRegExp(generatedSummary)}\\.$`) : /$^/,
+      visibleSummary ? `${visibleSummary}.` : ""
+    )
+    .replace(
+      generatedSummary ? new RegExp(escapeRegExp(generatedSummary)) : /$^/,
+      visibleSummary
+    )
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+\./g, ".")
+    .trim();
+
+const stripMonetaryDetailsFromHistoryMessage = (message = "", event = {}) => {
+  const normalizedMessage = normalizeString(message);
+  const normalizedEventType = normalizeString(event.type).toLowerCase();
+  const allSupportTypes = normalizeSupportTypes(event.visibleSupportTypes);
+  const visibleSupportTypes = getVisibleSupportTypesForHistoryRole(
+    allSupportTypes,
+    "drrmo"
+  );
+
+  if (
+    !normalizedMessage ||
+    !hasSupportType(allSupportTypes, SUPPORT_TYPE_MONETARY)
+  ) {
+    return normalizedMessage;
+  }
+
+  const usesRequestedSummary = ["request_submitted", "request_updated"].includes(
+    normalizedEventType
+  );
+  const usesReleaseSummary = [
+    "release_created",
+    "release_partially_fulfilled",
+    "receipt_confirmed",
+  ].includes(normalizedEventType);
+
+  if (!usesRequestedSummary && !usesReleaseSummary) {
+    return normalizedMessage;
+  }
+
+  const generatedSummary = buildHistorySupportSummaryFromEvent(
+    event,
+    allSupportTypes,
+    { prefixRequested: usesRequestedSummary }
+  );
+  const visibleSummary = buildHistorySupportSummaryFromEvent(
+    event,
+    visibleSupportTypes,
+    { prefixRequested: usesRequestedSummary }
+  );
+
+  if (!generatedSummary || generatedSummary === visibleSummary) {
+    return normalizedMessage;
+  }
+
+  return replaceGeneratedHistorySummary(
+    normalizedMessage,
+    generatedSummary,
+    visibleSummary
+  );
+};
+
+const redactHistoryTimelineEventForRole = (event = {}, role) => {
+  const normalizedRole = normalizeString(role).toLowerCase();
+  const eventObject = typeof event?.toObject === "function" ? event.toObject() : { ...event };
+
+  if (normalizedRole !== "drrmo") {
+    return eventObject;
+  }
+
+  return {
+    ...eventObject,
+    visibleSupportTypes: getVisibleSupportTypesForHistoryRole(
+      eventObject.visibleSupportTypes,
+      role
+    ),
+    monetaryAmount: 0,
+    message: stripMonetaryDetailsFromHistoryMessage(eventObject.message, eventObject),
+  };
+};
+
+const buildVisibleHistoryFulfillmentSnapshot = (request = {}) => {
+  const fulfillment = {
+    ...(request.fulfillment || {}),
+    releasedMonetaryAmount: 0,
+    receivedMonetaryAmount: 0,
+  };
+  const releaseStates = new Map();
+
+  for (const rawEvent of Array.isArray(request.timelineEvents) ? request.timelineEvents : []) {
+    const eventObject =
+      typeof rawEvent?.toObject === "function" ? rawEvent.toObject() : { ...rawEvent };
+    const eventType = normalizeString(eventObject.type).toLowerCase();
+    const hasVisibleReleaseQuantity =
+      toNumber(eventObject.foodPackCount) > 0 ||
+      (Array.isArray(eventObject.applianceItems)
+        ? eventObject.applianceItems.some(
+            (item) => toNumber(item?.quantity) > 0 || toNumber(item?.quantityReleased) > 0
+          )
+        : false);
+
+    if (
+      !hasVisibleReleaseQuantity ||
+      !["release_created", "receipt_confirmed"].includes(eventType)
+    ) {
+      continue;
+    }
+
+    const releaseKey =
+      normalizeString(eventObject.releaseNo) ||
+      `${eventType}:${normalizeString(eventObject.timestamp)}`;
+    const existingState = releaseStates.get(releaseKey) || {
+      isReceived: false,
+      releasedAt: null,
+    };
+    const eventTimestamp = eventObject.timestamp ? new Date(eventObject.timestamp) : null;
+
+    if (
+      eventType === "release_created" &&
+      eventTimestamp &&
+      !Number.isNaN(eventTimestamp.getTime())
+    ) {
+      existingState.releasedAt = eventTimestamp;
+    }
+
+    if (eventType === "receipt_confirmed") {
+      existingState.isReceived = true;
+    }
+
+    releaseStates.set(releaseKey, existingState);
+  }
+
+  if (!releaseStates.size) {
+    return {
+      ...fulfillment,
+      totalReleases: 0,
+      receivedReleases: 0,
+      pendingReleases: 0,
+      lastReleaseAt: null,
+    };
+  }
+
+  const releaseSummaries = [...releaseStates.values()];
+  const lastReleaseAt = releaseSummaries.reduce((latest, releaseState) => {
+    if (
+      !releaseState.releasedAt ||
+      Number.isNaN(releaseState.releasedAt.getTime())
+    ) {
+      return latest;
+    }
+
+    if (!latest || releaseState.releasedAt.getTime() > latest.getTime()) {
+      return releaseState.releasedAt;
+    }
+
+    return latest;
+  }, null);
+
+  return {
+    ...fulfillment,
+    totalReleases: releaseSummaries.length,
+    receivedReleases: releaseSummaries.filter((releaseState) => releaseState.isReceived)
+      .length,
+    pendingReleases: releaseSummaries.filter((releaseState) => !releaseState.isReceived)
+      .length,
+    lastReleaseAt,
+  };
+};
+
+const redactHistoryRequestForRole = (request = {}, role) => {
+  const normalizedRole = normalizeString(role).toLowerCase();
+  const requestObject =
+    typeof request?.toObject === "function" ? request.toObject() : { ...request };
+
+  if (normalizedRole !== "drrmo") {
+    return requestObject;
+  }
+
+  const visibleSupportTypes = getVisibleSupportTypesForHistoryRole(
+    getSupportTypesFromRequest(requestObject),
+    role
+  );
+  const timelineEvents = (Array.isArray(requestObject.timelineEvents)
+    ? requestObject.timelineEvents
+    : []
+  )
+    .map((event) => redactHistoryTimelineEventForRole(event, role))
+    .filter(Boolean);
+  const visibleRequest = {
+    ...requestObject,
+    requestType: deriveLegacyRequestType(visibleSupportTypes),
+    supportTypes: visibleSupportTypes,
+    requestedMonetaryAmount: 0,
+    releasedMonetaryAmount: 0,
+    receivedMonetaryAmount: 0,
+    totals: {
+      ...(requestObject.totals || {}),
+      requestedMonetaryAmount: 0,
+    },
+    fulfillment: buildVisibleHistoryFulfillmentSnapshot({
+      ...requestObject,
+      timelineEvents,
+    }),
+    timelineEvents,
+  };
+  const demand = getRequestDemandProfile(visibleRequest);
+  const fulfillment = visibleRequest.fulfillment || {};
+  const currentStatus = normalizeStatus(visibleRequest.status);
+
+  if (FINAL_REQUEST_STATUSES.includes(currentStatus)) {
+    return visibleRequest;
+  }
+
+  const releasedFoodPacks = toNumber(fulfillment.releasedFoodPacks);
+  const receivedFoodPacks = toNumber(fulfillment.receivedFoodPacks);
+  const releasedApplianceQuantity = toNumber(fulfillment.releasedApplianceQuantity);
+  const receivedApplianceQuantity = toNumber(fulfillment.receivedApplianceQuantity);
+  const hasAnyVisibleFulfillment =
+    releasedFoodPacks > 0 ||
+    receivedFoodPacks > 0 ||
+    releasedApplianceQuantity > 0 ||
+    receivedApplianceQuantity > 0;
+  const hasVisibleDemand =
+    demand.requestedFoodPacks > 0 || demand.requestedApplianceQuantity > 0;
+  const isFullyReleased =
+    (!demand.requiresFoodPacks || releasedFoodPacks >= demand.requestedFoodPacks) &&
+    (!demand.requiresAppliance ||
+      releasedApplianceQuantity >= demand.requestedApplianceQuantity);
+  const isFullyReceived =
+    (!demand.requiresFoodPacks || receivedFoodPacks >= demand.requestedFoodPacks) &&
+    (!demand.requiresAppliance ||
+      receivedApplianceQuantity >= demand.requestedApplianceQuantity);
+
+  if (!hasAnyVisibleFulfillment) {
+    if (
+      !["pending", "rejected", "cancelled", "canceled", "received", "completed"].includes(
+        normalizeStatus(visibleRequest.status)
+      )
+    ) {
+      visibleRequest.status = "approved";
+      visibleRequest.currentStage = "approved_waiting_release";
+      visibleRequest.receivedAt = null;
+    } else {
+      visibleRequest.currentStage = deriveCurrentStage(visibleRequest, []);
+    }
+  } else if (hasVisibleDemand) {
+    if (isFullyReceived) {
+      visibleRequest.status = "received";
+      visibleRequest.currentStage =
+        normalizeStatus(visibleRequest.currentStage) === "accomplished"
+          ? "accomplished"
+          : "completed";
+    } else if (isFullyReleased) {
+      visibleRequest.status = "released";
+      visibleRequest.currentStage = "released_waiting_receipt";
+      visibleRequest.receivedAt = null;
+    } else {
+      visibleRequest.status = "partially_released";
+      visibleRequest.currentStage = "partially_released";
+      visibleRequest.receivedAt = null;
+    }
+  } else {
+    visibleRequest.currentStage = deriveCurrentStage(visibleRequest, []);
+  }
+
+  return visibleRequest;
+};
+
+const buildTimelineEventApplianceItem = (item = {}, quantityField = "") => {
+  const quantityRequested = toNumber(item?.quantityRequested);
+  const quantityReleased = toNumber(item?.quantityReleased);
+  const quantityReceived = toNumber(item?.quantityReceived);
+  const quantity = quantityField ? toNumber(item?.[quantityField]) : 0;
+  const normalizedQuantity =
+    quantityField === "quantity" && quantity <= 0
+      ? Math.max(quantityRequested, quantityReleased, quantityReceived)
+      : quantity;
+
+  if (
+    !normalizeString(item.itemName) ||
+    !normalizeString(item.category) ||
+    Math.max(
+      normalizedQuantity,
+      quantityRequested,
+      quantityReleased,
+      quantityReceived
+    ) <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    itemName: normalizeString(item.itemName),
+    category: normalizeString(item.category),
+    remarks: normalizeString(item.remarks),
+    quantity: normalizedQuantity,
+    quantityRequested,
+    quantityReleased,
+    quantityReceived,
+  };
+};
+
+const getReleaseApplianceItems = (release = {}, quantityField = "quantityReleased") =>
+  (Array.isArray(release.items) ? release.items : [])
+    .filter((item) => normalizeString(item.itemType || "goods") === "appliance")
+    .map((item) => buildTimelineEventApplianceItem(item, quantityField))
+    .filter(Boolean);
+
+const getReleaseApplianceQuantity = (release = {}, quantityField = "quantityReleased") =>
+  getReleaseApplianceItems(release, quantityField).reduce(
+    (sum, item) => sum + toNumber(item.quantity),
+    0
+  );
+
+const buildReleaseSupportSummary = (
+  request = {},
+  release = {},
+  quantityField = "quantityReleased"
+) => {
+  const supportTypes = getSupportTypesFromRequest(request);
+  const parts = [];
+  const foodPackCount = toNumber(release.foodPacksReleased);
+  const monetaryAmount =
+    quantityField === "quantityReceived"
+      ? toNumber(release.receivedMonetaryAmount || release.releasedMonetaryAmount)
+      : toNumber(release.releasedMonetaryAmount);
+  const applianceItems = getReleaseApplianceItems(release, quantityField);
+  const applianceQuantity = applianceItems.reduce(
+    (sum, item) => sum + toNumber(item.quantity),
+    0
+  );
+
+  if (hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS) && foodPackCount > 0) {
+    parts.push(`${foodPackCount} food pack(s)`);
+  }
+
+  if (hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY) && monetaryAmount > 0) {
+    parts.push(`PHP ${formatMonetaryAmount(monetaryAmount)}`);
+  }
+
+  if (
+    hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE) &&
+    applianceQuantity > 0 &&
+    applianceItems.length
+  ) {
+    parts.push(
+      `${applianceQuantity} appliance unit(s) across ${applianceItems.length} item(s)`
+    );
+  }
+
+  return parts.length ? parts.join(" and ") : "No quantified release totals";
+};
+
+const buildTimelineEvent = ({
+  type,
+  timestamp,
+  label,
+  message,
+  actorRole,
+  actorName,
+  requestNo,
+  releaseNo = "",
+  visibleSupportTypes = [],
+  monetaryAmount = 0,
+  foodPackCount = 0,
+  applianceItems = [],
+}) => {
+  const normalizedTimestamp = timestamp ? new Date(timestamp) : null;
+
+  if (!normalizedTimestamp || Number.isNaN(normalizedTimestamp.getTime())) {
+    return null;
+  }
+
+  return {
+    type: normalizeString(type),
+    timestamp: normalizedTimestamp,
+    label: normalizeString(label),
+    message: normalizeString(message),
+    actorRole: normalizeString(actorRole),
+    actorName: normalizeString(actorName),
+    requestNo: normalizeString(requestNo),
+    releaseNo: normalizeString(releaseNo),
+    visibleSupportTypes: normalizeSupportTypes(visibleSupportTypes),
+    monetaryAmount: toNumber(monetaryAmount),
+    foodPackCount: toNumber(foodPackCount),
+    applianceItems: (Array.isArray(applianceItems) ? applianceItems : [])
+      .map((item) => buildTimelineEventApplianceItem(item, "quantity"))
+      .filter(Boolean),
+  };
+};
+
+const buildRequestTimelineEvents = (request = {}) => {
+  const requestNo = normalizeString(request.requestNo);
+  const supportTypes = getSupportTypesFromRequest(request);
+  const barangayName = normalizeString(request.barangayName) || "Barangay";
+  const requestedMonetaryAmount = toNumber(request?.totals?.requestedMonetaryAmount);
+  const requestedFoodPacks = toNumber(request?.totals?.requestedFoodPacks);
+  const requestedAppliances = getRequestedAppliances(request);
+  const requestDemandLabel = buildRequestDemandLabel(request);
+  const decisionRemarks = getDecisionRemarks(request);
+  const approvalRemarks =
+    normalizeString(request.approvalRemarks) ||
+    normalizeString(request.decisionRemarks) ||
+    normalizeString(request.reviewRemarks);
+  const createdAt = request.createdAt ? new Date(request.createdAt) : null;
+  const lastEditedAt = request.lastEditedAt ? new Date(request.lastEditedAt) : null;
+  const updatedAt = request.updatedAt ? new Date(request.updatedAt) : null;
+  const reviewedAt = request.reviewedAt ? new Date(request.reviewedAt) : null;
+  const approvedAt = request.approvedAt ? new Date(request.approvedAt) : null;
+  const rejectedAt = request.rejectedAt ? new Date(request.rejectedAt) : null;
+  const requestUpdatedAt =
+    lastEditedAt && !Number.isNaN(lastEditedAt.getTime())
+      ? lastEditedAt
+      : updatedAt && !Number.isNaN(updatedAt.getTime())
+        ? updatedAt
+        : null;
+  const hasRequestUpdateEvidence =
+    requestUpdatedAt &&
+    (!createdAt ||
+      Number.isNaN(createdAt.getTime()) ||
+      requestUpdatedAt.getTime() > createdAt.getTime()) &&
+    (request.isEditedAfterSubmit ||
+      Boolean(normalizeString(request.lastEditAction)) ||
+      toNumber(request.editCount) > 0 ||
+      Boolean(normalizeString(request.lastEditedBy)));
+  const submittedVisibleSupportTypes = hasRequestUpdateEvidence ? [] : supportTypes;
+  const approvalActor = buildStoredStaffActor({
+    roleCandidates: [request.approvedByRole, request.reviewedByRole],
+    nameCandidates: [request.approvedBy, request.reviewedBy],
+  });
+  const rejectionActor = buildStoredStaffActor({
+    roleCandidates: [request.rejectedByRole, request.reviewedByRole],
+    nameCandidates: [request.rejectedBy, request.reviewedBy],
+  });
+  const events = [];
+
+  if (createdAt && !Number.isNaN(createdAt.getTime())) {
+    events.push(
+      buildTimelineEvent({
+        type: "request_submitted",
+        timestamp: createdAt,
+        label: "Request Submitted",
+        message: hasRequestUpdateEvidence
+          ? `${barangayName} submitted relief request ${requestNo}.`
+          : `${barangayName} submitted relief request ${requestNo}. ${requestDemandLabel}.`,
+        actorRole: "barangay",
+        actorName: barangayName,
+        requestNo,
+        visibleSupportTypes: submittedVisibleSupportTypes,
+        monetaryAmount: hasRequestUpdateEvidence ? 0 : requestedMonetaryAmount,
+        foodPackCount: hasRequestUpdateEvidence ? 0 : requestedFoodPacks,
+        applianceItems: hasRequestUpdateEvidence ? [] : requestedAppliances,
+      })
+    );
+  }
+
+  if (hasRequestUpdateEvidence) {
+    const editAction = normalizeString(request.lastEditAction);
+    const updateActorRole = normalizeString(request.lastEditedBy) || "barangay";
+    events.push(
+      buildTimelineEvent({
+        type: "request_updated",
+        timestamp: requestUpdatedAt,
+        label: editAction === "resubmitted" ? "Request Resubmitted" : "Request Updated",
+        message:
+          editAction === "resubmitted"
+            ? `${barangayName} resubmitted relief request ${requestNo}. ${requestDemandLabel}.`
+            : `${barangayName} updated relief request ${requestNo}. ${requestDemandLabel}.`,
+        actorRole: updateActorRole,
+        actorName: barangayName,
+        requestNo,
+        visibleSupportTypes: supportTypes,
+        monetaryAmount: requestedMonetaryAmount,
+        foodPackCount: requestedFoodPacks,
+        applianceItems: requestedAppliances,
+      })
+    );
+  }
+
+  if (
+    (approvedAt && !Number.isNaN(approvedAt.getTime())) ||
+    (reviewedAt &&
+      !Number.isNaN(reviewedAt.getTime()) &&
+      normalizeStatus(request.status) !== "rejected")
+  ) {
+    events.push(
+      buildTimelineEvent({
+        type: "request_approved",
+        timestamp: approvedAt || reviewedAt,
+        label: "Request Approved",
+        message: approvalRemarks
+          ? `${approvalActor.actorDisplayName} approved relief request ${requestNo}. ${approvalRemarks}.`
+          : `${approvalActor.actorDisplayName} approved relief request ${requestNo}.`,
+        actorRole: approvalActor.actorRole,
+        actorName: approvalActor.actorName,
+        requestNo,
+        visibleSupportTypes: supportTypes,
+        monetaryAmount: requestedMonetaryAmount,
+        foodPackCount: requestedFoodPacks,
+        applianceItems: requestedAppliances,
+      })
+    );
+  }
+
+  if (
+    (rejectedAt && !Number.isNaN(rejectedAt.getTime())) ||
+    (reviewedAt &&
+      !Number.isNaN(reviewedAt.getTime()) &&
+      normalizeStatus(request.status) === "rejected")
+  ) {
+    events.push(
+      buildTimelineEvent({
+        type: "request_rejected",
+        timestamp: rejectedAt || reviewedAt,
+        label: "Request Rejected",
+        message: decisionRemarks
+          ? `${rejectionActor.actorDisplayName} rejected relief request ${requestNo}. ${decisionRemarks}.`
+          : `${rejectionActor.actorDisplayName} rejected relief request ${requestNo}.`,
+        actorRole: rejectionActor.actorRole,
+        actorName: rejectionActor.actorName,
+        requestNo,
+        visibleSupportTypes: supportTypes,
+        monetaryAmount: requestedMonetaryAmount,
+        foodPackCount: requestedFoodPacks,
+        applianceItems: requestedAppliances,
+      })
+    );
+  }
+
+  return events.filter(Boolean);
+};
+
+const buildReleaseTimelineEvents = (request = {}, releases = []) => {
+  const requestNo = normalizeString(request.requestNo);
+  const supportTypes = getSupportTypesFromRequest(request);
+  const barangayName = normalizeString(request.barangayName) || "Barangay";
+  const demand = getRequestDemandProfile(request);
+  const hasQuantifiedDemand =
+    demand.requestedFoodPacks > 0 ||
+    demand.requestedMonetaryAmount > 0 ||
+    demand.requestedApplianceQuantity > 0;
+  const orderedReleases = (Array.isArray(releases) ? releases : [])
+    .slice()
+    .sort(
+      (left, right) =>
+        new Date(left.releasedAt || left.createdAt || 0) -
+        new Date(right.releasedAt || right.createdAt || 0)
+    );
+  const cumulative = {
+    foodPacks: 0,
+    monetaryAmount: 0,
+    applianceQuantity: 0,
+  };
+  const events = [];
+
+  for (const release of orderedReleases) {
+    const releaseNo = normalizeString(release.releaseNo);
+    const releasedAt = release.releasedAt || release.createdAt;
+    const releaseFoodPacks = toNumber(release.foodPacksReleased);
+    const releaseMonetaryAmount = toNumber(release.releasedMonetaryAmount);
+    const releaseApplianceItems = getReleaseApplianceItems(release, "quantityReleased");
+    const releaseApplianceQuantity = getReleaseApplianceQuantity(
+      release,
+      "quantityReleased"
+    );
+    const releaseActor = normalizeString(release.releasedBy)
+      ? buildStoredStaffActor({
+          roleCandidates: [release.releasedByRole, release.createdByRole],
+          nameCandidates: [release.releasedBy],
+        })
+      : buildStoredStaffActor();
+
+    events.push(
+      buildTimelineEvent({
+        type: "release_created",
+        timestamp: releasedAt,
+        label: "Release Created",
+        message: `${releaseActor.actorDisplayName} created release ${releaseNo || "-"} for request ${requestNo}. ${buildReleaseSupportSummary(
+          request,
+          release
+        )}.`,
+        actorRole: releaseActor.actorRole,
+        actorName: releaseActor.actorName,
+        requestNo,
+        releaseNo,
+        visibleSupportTypes: supportTypes,
+        monetaryAmount: releaseMonetaryAmount,
+        foodPackCount: releaseFoodPacks,
+        applianceItems: releaseApplianceItems,
+      })
+    );
+
+    cumulative.foodPacks += releaseFoodPacks;
+    cumulative.monetaryAmount += releaseMonetaryAmount;
+    cumulative.applianceQuantity += releaseApplianceQuantity;
+
+    if (
+      hasQuantifiedDemand &&
+      (releaseFoodPacks > 0 || releaseMonetaryAmount > 0 || releaseApplianceQuantity > 0)
+    ) {
+      const isFullyReleased =
+        (!demand.requiresFoodPacks ||
+          cumulative.foodPacks >= toNumber(demand.requestedFoodPacks)) &&
+        (!demand.requiresMonetary ||
+          cumulative.monetaryAmount >= toNumber(demand.requestedMonetaryAmount)) &&
+        (!demand.requiresAppliance ||
+          cumulative.applianceQuantity >= toNumber(demand.requestedApplianceQuantity));
+
+      events.push(
+        buildTimelineEvent({
+          type: isFullyReleased ? "release_fulfilled" : "release_partially_fulfilled",
+          timestamp: releasedAt,
+          label: isFullyReleased ? "Release Fulfilled" : "Release Partially Fulfilled",
+          message: isFullyReleased
+            ? `Release ${releaseNo || "-"} completed the requested support for request ${requestNo}.`
+            : `Release ${releaseNo || "-"} partially fulfilled request ${requestNo}. ${buildReleaseSupportSummary(
+                request,
+                release
+              )}.`,
+          actorRole: releaseActor.actorRole,
+          actorName: releaseActor.actorName,
+          requestNo,
+          releaseNo,
+          visibleSupportTypes: supportTypes,
+          monetaryAmount: releaseMonetaryAmount,
+          foodPackCount: releaseFoodPacks,
+          applianceItems: releaseApplianceItems,
+        })
+      );
+    }
+
+    if (
+      normalizeStatus(release.releaseStatus) === "received" ||
+      (release.receivedAt && !Number.isNaN(new Date(release.receivedAt).getTime()))
+    ) {
+      events.push(
+        buildTimelineEvent({
+          type: "receipt_confirmed",
+          timestamp: release.receivedAt || request.receivedAt,
+          label: "Receipt Confirmed",
+          message: `${barangayName} confirmed receipt for release ${releaseNo || "-"} on request ${requestNo}. ${buildReleaseSupportSummary(
+            request,
+            release,
+            "quantityReceived"
+          )}.`,
+          actorRole: "barangay",
+          actorName: normalizeString(release.receivedBy) || barangayName,
+          requestNo,
+          releaseNo,
+          visibleSupportTypes: supportTypes,
+          monetaryAmount: toNumber(
+            release.receivedMonetaryAmount || release.releasedMonetaryAmount
+          ),
+          foodPackCount: releaseFoodPacks,
+          applianceItems: getReleaseApplianceItems(release, "quantityReceived"),
+        })
+      );
+    }
+  }
+
+  return events.filter(Boolean);
+};
+
+const buildReliefHistoryTimelineEvents = (request = {}, releases = []) =>
+  [...buildRequestTimelineEvents(request), ...buildReleaseTimelineEvents(request, releases)]
+    .filter(Boolean)
+    .sort((left, right) => new Date(right.timestamp) - new Date(left.timestamp));
+
+const buildReadOnlyRequestSnapshot = (request, releases = []) => {
+  if (!request) return request;
+
+  const requestObject =
+    typeof request.toObject === "function" ? request.toObject() : { ...request };
+  const demand = getRequestDemandProfile(requestObject);
+  const fulfillment = buildFulfillmentFromReleases(releases, requestObject.fulfillment);
+  const requestLike = {
+    ...requestObject,
+    supportTypes: demand.supportTypes,
+    requestType: demand.requestType,
+    fulfillment: {
+      totalReleases: fulfillment.totalReleases,
+      releasedFoodPacks: fulfillment.releasedFoodPacks,
+      releasedApplianceQuantity: fulfillment.releasedApplianceQuantity,
+      releasedMonetaryAmount: fulfillment.releasedMonetaryAmount,
+      receivedFoodPacks: fulfillment.receivedFoodPacks,
+      receivedApplianceQuantity: fulfillment.receivedApplianceQuantity,
+      receivedMonetaryAmount: fulfillment.receivedMonetaryAmount,
+      receivedReleases: fulfillment.receivedReleases,
+      pendingReleases: fulfillment.pendingReleases,
+      lastReleaseAt: fulfillment.lastReleaseAt,
+    },
+  };
+
+  const currentStatus = normalizeStatus(requestLike.status);
+
+  if (FINAL_REQUEST_STATUSES.includes(currentStatus)) {
+    if (currentStatus === "cancelled" || currentStatus === "canceled") {
+      requestLike.currentStage = "preparation";
+    } else if (currentStatus === "rejected") {
+      requestLike.currentStage = "rejected";
+    } else if (normalizeStatus(requestLike.currentStage) === "accomplished") {
+      requestLike.currentStage = "accomplished";
+    } else {
+      requestLike.currentStage = "completed";
+    }
+
+    return requestLike;
+  }
+
+  requestLike.prioritySnapshot = computePrioritySnapshotFromRows(requestLike.rows || []);
+
+  const releasedFoodPacks = toNumber(fulfillment.releasedFoodPacks);
+  const receivedFoodPacks = toNumber(fulfillment.receivedFoodPacks);
+  const releasedMonetaryAmount = toNumber(fulfillment.releasedMonetaryAmount);
+  const receivedMonetaryAmount = toNumber(fulfillment.receivedMonetaryAmount);
+  const hasAnyFulfillment =
+    releases.length > 0 || releasedMonetaryAmount > 0 || receivedMonetaryAmount > 0;
+  const hasQuantifiedDemand =
+    demand.requestedFoodPacks > 0 ||
+    demand.requestedMonetaryAmount > 0 ||
+    demand.requestedApplianceQuantity > 0;
+  const isFullyReleased =
+    (!demand.requiresFoodPacks || releasedFoodPacks >= demand.requestedFoodPacks) &&
+    (!demand.requiresAppliance ||
+      toNumber(fulfillment.releasedApplianceQuantity) >=
+        demand.requestedApplianceQuantity) &&
+    (!demand.requiresMonetary ||
+      releasedMonetaryAmount >= demand.requestedMonetaryAmount);
+  const isFullyReceived =
+    (!demand.requiresFoodPacks || receivedFoodPacks >= demand.requestedFoodPacks) &&
+    (!demand.requiresAppliance ||
+      toNumber(fulfillment.receivedApplianceQuantity) >=
+        demand.requestedApplianceQuantity) &&
+    (!demand.requiresMonetary ||
+      receivedMonetaryAmount >= demand.requestedMonetaryAmount);
+
+  if (!hasAnyFulfillment) {
+    if (
+      !["pending", "rejected", "cancelled", "canceled", "received", "completed"].includes(
+        normalizeStatus(requestLike.status)
+      )
+    ) {
+      requestLike.status = "approved";
+      requestLike.currentStage = "approved_waiting_release";
+    } else {
+      requestLike.currentStage = deriveCurrentStage(requestLike, releases);
+    }
+  } else if (hasQuantifiedDemand) {
+    if (isFullyReceived) {
+      requestLike.status = "received";
+      requestLike.currentStage =
+        normalizeStatus(requestLike.currentStage) === "accomplished"
+          ? "accomplished"
+          : "completed";
+    } else if (isFullyReleased) {
+      requestLike.status = "released";
+      requestLike.currentStage = "released_waiting_receipt";
+      requestLike.receivedAt = null;
+    } else {
+      requestLike.status = "partially_released";
+      requestLike.currentStage = "partially_released";
+      requestLike.receivedAt = null;
+    }
+  } else {
+    requestLike.currentStage = deriveCurrentStage(requestLike, releases);
+  }
+
+  return requestLike;
+};
 
 const shapeReliefRequestResponse = (request) => {
   if (!request) return request;
@@ -790,6 +1669,88 @@ const getReliefRequestBootstrap = async (req, res) => {
   } catch (err) {
     console.error("Get Relief Request Bootstrap Error:", err);
     res.status(500).json({ message: err.message });
+  }
+};
+
+const getReliefRequestHistory = async (req, res) => {
+  try {
+    const role = normalizeString(req.session?.role).toLowerCase();
+
+    if (!canViewReliefHistoryRole(role)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const barangayDocs = await Barangay.find({}, { _id: 1, barangayName: 1 }).sort({
+      barangayName: 1,
+    });
+
+    const barangays = barangayDocs.map((barangay) => ({
+      _id: barangay._id,
+      name: normalizeString(barangay.barangayName),
+    }));
+
+    const selectedBarangayId = normalizeString(
+      req.query?.barangayId ?? req.query?.barangay
+    );
+
+    const selectedBarangay =
+      barangays.find((barangay) => String(barangay._id) === selectedBarangayId) || null;
+
+    if (!selectedBarangay) {
+      return res.json({
+        barangays,
+        selectedBarangay: null,
+        requests: [],
+      });
+    }
+
+    const requests = await ReliefRequest.find({
+      barangayId: selectedBarangay._id,
+      isArchived: false,
+    }).sort({ createdAt: -1 });
+
+    const requestIds = requests.map((request) => request._id);
+
+    const releases = requestIds.length
+      ? await ReliefRelease.find({
+          reliefRequestId: { $in: requestIds },
+          isArchived: false,
+        }).sort({ createdAt: -1 })
+      : [];
+
+    const releasesByRequestId = releases.reduce((grouped, release) => {
+      const requestId = String(release.reliefRequestId);
+      if (!grouped.has(requestId)) {
+        grouped.set(requestId, []);
+      }
+      grouped.get(requestId).push(release);
+      return grouped;
+    }, new Map());
+
+    const requestSnapshots = requests.map((request) => {
+      const requestReleases = releasesByRequestId.get(String(request._id)) || [];
+      const requestSnapshot = buildReadOnlyRequestSnapshot(request, requestReleases);
+
+      return {
+        ...requestSnapshot,
+        timelineEvents: buildReliefHistoryTimelineEvents(
+          requestSnapshot,
+          requestReleases
+        ),
+      };
+    });
+
+    return res.json({
+      barangays,
+      selectedBarangay,
+      requests: requestSnapshots
+        .filter((request) => !shouldHideHistoryRequestForRole(request, role))
+        .map((request) => redactHistoryRequestForRole(request, role))
+        .map(shapeReliefRequestResponse),
+    });
+  } catch (err) {
+    console.error("Get Relief Request History Error:", err);
+    return res.status(500).json({ message: "Failed to load relief history." });
   }
 };
 
@@ -2038,6 +2999,7 @@ const reportReliefRequestNotReceived = async (req, res) => {
 
 module.exports = {
   getReliefRequestBootstrap,
+  getReliefRequestHistory,
   submitReliefRequest,
   getMyReliefRequests,
   getMyReliefRequestById,

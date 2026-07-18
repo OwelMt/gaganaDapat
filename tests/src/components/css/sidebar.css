@@ -103,6 +103,11 @@ body {
   position: relative;
 }
 
+.admin-main.evac-shell-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 .dashboard-topbar {
   flex: 0 0 auto;
   display: flex;
@@ -116,20 +121,103 @@ body {
   border-radius: 24px;
   box-shadow: 0 12px 28px rgba(15, 90, 32, 0.08);
   backdrop-filter: blur(8px);
+  overflow: visible;
+  position: relative;
+  z-index: 12;
+}
+
+.shell-topbar-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  min-height: 52px;
+}
+
+.shell-quick-actions {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  flex-shrink: 0;
+  height: 52px;
+}
+
+.shell-quick-action-btn {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  border: 1px solid rgba(15, 90, 32, 0.12);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(240, 248, 241, 0.94));
+  color: var(--sb-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgba(15, 90, 32, 0.08);
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.shell-quick-action-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(46, 125, 50, 0.2);
+  box-shadow: 0 14px 28px rgba(15, 90, 32, 0.12);
+}
+
+.shell-quick-action-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.shell-quick-action-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #fb923c 0%, #f97316 100%);
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 900;
+  box-shadow: 0 8px 16px rgba(249, 115, 22, 0.28);
+}
+
+.shell-profile-area {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
 }
 
 .shell-profile-inline {
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
   min-width: 0;
   max-width: min(100%, 280px);
+  min-height: 52px;
   padding: 0;
   background: transparent;
   border: 0;
   box-shadow: none;
+}
+
+.shell-profile-trigger {
+  cursor: pointer;
+  text-align: left;
 }
 
 .shell-profile-avatar {
@@ -184,6 +272,52 @@ body {
   line-height: 1.1;
 }
 
+.shell-profile-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 176px;
+  padding: 8px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(15, 90, 32, 0.1);
+  box-shadow: 0 18px 36px rgba(15, 90, 32, 0.16);
+  z-index: 60;
+}
+
+.shell-profile-menu-item {
+  width: 100%;
+  min-height: 42px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--sb-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.14s ease;
+}
+
+.shell-profile-menu-item:hover {
+  background: rgba(15, 90, 32, 0.06);
+  transform: translateY(-1px);
+}
+
+.shell-profile-menu-item.danger {
+  color: #b42318;
+}
+
+.shell-profile-menu-item.danger:hover {
+  background: rgba(220, 38, 38, 0.08);
+}
+
 .admin-content {
   flex: 1;
   min-height: 0;
@@ -208,6 +342,21 @@ body {
 .shell-page-content {
   flex: 1;
   min-height: 0;
+}
+
+.admin-content.evac-scroll-layout .admin-content-inner {
+  overflow: visible;
+  min-height: max-content;
+}
+
+.admin-content.evac-scroll-layout {
+  overflow: visible;
+  flex: 0 0 auto;
+}
+
+.admin-content.evac-scroll-layout .shell-page-content,
+.admin-content-inner.evac-scroll-layout-inner .shell-page-content {
+  min-height: max-content;
 }
 
 .sidebar {
@@ -772,6 +921,11 @@ body {
   border-top: 1px solid var(--sb-border);
 }
 
+.sidebar-utility-group,
+.sidebar-footer {
+  display: none;
+}
+
 .sidebar-link-notification {
   isolation: isolate;
 }
@@ -1110,6 +1264,21 @@ body {
 
   .shell-profile-inline {
     max-width: 210px;
+  }
+
+  .shell-topbar-actions {
+    gap: 8px;
+    min-height: 46px;
+  }
+
+  .shell-quick-actions {
+    height: 46px;
+  }
+
+  .shell-quick-action-btn {
+    width: 38px;
+    height: 21px;
+    border-radius: 9px;
   }
 
   .shell-profile-avatar {

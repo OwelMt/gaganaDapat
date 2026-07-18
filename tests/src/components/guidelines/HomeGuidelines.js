@@ -20,7 +20,9 @@ import {
   MAX_CONTENT_DESCRIPTION_LENGTH,
   MAX_CONTENT_TITLE_LENGTH,
   sanitizeContentDescription,
+  sanitizeContentDescriptionInput,
   sanitizeContentTitle,
+  sanitizeContentTitleInput,
   validateContentFields
 } from "../contentTextUtils";
 
@@ -821,7 +823,10 @@ export default function HomeGuidelines() {
                       className="gl-input"
                       placeholder="Enter guideline title"
                       value={title}
-                      onChange={(e) => setTitle(sanitizeContentTitle(e.target.value))}
+                      onChange={(e) =>
+                        setTitle(sanitizeContentTitleInput(e.target.value))
+                      }
+                      onBlur={(e) => setTitle(sanitizeContentTitle(e.target.value))}
                       maxLength={MAX_CONTENT_TITLE_LENGTH}
                     />
                   </div>
@@ -833,6 +838,9 @@ export default function HomeGuidelines() {
                       placeholder="Write guideline details"
                       value={description}
                       onChange={(e) =>
+                        setDescription(sanitizeContentDescriptionInput(e.target.value))
+                      }
+                      onBlur={(e) =>
                         setDescription(sanitizeContentDescription(e.target.value))
                       }
                       maxLength={MAX_CONTENT_DESCRIPTION_LENGTH}
@@ -1178,8 +1186,9 @@ export default function HomeGuidelines() {
                         className="gl-input"
                         value={editTitle}
                         onChange={(e) =>
-                          setEditTitle(sanitizeContentTitle(e.target.value))
+                          setEditTitle(sanitizeContentTitleInput(e.target.value))
                         }
+                        onBlur={(e) => setEditTitle(sanitizeContentTitle(e.target.value))}
                         placeholder="Guideline title"
                         maxLength={MAX_CONTENT_TITLE_LENGTH}
                       />
@@ -1191,6 +1200,11 @@ export default function HomeGuidelines() {
                         className="gl-modal-textarea"
                         value={editDescription}
                         onChange={(e) =>
+                          setEditDescription(
+                            sanitizeContentDescriptionInput(e.target.value)
+                          )
+                        }
+                        onBlur={(e) =>
                           setEditDescription(sanitizeContentDescription(e.target.value))
                         }
                         placeholder="Guideline description"

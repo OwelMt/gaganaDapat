@@ -175,10 +175,14 @@ app.use(
 // --------------------
 const isProd = process.env.NODE_ENV === "production";
 
-const useSecureSessionCookie = parseBooleanEnv(
+const requestedSecureSessionCookie = parseBooleanEnv(
   process.env.SESSION_COOKIE_SECURE,
   isProd
 );
+
+// Local HTTP development cannot persist Secure cookies, so force them off
+// outside production even if the env file still has SESSION_COOKIE_SECURE=true.
+const useSecureSessionCookie = isProd ? requestedSecureSessionCookie : false;
 
 app.use(
   session({

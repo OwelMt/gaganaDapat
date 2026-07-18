@@ -3,6 +3,7 @@ const Donation = require("../models/Donation");
 const InventoryItem = require("../models/InventoryItem");
 const InventoryLog = require("../models/InventoryLog");
 const Notification = require("../models/Notification");
+const ReliefRelease = require("../models/ReliefRelease");
 const createNotification = require("../utils/createNotification");
 const { callAiAnalyticsProvider } = require("../utils/aiAnalyticsProvider");
 const {
@@ -220,6 +221,53 @@ const attachExpiryMeta = (item) => {
     ...plain,
     ...meta,
   };
+};
+
+const PROTECTED_INVENTORY_EDIT_FIELDS = ["type", "category", "unit", "sourceType"];
+
+const buildInventoryEditLockMeta = (isClassificationLocked = false) => ({
+  classificationLocked: Boolean(isClassificationLocked),
+  lockedFields: isClassificationLocked ? [...PROTECTED_INVENTORY_EDIT_FIELDS] : [],
+});
+
+const attachInventoryEditLockMeta = (item, lockedItemIds = new Set()) => {
+  const plain = attachExpiryMeta(item);
+  const itemId = normalizeString(plain?._id);
+  const classificationLocked = itemId ? lockedItemIds.has(itemId) : false;
+
+  return {
+    ...plain,
+    editLocks: buildInventoryEditLockMeta(classificationLocked),
+  };
+};
+
+const getReleasedInventoryItemIdSet = async (itemIds = []) => {
+  const normalizedIds = [...new Set(itemIds.map((id) => normalizeString(id)).filter(Boolean))];
+
+  if (!normalizedIds.length) {
+    return new Set();
+  }
+
+  const releases = await ReliefRelease.find(
+    {
+      isArchived: false,
+      "items.inventoryItemId": { $in: normalizedIds },
+    },
+    { items: 1 }
+  ).lean();
+
+  const lockedIds = new Set();
+
+  for (const release of releases) {
+    for (const releaseItem of Array.isArray(release?.items) ? release.items : []) {
+      const inventoryItemId = normalizeString(releaseItem?.inventoryItemId);
+      if (inventoryItemId && normalizedIds.includes(inventoryItemId)) {
+        lockedIds.add(inventoryItemId);
+      }
+    }
+  }
+
+  return lockedIds;
 };
 
 const requiresExpirationForGoods = (category, explicitRule) => {
@@ -2356,7 +2404,8 @@ const addInventory = async (req, res) => {
 const getInventory = async (req, res) => {
   try {
     const items = await InventoryItem.find({ isArchive: false }).sort({ createdAt: -1 });
-    res.json(items.map((item) => attachExpiryMeta(item)));
+    const lockedItemIds = await getReleasedInventoryItemIdSet(items.map((item) => item._id));
+    res.json(items.map((item) => attachInventoryEditLockMeta(item, lockedItemIds)));
   } catch (err) {
     console.error("Get Inventory Error:", err);
     res.status(500).json({ message: err.message });
@@ -2431,6 +2480,49 @@ const updateInventory = async (req, res) => {
       return res.status(400).json({ message: errors[0], errors });
     }
 
+    const isClassificationLocked = await ReliefRelease.exists({
+      isArchived: false,
+      "items.inventoryItemId": item._id,
+    });
+
+    if (isClassificationLocked) {
+      const attemptedProtectedChanges = [];
+
+      if (data.type !== item.type) {
+        attemptedProtectedChanges.push("type");
+      }
+
+      if (
+        (data.type === "goods" || data.type === "appliance") &&
+        normalizeString(data.category).toLowerCase() !==
+          normalizeString(item.category).toLowerCase()
+      ) {
+        attemptedProtectedChanges.push("category");
+      }
+
+      if (
+        data.type === "goods" &&
+        normalizeString(data.unit).toLowerCase() !== normalizeString(item.unit).toLowerCase()
+      ) {
+        attemptedProtectedChanges.push("unit");
+      }
+
+      if (
+        normalizeString(data.sourceType).toLowerCase() !==
+        normalizeString(item.sourceType).toLowerCase()
+      ) {
+        attemptedProtectedChanges.push("sourceType");
+      }
+
+      if (attemptedProtectedChanges.length > 0) {
+        return res.status(400).json({
+          message:
+            "Type, category, unit, and provider cannot be changed after this item has been used in a relief release.",
+          lockedFields: PROTECTED_INVENTORY_EDIT_FIELDS,
+        });
+      }
+    }
+
     if (req.body.name !== undefined) item.name = data.name;
     if (req.body.type !== undefined) item.type = data.type;
     if (req.body.description !== undefined) item.description = data.description;
@@ -2488,7 +2580,12 @@ const updateInventory = async (req, res) => {
 
     await notifyInventoryRiskState(item, username);
 
-    res.json(attachExpiryMeta(item));
+    res.json(
+      attachInventoryEditLockMeta(
+        item,
+        new Set(isClassificationLocked ? [normalizeString(item._id)] : [])
+      )
+    );
   } catch (err) {
     console.error("Update Inventory Error:", err);
     res.status(500).json({ message: err.message });
@@ -2518,7 +2615,7 @@ const deleteInventory = async (req, res) => {
 
     res.json({
       message: "Inventory archived successfully",
-      item: attachExpiryMeta(item),
+      item: attachInventoryEditLockMeta(item),
     });
   } catch (err) {
     console.error("Delete Inventory Error:", err);
@@ -2530,7 +2627,8 @@ const deleteInventory = async (req, res) => {
 const getArchivedInventory = async (req, res) => {
   try {
     const items = await InventoryItem.find({ isArchive: true }).sort({ updatedAt: -1 });
-    res.json(items.map((item) => attachExpiryMeta(item)));
+    const lockedItemIds = await getReleasedInventoryItemIdSet(items.map((item) => item._id));
+    res.json(items.map((item) => attachInventoryEditLockMeta(item, lockedItemIds)));
   } catch (err) {
     console.error("Get Archived Inventory Error:", err);
     res.status(500).json({ message: err.message });
@@ -2556,7 +2654,7 @@ const unarchiveInventory = async (req, res) => {
 
     res.json({
       message: "Inventory unarchived successfully",
-      item: attachExpiryMeta(item),
+      item: attachInventoryEditLockMeta(item),
     });
   } catch (err) {
     console.error("Unarchive Inventory Error:", err);

@@ -55,6 +55,23 @@ const toNumber = (value) => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
+const getInventoryExpiryStatus = (expirationDate) => {
+  if (!expirationDate) return "no_expiry";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const expiry = new Date(expirationDate);
+  expiry.setHours(0, 0, 0, 0);
+
+  const diffMs = expiry.getTime() - today.getTime();
+  const daysUntilExpiration = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  if (daysUntilExpiration < 0) return "expired";
+  if (daysUntilExpiration <= 30) return "soon";
+  return "ok";
+};
+
 const parseIncomingReleaseBody = (body = {}) => {
   if (body?.payload && typeof body.payload === "string") {
     const parsed = JSON.parse(body.payload);
@@ -360,7 +377,10 @@ const allocateInventoryForReleaseItem = async (item, session) => {
 
   const candidates = sortInventoryDocsForAllocation(
     Array.from(uniqueCandidates.values()).filter(
-      (doc) => Number(doc.quantity || 0) > 0
+      (doc) =>
+        Number(doc.quantity || 0) > 0 &&
+        (normalizedSignature.itemType === "appliance" ||
+          getInventoryExpiryStatus(doc.expirationDate) !== "expired")
     )
   );
 
@@ -470,25 +490,27 @@ const buildTemplateReleaseItems = async (
   const generatedItems = [];
 
   for (const item of template.items || []) {
-    let inventoryDoc = await InventoryItem.findOne({
-      _id: item.inventoryItemId,
-      isArchive: false,
-      type: "goods",
-    }).session(session);
-
-    if (!inventoryDoc) {
-      inventoryDoc = await InventoryItem.findOne({
+    const matchingInventoryDocs = sortInventoryDocsForAllocation(
+      await InventoryItem.find({
         isArchive: false,
         type: "goods",
         name: item.itemName,
         category: item.category,
         unit: item.unit,
-      }).session(session);
-    }
+      }).session(session)
+    );
+    const inventoryDoc =
+      matchingInventoryDocs.find((doc) => Number(doc.quantity || 0) > 0) || null;
 
     if (!inventoryDoc) {
       return {
-        error: `Inventory item not found for template item "${item.itemName}".`,
+        error: `Inventory item not available for template item "${item.itemName}".`,
+      };
+    }
+
+    if (getInventoryExpiryStatus(inventoryDoc.expirationDate) === "expired") {
+      return {
+        error: `Template item "${item.itemName}" is expired and must be updated before release.`,
       };
     }
 

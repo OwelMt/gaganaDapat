@@ -216,6 +216,13 @@ export default function Notification() {
     return Math.max(0, notifications.length - filteredNotifications.length);
   }, [notifications.length, filteredNotifications.length]);
 
+  const allModulesMuted = useMemo(() => {
+    return (
+      manageableModules.length > 0 &&
+      manageableModules.every((moduleName) => Boolean(mutedModules[moduleName]))
+    );
+  }, [manageableModules, mutedModules]);
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem(preferenceKey);
@@ -519,6 +526,15 @@ export default function Notification() {
     setMutedModules({});
   };
 
+  const muteAllModules = () => {
+    setMutedModules(
+      manageableModules.reduce((acc, moduleName) => {
+        acc[moduleName] = true;
+        return acc;
+      }, {})
+    );
+  };
+
   const resolveNotificationLink = (notification) => {
     const rawLink = String(notification?.link || "").trim();
     const moduleName = String(notification?.module || "").trim().toLowerCase();
@@ -719,10 +735,10 @@ export default function Notification() {
               <button
                 type="button"
                 className="notification-button notification-button-sm"
-                onClick={enableAllModules}
+                onClick={allModulesMuted ? enableAllModules : muteAllModules}
                 disabled={manageableModules.length === 0}
               >
-                Unmute All Modules
+                {allModulesMuted ? "Unmute All Modules" : "Mute All Modules"}
               </button>
             </div>
 

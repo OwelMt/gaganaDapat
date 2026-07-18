@@ -618,7 +618,13 @@ export default function DonationValidationQueue() {
                                 <span>
                                   {row?.category
                                     ? row.category
-                                    : row?.sourceType || "External"}
+                                    : row?.sourceType === "external"
+                                    ? "Donated"
+                                    : row?.sourceType === "internal"
+                                    ? "LGU"
+                                    : row?.sourceType === "government"
+                                    ? "Government"
+                                    : row?.sourceType || "Donated"}
                                 </span>
                               </div>
 
@@ -669,8 +675,16 @@ export default function DonationValidationQueue() {
                       <strong>{getDonationTypeLabel(displayedDonation)}</strong>
                     </div>
                     <div className="rrl-meta-chip">
-                      <span>Source Type</span>
-                      <strong>{formatStatusLabel(displayedDonation.sourceType)}</strong>
+                      <span>Provider</span>
+                      <strong>
+                        {displayedDonation.sourceType === "external"
+                          ? "Donated"
+                          : displayedDonation.sourceType === "internal"
+                          ? "LGU"
+                          : displayedDonation.sourceType === "government"
+                          ? "Government"
+                          : formatStatusLabel(displayedDonation.sourceType)}
+                      </strong>
                     </div>
                     <div className="rrl-meta-chip">
                       <span>Submitted</span>

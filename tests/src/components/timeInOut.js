@@ -4,9 +4,11 @@ import { useNavigate } from 'react-router-dom';
 import './css/timeInOut.css';
 import DashboardShell from './layout/DashboardShell';
 import { API_BASE_URL } from "../config/api";
+import { getTodayInputDate } from "./Donations/inventoryExpiryUtils";
 
 export default function TimeInOut() {
   const navigate = useNavigate();
+  const minAllowedDate = getTodayInputDate();
   // ---- CONSTANT: Fixed page size ----
   const PAGE_SIZE = 18;
 
@@ -210,6 +212,7 @@ export default function TimeInOut() {
               className="tio-input"
               type="date"
               value={dateFilter}
+              min={minAllowedDate}
               onChange={(e) => setDateFilter(e.target.value)}
               aria-label="Filter by date"
             />

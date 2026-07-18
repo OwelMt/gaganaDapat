@@ -47,6 +47,70 @@
   border: 1px solid var(--rrl-border);
   box-shadow: var(--rrl-shadow);
   border-radius: var(--rrl-radius-xl);
+  position: relative;
+  overflow: hidden;
+}
+
+.rrl-card::after,
+.rrl-header-card::after,
+.rrl-total-card::after,
+.rrl-queue-card::after,
+.rrl-details-card-compact::after,
+.rrl-placeholder-card::after,
+.rrl-meta-chip::after,
+.rrl-balance-chip::after,
+.rrl-panel::after,
+.rrl-remarks-summary-card::after,
+.rrl-appliance-request-card::after {
+  content: "";
+  position: absolute;
+  right: -74px;
+  bottom: -74px;
+  width: 148px;
+  height: 148px;
+  border-radius: 999px;
+  background: rgba(20, 83, 45, 0.06);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.rrl-total-card.pending::after {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.rrl-total-card.warning::after {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.rrl-total-card.success::after {
+  background: rgba(22, 163, 74, 0.1);
+}
+
+.rrl-total-card.danger::after {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.rrl-meta-chip::after,
+.rrl-balance-chip::after,
+.rrl-panel::after,
+.rrl-remarks-summary-card::after,
+.rrl-appliance-request-card::after {
+  content: none;
+}
+
+.rrl-card > *,
+.rrl-header-card > *,
+.rrl-total-card > *,
+.rrl-queue-card > *,
+.rrl-details-card-compact > *,
+.rrl-placeholder-card > *,
+.rrl-meta-chip > *,
+.rrl-balance-chip > *,
+.rrl-panel > *,
+.rrl-remarks-summary-card > *,
+.rrl-appliance-request-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .rrl-card {

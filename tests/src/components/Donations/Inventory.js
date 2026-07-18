@@ -40,6 +40,23 @@ import {
   summarizeTemplateHealth,
 } from "./foodPackTemplateHealthUtils";
 import {
+  MAX_INVENTORY_CATEGORY_LENGTH as MAX_CUSTOM_CATEGORY_LENGTH,
+  MAX_INVENTORY_DESCRIPTION_LENGTH as MAX_DESCRIPTION_LENGTH,
+  MAX_INVENTORY_NAME_LENGTH as MAX_NAME_LENGTH,
+  MAX_INVENTORY_REFERENCE_LENGTH,
+  MAX_INVENTORY_SEARCH_LENGTH as MAX_SEARCH_LENGTH,
+  MAX_INVENTORY_SOURCE_NAME_LENGTH as MAX_SOURCE_NAME_LENGTH,
+  MAX_INVENTORY_UNIT_LENGTH as MAX_UNIT_LENGTH,
+  MAX_TEMPLATE_DESCRIPTION_LENGTH,
+  MAX_TEMPLATE_NAME_LENGTH,
+  sanitizeInventoryCompactText,
+  sanitizeInventoryNoteText,
+  sanitizeInventoryReferenceText,
+  sanitizeInventorySearchText,
+  sanitizeTemplateDescription,
+  sanitizeTemplateName,
+} from "./inventoryTextUtils";
+import {
   FaArchive,
   FaBell,
   FaBoxes,
@@ -64,8 +81,7 @@ import { API_BASE_URL } from "../../config/api";
 
 const BASE_URL = API_BASE_URL;
 
-const TABLE_PAGE_SIZE = 8;
-const ARCHIVE_PAGE_SIZE = 10;
+const DEFAULT_TABLE_PAGE_SIZE = 10;
 const TEMPLATE_PAGE_SIZE = 6;
 const TOAST_LIMIT = 3;
 const TOAST_DURATION = 10000;
@@ -90,11 +106,6 @@ const CUSTOM_CATEGORY_VALUE = "__custom__";
 const CUSTOM_UNIT_VALUE = "__custom_unit__";
 const MAX_QUANTITY = 1000000;
 const MAX_AMOUNT = 1000000000;
-const MAX_NAME_LENGTH = 80;
-const MAX_SOURCE_NAME_LENGTH = 120;
-const MAX_DESCRIPTION_LENGTH = 500;
-const MAX_UNIT_LENGTH = 24;
-const MAX_CUSTOM_CATEGORY_LENGTH = 40;
 const DEFAULT_APPLIANCE_CATEGORIES = [
   "kitchen appliances",
   "cleaning appliances",
@@ -112,19 +123,6 @@ const CATEGORY_UNIT_HINTS = [
   { keywords: ["clothes", "blanket", "towel", "bedding", "mat"], units: ["piece", "set", "bundle"] },
   { keywords: ["hygiene", "kit", "soap", "toothpaste"], units: ["piece", "pack", "box"] },
 ];
-
-const sanitizeCompactText = (value, maxLength) =>
-  String(value || "")
-    .replace(/[^\w\s.,()/#&-]/g, "")
-    .replace(/\s+/g, " ")
-    .trimStart()
-    .slice(0, maxLength);
-
-const sanitizeNoteText = (value, maxLength) =>
-  String(value || "")
-    .replace(/[^\w\s.,()/#&:;!?'"%-]/g, "")
-    .replace(/\r/g, "")
-    .slice(0, maxLength);
 
 export default function Inventory() {
   const { user } = useAuth();
@@ -167,11 +165,14 @@ export default function Inventory() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [expiryStatusFilter, setExpiryStatusFilter] = useState("");
+  const [addedByFilter, setAddedByFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState("");
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder, setSortOrder] = useState("desc");
 
   const [selectedItem, setSelectedItem] = useState(null);
   const [editingItemId, setEditingItemId] = useState("");
+  const [editingItemLocks, setEditingItemLocks] = useState({});
   const [itemEditModalOpen, setItemEditModalOpen] = useState(false);
   const [itemEditSubmitting, setItemEditSubmitting] = useState(false);
 
@@ -196,6 +197,7 @@ export default function Inventory() {
 
   const [tablePage, setTablePage] = useState(1);
   const [archivePage, setArchivePage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_TABLE_PAGE_SIZE);
 
   const [operationsOpen, setOperationsOpen] = useState(false);
   const [plannerOpen, setPlannerOpen] = useState(false);
@@ -233,6 +235,8 @@ export default function Inventory() {
   const releaseProofInputRef = useRef(null);
   const expiredNoticeCountRef = useRef(0);
   const minExpirationDate = useMemo(() => getTodayInputDate(), []);
+  const itemEditLocks = editingItemLocks || {};
+  const isItemClassificationLocked = Boolean(itemEditLocks.classificationLocked);
 
   const normalize = useCallback((val) => (val || "").toString().trim().toLowerCase(), []);
 
@@ -276,8 +280,12 @@ export default function Inventory() {
   };
 
   const getSourceLabel = (value) => {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (!normalized) return "-";
+    if (normalized === "external") return "Donated";
+    if (normalized === "internal") return "LGU";
+    if (normalized === "government") return "Government";
     const v = String(value || "").trim();
-    if (!v) return "-";
     return v.charAt(0).toUpperCase() + v.slice(1);
   };
 
@@ -601,9 +609,12 @@ export default function Inventory() {
     search,
     categoryFilter,
     expiryStatusFilter,
+    addedByFilter,
+    dateFilter,
     sortBy,
     sortOrder,
-    goodsDisplayMode
+    goodsDisplayMode,
+    rowsPerPage
   ]);
 
   useEffect(() => {
@@ -611,12 +622,6 @@ export default function Inventory() {
       setViewType(defaultViewType);
     }
   }, [allowedViewTypes, defaultViewType, viewType]);
-
-  useEffect(() => {
-    if (viewType === "goods" && (sortBy === "name" || sortBy === "category")) {
-      setSortBy("createdAt");
-    }
-  }, [viewType, sortBy]);
 
   useEffect(() => {
     setTemplatePage(1);
@@ -927,6 +932,19 @@ export default function Inventory() {
       items = items.filter((item) => getExpiryStatus(item) === expiryStatusFilter);
     }
 
+    if (addedByFilter) {
+      items = items.filter(
+        (item) => normalize(item.addedBy) === normalize(addedByFilter)
+      );
+    }
+
+    if (dateFilter) {
+      items = items.filter((item) => {
+        if (!item.createdAt) return false;
+        return new Date(item.createdAt).toISOString().slice(0, 10) === dateFilter;
+      });
+    }
+
     items.sort((a, b) => {
       let valA = a[sortBy];
       let valB = b[sortBy];
@@ -953,6 +971,8 @@ export default function Inventory() {
     search,
     categoryFilter,
     expiryStatusFilter,
+    addedByFilter,
+    dateFilter,
     sortBy,
     sortOrder,
     normalize
@@ -972,6 +992,19 @@ export default function Inventory() {
           normalize(item.sourceName).includes(q) ||
           normalize(item.addedBy).includes(q)
         );
+      });
+    }
+
+    if (addedByFilter) {
+      items = items.filter(
+        (item) => normalize(item.addedBy) === normalize(addedByFilter)
+      );
+    }
+
+    if (dateFilter) {
+      items = items.filter((item) => {
+        if (!item.createdAt) return false;
+        return new Date(item.createdAt).toISOString().slice(0, 10) === dateFilter;
       });
     }
 
@@ -996,7 +1029,16 @@ export default function Inventory() {
     });
 
     return items;
-  }, [activeMonetary, search, sortBy, sortOrder, normalize, getReferenceNumber]);
+  }, [
+    activeMonetary,
+    search,
+    addedByFilter,
+    dateFilter,
+    sortBy,
+    sortOrder,
+    normalize,
+    getReferenceNumber
+  ]);
 
   const activeApplianceRows = useMemo(() => {
     let items = [...activeAppliances];
@@ -1023,6 +1065,19 @@ export default function Inventory() {
       );
     }
 
+    if (addedByFilter) {
+      items = items.filter(
+        (item) => normalize(item.addedBy) === normalize(addedByFilter)
+      );
+    }
+
+    if (dateFilter) {
+      items = items.filter((item) => {
+        if (!item.createdAt) return false;
+        return new Date(item.createdAt).toISOString().slice(0, 10) === dateFilter;
+      });
+    }
+
     items.sort((a, b) => {
       let valA = a[sortBy];
       let valB = b[sortBy];
@@ -1044,7 +1099,16 @@ export default function Inventory() {
     });
 
     return items;
-  }, [activeAppliances, search, categoryFilter, sortBy, sortOrder, normalize]);
+  }, [
+    activeAppliances,
+    search,
+    categoryFilter,
+    addedByFilter,
+    dateFilter,
+    sortBy,
+    sortOrder,
+    normalize
+  ]);
 
   const archivedRows = useMemo(() => {
     const sourceData =
@@ -1082,6 +1146,19 @@ export default function Inventory() {
       items = items.filter((item) => getExpiryStatus(item) === expiryStatusFilter);
     }
 
+    if (addedByFilter) {
+      items = items.filter(
+        (item) => normalize(item.addedBy) === normalize(addedByFilter)
+      );
+    }
+
+    if (dateFilter) {
+      items = items.filter((item) => {
+        if (!item.createdAt) return false;
+        return new Date(item.createdAt).toISOString().slice(0, 10) === dateFilter;
+      });
+    }
+
     items.sort((a, b) => {
       let valA = a[sortBy];
       let valB = b[sortBy];
@@ -1111,11 +1188,44 @@ export default function Inventory() {
     search,
     categoryFilter,
     expiryStatusFilter,
+    addedByFilter,
+    dateFilter,
     sortBy,
     sortOrder,
     normalize,
     getReferenceNumber
   ]);
+
+  const availableFilterRows = useMemo(() => {
+    if (mode === "active") {
+      if (viewType === "goods") return mergedActiveGoods;
+      if (viewType === "appliance") return activeAppliances;
+      return activeMonetary;
+    }
+
+    if (viewType === "goods") return archivedGoods;
+    if (viewType === "appliance") return archivedAppliances;
+    return archivedMonetary;
+  }, [
+    mode,
+    viewType,
+    mergedActiveGoods,
+    activeAppliances,
+    activeMonetary,
+    archivedGoods,
+    archivedAppliances,
+    archivedMonetary
+  ]);
+
+  const addedByOptions = useMemo(() => {
+    return [
+      ...new Set(
+        availableFilterRows
+          .map((item) => String(item?.addedBy || "").trim())
+          .filter(Boolean)
+      )
+    ].sort((a, b) => a.localeCompare(b));
+  }, [availableFilterRows]);
 
   const tableRows =
     mode === "active"
@@ -1126,20 +1236,13 @@ export default function Inventory() {
         : activeMonetaryRows
       : archivedRows;
 
-  const tablePageCount =
-    mode === "active"
-      ? Math.max(1, Math.ceil(tableRows.length / TABLE_PAGE_SIZE))
-      : Math.max(1, Math.ceil(tableRows.length / ARCHIVE_PAGE_SIZE));
+  const tablePageCount = Math.max(1, Math.ceil(tableRows.length / rowsPerPage));
 
   const paginatedTableRows = useMemo(() => {
-    if (mode === "active") {
-      const start = (tablePage - 1) * TABLE_PAGE_SIZE;
-      return tableRows.slice(start, start + TABLE_PAGE_SIZE);
-    }
-
-    const start = (archivePage - 1) * ARCHIVE_PAGE_SIZE;
-    return tableRows.slice(start, start + ARCHIVE_PAGE_SIZE);
-  }, [tableRows, mode, tablePage, archivePage]);
+    const currentPage = mode === "active" ? tablePage : archivePage;
+    const start = (currentPage - 1) * rowsPerPage;
+    return tableRows.slice(start, start + rowsPerPage);
+  }, [tableRows, mode, tablePage, archivePage, rowsPerPage]);
 
   useEffect(() => {
     if (tablePage > tablePageCount) setTablePage(1);
@@ -1367,6 +1470,30 @@ export default function Inventory() {
     );
   }, [selectedTemplateCard, templateHealthById]);
 
+  const selectedTemplateHealth = useMemo(() => {
+    if (!selectedTemplate) {
+      return {
+        itemHealth: [],
+        unavailableCount: 0,
+        lowCount: 0,
+        expiringCount: 0,
+        expiredCount: 0,
+        hasBlockedItems: false,
+      };
+    }
+
+    return (
+      templateHealthById[String(selectedTemplate._id)] || {
+        itemHealth: [],
+        unavailableCount: 0,
+        lowCount: 0,
+        expiringCount: 0,
+        expiredCount: 0,
+        hasBlockedItems: false,
+      }
+    );
+  }, [selectedTemplate, templateHealthById]);
+
   const computedTemplateItems = useMemo(() => {
     if (!selectedTemplate) return [];
 
@@ -1575,10 +1702,27 @@ export default function Inventory() {
     setSearch("");
     setCategoryFilter("");
     setExpiryStatusFilter("");
+    setAddedByFilter("");
+    setDateFilter("");
     setSortBy("createdAt");
     setSortOrder("desc");
     setTablePage(1);
     setArchivePage(1);
+  };
+
+  const handleSort = (key) => {
+    if (sortBy === key) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setSortBy(key);
+    setSortOrder("asc");
+  };
+
+  const sortArrow = (key) => {
+    if (sortBy !== key) return "";
+    return sortOrder === "asc" ? "ASC" : "DESC";
   };
 
   const toggleCategoryExpanded = (categoryKey) => {
@@ -1853,6 +1997,7 @@ useEffect(() => {
         : "goods";
 
     setEditingItemId(item?._id || "");
+    setEditingItemLocks(item?.editLocks || {});
     setItemFormErrors({});
     setItemForm({
       type: itemType,
@@ -1905,6 +2050,7 @@ useEffect(() => {
     if (itemEditSubmitting) return;
     setItemEditModalOpen(false);
     setEditingItemId("");
+    setEditingItemLocks({});
     setItemFormErrors({});
     setItemForm({
       type: "goods",
@@ -2039,6 +2185,17 @@ useEffect(() => {
 
   const handleItemFormChange = (e) => {
     const { name, value } = e.target;
+    const isProtectedField =
+      name === "type" ||
+      name === "category" ||
+      name === "customCategory" ||
+      name === "unit" ||
+      name === "unitSelect" ||
+      name === "sourceType";
+
+    if (isItemClassificationLocked && isProtectedField) {
+      return;
+    }
 
     if (name === "quantity" || name === "amount") {
       if (value === "") {
@@ -2053,27 +2210,40 @@ useEffect(() => {
     } else if (name === "name") {
       setItemForm((prev) => ({
         ...prev,
-        name: sanitizeCompactText(value, MAX_NAME_LENGTH),
+        name: sanitizeInventoryCompactText(value, MAX_NAME_LENGTH),
       }));
     } else if (name === "sourceName") {
       setItemForm((prev) => ({
         ...prev,
-        sourceName: sanitizeCompactText(value, MAX_SOURCE_NAME_LENGTH),
+        sourceName: sanitizeInventoryCompactText(value, MAX_SOURCE_NAME_LENGTH, {
+          maxTokenLength: 32,
+        }),
       }));
     } else if (name === "description") {
       setItemForm((prev) => ({
         ...prev,
-        description: sanitizeNoteText(value, MAX_DESCRIPTION_LENGTH),
+        description: sanitizeInventoryNoteText(value, MAX_DESCRIPTION_LENGTH),
+      }));
+    } else if (name === "referenceNumber") {
+      setItemForm((prev) => ({
+        ...prev,
+        referenceNumber: sanitizeInventoryReferenceText(value),
       }));
     } else if (name === "customCategory") {
       setItemForm((prev) => ({
         ...prev,
-        customCategory: sanitizeCompactText(value, MAX_CUSTOM_CATEGORY_LENGTH).toLowerCase(),
+        customCategory: sanitizeInventoryCompactText(
+          value,
+          MAX_CUSTOM_CATEGORY_LENGTH,
+          { maxTokenLength: 20 }
+        ).toLowerCase(),
       }));
     } else if (name === "unit") {
       setItemForm((prev) => ({
         ...prev,
-        unit: sanitizeCompactText(value, MAX_UNIT_LENGTH).toLowerCase(),
+        unit: sanitizeInventoryCompactText(value, MAX_UNIT_LENGTH, {
+          maxTokenLength: 16,
+        }).toLowerCase(),
       }));
     } else if (name === "unitSelect") {
       setItemForm((prev) => ({
@@ -2168,8 +2338,8 @@ useEffect(() => {
   };
 
   const saveTemplate = async () => {
-    const cleanName = String(templateName || "").trim();
-    const cleanDescription = String(templateDescription || "").trim();
+    const cleanName = sanitizeTemplateName(templateName).trim();
+    const cleanDescription = sanitizeTemplateDescription(templateDescription).trim();
 
     if (!cleanName) {
       pushNotification("Template name is required.", "error");
@@ -2489,6 +2659,14 @@ useEffect(() => {
       if (selectedRequestPendingFood) {
         if (!selectedTemplateId) {
           throw new Error("Select a food pack template.");
+        }
+
+        if (selectedTemplateHealth.hasBlockedItems) {
+          throw new Error(
+            selectedTemplateHealth.expiredCount > 0
+              ? "The selected template is locked because it contains an expired item."
+              : "The selected template is locked because one or more items are not available."
+          );
         }
 
         const packCount = Number(foodPacksToRelease || 0);
@@ -2905,6 +3083,12 @@ useEffect(() => {
                           </button>
                         </div>
 
+                        {isItemClassificationLocked ? (
+                          <div className="inventory-edit-lock-banner">
+                            Type, category, unit, and provider are locked because this item has already been used in a relief release.
+                          </div>
+                        ) : null}
+
                         <div className="inventory-modal-grid">
                       <div className="release-selection-field">
                         <label>Name</label>
@@ -2928,6 +3112,7 @@ useEffect(() => {
                           className="input"
                           value={itemForm.type}
                           onChange={handleItemFormChange}
+                          disabled={isItemClassificationLocked}
                         >
                           {allowedViewTypes.includes("goods") ? (
                             <option value="goods">Goods</option>
@@ -2950,6 +3135,7 @@ useEffect(() => {
                               className="input"
                               value={itemForm.category}
                               onChange={handleItemFormChange}
+                              disabled={isItemClassificationLocked}
                             >
                               <option value="">Select category</option>
                               {editCategoryOptions.map((category) => (
@@ -2974,6 +3160,7 @@ useEffect(() => {
                                   value={itemForm.customCategory}
                                   onChange={handleItemFormChange}
                                   placeholder="e.g. medicine, water, shelter kits"
+                                  disabled={isItemClassificationLocked}
                                 />
                                 {itemFormErrors.customCategory ? (
                                   <span className="error-text">
@@ -3009,6 +3196,7 @@ useEffect(() => {
                               className="input"
                               value={selectedEditUnitValue}
                               onChange={handleItemFormChange}
+                              disabled={isItemClassificationLocked}
                             >
                               <option value="">Select unit</option>
                               {editUnitOptions.map((unit) => (
@@ -3027,6 +3215,7 @@ useEffect(() => {
                                 value={itemForm.unit}
                                 onChange={handleItemFormChange}
                                 placeholder="e.g. tray, bundle, pair"
+                                disabled={isItemClassificationLocked}
                               />
                             ) : null}
                             {itemFormErrors.unit ? (
@@ -3063,6 +3252,7 @@ useEffect(() => {
                               className="input"
                               value={itemForm.category}
                               onChange={handleItemFormChange}
+                              disabled={isItemClassificationLocked}
                             >
                               <option value="">Select category</option>
                               {editCategoryOptions.map((category) => (
@@ -3087,6 +3277,7 @@ useEffect(() => {
                                   value={itemForm.customCategory}
                                   onChange={handleItemFormChange}
                                   placeholder="e.g. radio equipment"
+                                  disabled={isItemClassificationLocked}
                                 />
                                 {itemFormErrors.customCategory ? (
                                   <span className="error-text">
@@ -3131,7 +3322,13 @@ useEffect(() => {
                             ) : null}
                           </div>
 
-                          <div className="release-selection-field">
+                          <div
+                            className={`release-selection-field ${
+                              itemForm.condition !== "used_item"
+                                ? "release-selection-field-disabled"
+                                : ""
+                            }`}
+                          >
                             <label>Usage Duration</label>
                             <input
                               type="text"
@@ -3141,6 +3338,11 @@ useEffect(() => {
                               onChange={handleItemFormChange}
                               disabled={itemForm.condition !== "used_item"}
                             />
+                            {itemForm.condition !== "used_item" ? (
+                              <small className="inventory-field-helper">
+                                Enabled only for used appliances.
+                              </small>
+                            ) : null}
                             {itemFormErrors.usageDuration ? (
                               <span className="error-text">
                                 {itemFormErrors.usageDuration}
@@ -3175,6 +3377,7 @@ useEffect(() => {
                               className="input"
                               value={itemForm.referenceNumber}
                               onChange={handleItemFormChange}
+                              maxLength={MAX_INVENTORY_REFERENCE_LENGTH}
                             />
                             {itemFormErrors.referenceNumber ? (
                               <span className="error-text">{itemFormErrors.referenceNumber}</span>
@@ -3184,21 +3387,22 @@ useEffect(() => {
                       )}
 
                       <div className="release-selection-field">
-                        <label>Source Type</label>
+                        <label>Provider</label>
                         <select
                           name="sourceType"
                           className="input"
                           value={itemForm.sourceType}
                           onChange={handleItemFormChange}
+                          disabled={isItemClassificationLocked}
                         >
-                          <option value="external">External</option>
+                          <option value="external">Donated</option>
                           <option value="government">Government</option>
-                          <option value="internal">Internal</option>
+                          <option value="internal">LGU</option>
                         </select>
                       </div>
 
                       <div className="release-selection-field">
-                        <label>Source Name</label>
+                        <label>Provider Name</label>
                         <input
                           type="text"
                           name="sourceName"
@@ -3290,9 +3494,11 @@ useEffect(() => {
                             {paginatedTemplates.map((template) => {
                               const templateHealth =
                                 templateHealthById[String(template._id)] || {
+                                  unavailableCount: 0,
                                   lowCount: 0,
                                   expiringCount: 0,
                                   expiredCount: 0,
+                                  hasBlockedItems: false,
                                 };
 
                               return (
@@ -3301,7 +3507,7 @@ useEffect(() => {
                                   key={template._id}
                                   className={`template-summary-card ${
                                     selectedTemplateCardId === template._id ? "active" : ""
-                                  }`}
+                                  } ${templateHealth.hasBlockedItems ? "blocked" : ""}`}
                                   onClick={() =>
                                     setSelectedTemplateCardId((prev) =>
                                       prev === template._id ? "" : template._id
@@ -3318,6 +3524,11 @@ useEffect(() => {
                                       <span className="badge available">
                                         {(template.items || []).length} Item(s)
                                       </span>
+                                      {templateHealth.unavailableCount > 0 ? (
+                                        <span className="badge badge-unavailable">
+                                          {templateHealth.unavailableCount} Not Available
+                                        </span>
+                                      ) : null}
                                       {templateHealth.lowCount > 0 ? (
                                         <span className="badge low">
                                           {templateHealth.lowCount} Low
@@ -3389,6 +3600,11 @@ useEffect(() => {
                                 <span className="badge available">
                                   {(selectedTemplateCard.items || []).length} Item(s)
                                 </span>
+                                {selectedTemplateCardHealth.unavailableCount > 0 ? (
+                                  <span className="badge badge-unavailable">
+                                    {selectedTemplateCardHealth.unavailableCount} Not Available
+                                  </span>
+                                ) : null}
                                 {selectedTemplateCardHealth.lowCount > 0 ? (
                                   <span className="badge low">
                                     {selectedTemplateCardHealth.lowCount} Low
@@ -3454,9 +3670,11 @@ useEffect(() => {
                                       <td>{Number(entry.item?.quantityPerPack || 0)}</td>
                                       <td>
                                         <span
-                                          className={`badge ${getStockBadgeClass(
-                                            entry.availableQuantity
-                                          )}`}
+                                          className={`badge ${
+                                            entry.isUnavailable
+                                              ? "badge-unavailable"
+                                              : getStockBadgeClass(entry.availableQuantity)
+                                          }`}
                                         >
                                           {Number(entry.availableQuantity || 0)}
                                         </span>
@@ -3483,7 +3701,19 @@ useEffect(() => {
                                       </td>
                                       <td>
                                         <div className="template-row-status">
-                                          {entry.isLow ? (
+                                          {entry.isUnavailable ? (
+                                            <span className="badge badge-unavailable">
+                                              Not Available
+                                            </span>
+                                          ) : entry.isExpired ? (
+                                            <span className="badge badge-expiry-expired">
+                                              Expired
+                                            </span>
+                                          ) : entry.isExpiring ? (
+                                            <span className="badge badge-expiry-soon">
+                                              Expiring Soon
+                                            </span>
+                                          ) : entry.isLow ? (
                                             <span
                                               className={`badge ${getStockBadgeClass(
                                                 entry.availableQuantity
@@ -3741,11 +3971,27 @@ useEffect(() => {
                                         }
                                       >
                                         <option value="">Select template</option>
-                                        {foodPackTemplates.map((template) => (
-                                          <option key={template._id} value={template._id}>
-                                            {template.name}
-                                          </option>
-                                        ))}
+                                        {foodPackTemplates.map((template) => {
+                                          const health =
+                                            templateHealthById[String(template._id)] || {};
+                                          const isBlocked = Boolean(health.hasBlockedItems);
+                                          const suffix =
+                                            health.expiredCount > 0
+                                              ? " (Locked: expired item)"
+                                              : health.unavailableCount > 0
+                                              ? " (Locked: not available)"
+                                              : "";
+
+                                          return (
+                                            <option
+                                              key={template._id}
+                                              value={template._id}
+                                              disabled={isBlocked}
+                                            >
+                                              {`${template.name}${suffix}`}
+                                            </option>
+                                          );
+                                        })}
                                       </select>
                                     </div>
 
@@ -3776,6 +4022,14 @@ useEffect(() => {
                                           {selectedTemplate.description || "No description."}
                                         </span>
                                       </div>
+
+                                      {selectedTemplateHealth.hasBlockedItems ? (
+                                        <div className="release-feedback error">
+                                          {selectedTemplateHealth.expiredCount > 0
+                                            ? "This template is locked for release because it contains an expired inventory item. Use or archive the earliest-expiring stock first."
+                                            : "This template is locked for release because one or more items are not available in inventory."}
+                                        </div>
+                                      ) : null}
 
                                       {computedTemplateItems.length === 0 ? (
                                         <div className="release-empty">
@@ -3829,7 +4083,10 @@ useEffect(() => {
                                       type="button"
                                       className="btn btn-primary"
                                       onClick={goToNextJourneyStep}
-                                      disabled={!journeyCompletionState.food}
+                                      disabled={
+                                        !journeyCompletionState.food ||
+                                        selectedTemplateHealth.hasBlockedItems
+                                      }
                                     >
                                       Continue to {getJourneyStepMeta(nextJourneyStep).shortLabel}
                                     </button>
@@ -4444,103 +4701,134 @@ useEffect(() => {
                     </div>
                   </div>
 
-                  <div className="inventory-controls inventory-controls-clean inventory-controls-expanded">
-                    <input
-                      type="text"
-                      className="input inventory-control-input inventory-control-search"
-                      placeholder={
-                        viewType === "goods"
-                          ? "Search item, category, source, notes..."
-                          : viewType === "appliance"
-                          ? "Search appliance, category, source, notes..."
-                          : "Search donation, source, description..."
-                      }
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
+                  <div className="filter-toolbar inventory-filter-toolbar-5 inventory-filter-toolbar-inventory">
+                    <div className="filter-group search-group">
+                      <label>Search</label>
+                      <input
+                        type="text"
+                        className="input"
+                        placeholder={
+                          viewType === "goods"
+                            ? "Search item name, category, notes, source..."
+                            : viewType === "appliance"
+                            ? "Search appliance name, category, notes, source..."
+                            : "Search donor, notes, source..."
+                        }
+                        value={search}
+                        onChange={(e) =>
+                          setSearch(sanitizeInventorySearchText(e.target.value))
+                        }
+                        maxLength={MAX_SEARCH_LENGTH}
+                      />
+                    </div>
 
-                    {viewType === "goods" || viewType === "appliance" ? (
+                    {(viewType === "goods" || viewType === "appliance") && (
+                      <div className="filter-group">
+                        <label>Category</label>
+                        <select
+                          className="input"
+                          value={categoryFilter}
+                          onChange={(e) => setCategoryFilter(e.target.value)}
+                        >
+                          <option value="">All Categories</option>
+                          {(mode === "active"
+                            ? activeCategoryOptions
+                            : archivedCategoryOptions
+                          ).map((category) => (
+                            <option key={category} value={category}>
+                              {getCategoryLabel(category)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {viewType === "goods" && (
+                      <div className="filter-group">
+                        <label>Expiry Status</label>
+                        <select
+                          className="input"
+                          value={expiryStatusFilter}
+                          onChange={(e) => setExpiryStatusFilter(e.target.value)}
+                        >
+                          <option value="">All</option>
+                          <option value="expired">Expired</option>
+                          <option value="soon">Expiring Soon</option>
+                          <option value="ok">Not expiring</option>
+                          <option value="none">No Expiry</option>
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="filter-group">
+                      <label>Added By</label>
                       <select
-                        className="input inventory-control-select"
-                        value={categoryFilter}
-                        onChange={(e) => setCategoryFilter(e.target.value)}
+                        className="input"
+                        value={addedByFilter}
+                        onChange={(e) => setAddedByFilter(e.target.value)}
                       >
-                        <option value="">All Categories</option>
-                        {(mode === "active"
-                          ? activeCategoryOptions
-                          : archivedCategoryOptions
-                        ).map((category) => (
-                          <option key={category} value={category}>
-                            {getCategoryLabel(category)}
+                        <option value="">All Users</option>
+                        {addedByOptions.map((user) => (
+                          <option key={user} value={user}>
+                            {user}
                           </option>
                         ))}
                       </select>
-                    ) : (
-                      <div className="inventory-control-placeholder" />
-                    )}
+                    </div>
 
-                    {viewType === "goods" ? (
-                      <select
-                        className="input inventory-control-select"
-                        value={expiryStatusFilter}
-                        onChange={(e) => setExpiryStatusFilter(e.target.value)}
+                    <div className="filter-group">
+                      <label>Date</label>
+                      <input
+                        type="date"
+                        className="input"
+                        value={dateFilter}
+                        onChange={(e) => setDateFilter(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="filter-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={clearFilters}
                       >
-                        <option value="">All Expiry</option>
-                        <option value="expired">Expired</option>
-                        <option value="soon">Expiring Soon</option>
-                        <option value="ok">Not expiring</option>
-                        <option value="none">No Expiry</option>
-                      </select>
-                    ) : (
-                      <div className="inventory-control-placeholder" />
-                    )}
-
-                    <select
-                      className="input inventory-control-select"
-                      value={sortBy}
-                      onChange={(e) => setSortBy(e.target.value)}
-                    >
-                      {viewType === "goods" ? (
-                        <>
-                          <option value="createdAt">Date</option>
-                          <option value="quantity">Quantity</option>
-                          <option value="expirationDate">Expiration</option>
-                          <option value="name">Name</option>
-                        </>
-                      ) : viewType === "appliance" ? (
-                        <>
-                          <option value="createdAt">Date</option>
-                          <option value="name">Name</option>
-                          <option value="quantity">Quantity</option>
-                        </>
-                      ) : (
-                        <>
-                          <option value="createdAt">Date</option>
-                          <option value="name">Name</option>
-                          <option value="amount">Amount</option>
-                        </>
-                      )}
-                    </select>
-
-                    <select
-                      className="input inventory-control-select"
-                      value={sortOrder}
-                      onChange={(e) => setSortOrder(e.target.value)}
-                    >
-                      <option value="desc">Desc</option>
-                      <option value="asc">Asc</option>
-                    </select>
-
-                    <button
-                      type="button"
-                      className="btn btn-secondary inventory-clear-btn"
-                      onClick={clearFilters}
-                    >
-                      <FaTimes className="btn-icon" />
-                      Clear
-                    </button>
+                        <FaTimes className="btn-icon" />
+                        Clear Filters
+                      </button>
+                    </div>
                   </div>
                 </div>
+
+                {!(mode === "active" &&
+                  viewType === "goods" &&
+                  goodsDisplayMode === "grouped") ? (
+                  <div className="table-topbar inventory-table-topbar">
+                    <div className="table-meta">
+                      <span>
+                        Showing <strong>{paginatedTableRows.length}</strong> of{" "}
+                        <strong>{tableRows.length}</strong> filtered record(s)
+                      </span>
+                    </div>
+
+                    <div className="rows-control">
+                      <label>Rows per page</label>
+                      <select
+                        value={rowsPerPage}
+                        onChange={(e) => {
+                          setRowsPerPage(Number(e.target.value));
+                          setTablePage(1);
+                          setArchivePage(1);
+                        }}
+                        className="rows-select"
+                      >
+                        <option value={5}>5</option>
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={50}>50</option>
+                      </select>
+                    </div>
+                  </div>
+                ) : null}
 
                 {loadingCurrent ? (
                   <div className="release-empty">Loading inventory...</div>
@@ -4668,17 +4956,59 @@ useEffect(() => {
                       <table className="inventory-table">
                         <thead>
                           <tr>
-                            <th>{viewType === "monetary" ? "Donation / Entry" : "Item"}</th>
+                            <th
+                              onClick={() => handleSort("name")}
+                              className="sortable"
+                            >
+                              {viewType === "monetary" ? "Name / Donor" : "Item Name"}{" "}
+                              <span>{sortArrow("name")}</span>
+                            </th>
                             {(viewType === "goods" || viewType === "appliance") && (
-                              <th>Category</th>
+                              <th
+                                onClick={() => handleSort("category")}
+                                className="sortable"
+                              >
+                                Category <span>{sortArrow("category")}</span>
+                              </th>
                             )}
-                            <th>{viewType === "monetary" ? "Amount" : "Quantity"}</th>
+                            <th
+                              onClick={() =>
+                                handleSort(viewType === "monetary" ? "amount" : "quantity")
+                              }
+                              className="sortable"
+                            >
+                              {viewType === "monetary" ? "Amount" : "Quantity"}{" "}
+                              <span>
+                                {sortArrow(
+                                  viewType === "monetary" ? "amount" : "quantity"
+                                )}
+                              </span>
+                            </th>
                             {viewType === "goods" && <th>Unit</th>}
-                            {viewType === "goods" && <th>Expiration</th>}
+                            {viewType === "goods" && (
+                              <th
+                                onClick={() => handleSort("expirationDate")}
+                                className="sortable"
+                              >
+                                Expiration <span>{sortArrow("expirationDate")}</span>
+                              </th>
+                            )}
                             {viewType === "appliance" && <th>Condition</th>}
                             <th>Source</th>
                             <th>Description</th>
-                            <th>Proof</th>
+                            <th>Files</th>
+                            <th
+                              onClick={() => handleSort("addedBy")}
+                              className="sortable"
+                            >
+                              Added By <span>{sortArrow("addedBy")}</span>
+                            </th>
+                            <th
+                              onClick={() => handleSort("createdAt")}
+                              className="sortable"
+                            >
+                              Created <span>{sortArrow("createdAt")}</span>
+                            </th>
                             <th>Actions</th>
                           </tr>
                         </thead>
@@ -4699,7 +5029,11 @@ useEffect(() => {
                               </td>
 
                               {(viewType === "goods" || viewType === "appliance") && (
-                                <td>{getCategoryLabel(item.category)}</td>
+                                <td>
+                                  <span className="badge badge-category">
+                                    {getCategoryLabel(item.category)}
+                                  </span>
+                                </td>
                               )}
 
                               <td>
@@ -4769,6 +5103,13 @@ useEffect(() => {
                                   : item.description || "-"}
                               </td>
                               <td>{renderProofFiles(item.proofFiles)}</td>
+                              <td>{item.addedBy || "-"}</td>
+                              <td>
+                                <div className="table-mini-stack">
+                                  <strong>{formatExpiryDate(item.createdAt)}</strong>
+                                  <span>{formatDate(item.createdAt)}</span>
+                                </div>
+                              </td>
                               <td>{renderRowActions(item)}</td>
                             </tr>
                           ))}
@@ -4792,7 +5133,7 @@ useEffect(() => {
                             }
                           }}
                         >
-                          Prev
+                          Previous
                         </button>
                         <span>
                           Page {mode === "active" ? tablePage : archivePage} of{" "}
@@ -4902,11 +5243,11 @@ useEffect(() => {
                             <strong>{selectedItem.usageDuration || "-"}</strong>
                           </div>
                           <div className="modal-stat">
-                            <span>Source Type</span>
+                            <span>Provider</span>
                             <strong>{getSourceLabel(selectedItem.sourceType)}</strong>
                           </div>
                           <div className="modal-stat">
-                            <span>Source Name</span>
+                            <span>Provider Name</span>
                             <strong>{selectedItem.sourceName || "-"}</strong>
                           </div>
                         </>
@@ -4921,11 +5262,11 @@ useEffect(() => {
                             <strong>{getReferenceNumber(selectedItem) || "-"}</strong>
                           </div>
                           <div className="modal-stat">
-                            <span>Source Type</span>
+                            <span>Provider</span>
                             <strong>{getSourceLabel(selectedItem.sourceType)}</strong>
                           </div>
                           <div className="modal-stat">
-                            <span>Source Name</span>
+                            <span>Provider Name</span>
                             <strong>{selectedItem.sourceName || "-"}</strong>
                           </div>
                         </>
@@ -5095,7 +5436,10 @@ useEffect(() => {
                             className="input"
                             placeholder="Enter template name"
                             value={templateName}
-                            onChange={(e) => setTemplateName(e.target.value)}
+                            onChange={(e) =>
+                              setTemplateName(sanitizeTemplateName(e.target.value))
+                            }
+                            maxLength={MAX_TEMPLATE_NAME_LENGTH}
                           />
                         </div>
 
@@ -5106,7 +5450,12 @@ useEffect(() => {
                             className="input"
                             placeholder="Optional description"
                             value={templateDescription}
-                            onChange={(e) => setTemplateDescription(e.target.value)}
+                            onChange={(e) =>
+                              setTemplateDescription(
+                                sanitizeTemplateDescription(e.target.value)
+                              )
+                            }
+                            maxLength={MAX_TEMPLATE_DESCRIPTION_LENGTH}
                           />
                         </div>
                       </div>

@@ -54,6 +54,15 @@
   align-content: start;
 }
 
+.admin-content:has(.evac-dashboard-page) .admin-content-inner {
+  overflow: visible;
+  min-height: max-content;
+}
+
+.admin-content:has(.evac-dashboard-page) .shell-page-content {
+  min-height: max-content;
+}
+
 .barangay-mode-page .evac-dashboard-header {
   background: linear-gradient(135deg, #ffffff 0%, #f2fbf4 100%);
 }
@@ -286,6 +295,95 @@
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
+}
+
+.summary-card,
+.evac-left-panel,
+.evac-map-panel,
+.evac-right-panel,
+.barangay-card,
+.place-card,
+.ops-guidance-card,
+.detail-kpi-card,
+.ops-card,
+.meta-card,
+.history-card,
+.empty-state-card,
+.loading-card,
+.evac-loading-card,
+.details-overview-block,
+.map-legend-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.summary-card::after,
+.evac-left-panel::after,
+.evac-map-panel::after,
+.evac-right-panel::after,
+.barangay-card::after,
+.place-card::after,
+.ops-guidance-card::after,
+.detail-kpi-card::after,
+.ops-card::after,
+.meta-card::after,
+.history-card::after,
+.empty-state-card::after,
+.loading-card::after,
+.evac-loading-card::after,
+.details-overview-block::after,
+.map-legend-card::after {
+  content: "";
+  position: absolute;
+  right: -22px;
+  bottom: -26px;
+  width: 88px;
+  height: 88px;
+  border-radius: 999px;
+  background: rgba(20, 83, 45, 0.06);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.summary-card.warning::after,
+.ops-guidance-card.warning::after,
+.history-card.warning::after {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.summary-card.danger::after,
+.ops-guidance-card.danger::after,
+.history-card.danger::after {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.summary-card.accent::after {
+  background: rgba(124, 58, 237, 0.08);
+}
+
+.summary-card.muted::after,
+.summary-card.neutral::after {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.summary-card > *,
+.evac-left-panel > *,
+.evac-map-panel > *,
+.evac-right-panel > *,
+.barangay-card > *,
+.place-card > *,
+.ops-guidance-card > *,
+.detail-kpi-card > *,
+.ops-card > *,
+.meta-card > *,
+.history-card > *,
+.empty-state-card > *,
+.loading-card > *,
+.evac-loading-card > *,
+.details-overview-block > *,
+.map-legend-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .summary-card {
@@ -535,8 +633,7 @@
 .evac-left-panel,
 .evac-right-panel,
 .evac-map-panel {
-  min-height: 690px;
-  max-height: 690px;
+  height: clamp(480px, calc(100dvh - 340px), 690px);
 }
 
 .evac-left-panel,
@@ -581,11 +678,17 @@
   flex-wrap: wrap;
 }
 
+.map-control-btn.is-active {
+  background: #eef8f0;
+  color: var(--ev-green);
+  border-color: #b9d5c0;
+}
+
 /* map */
 .map-stage {
   position: relative;
-  min-height: 570px;
-  height: 570px;
+  min-height: 0;
+  height: 100%;
   overflow: hidden;
   background: #edf4ef;
 }
@@ -620,10 +723,11 @@
   min-width: 152px;
   padding: 12px 12px 10px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.96);
+  background: rgba(255, 255, 255, 0.82);
   border: 1px solid var(--ev-border);
   box-shadow: var(--ev-shadow-soft);
   backdrop-filter: blur(6px);
+  pointer-events: none;
 }
 
 .map-legend-title {
@@ -2099,6 +2203,12 @@
   line-height: 1.25;
 }
 
+.field-note {
+  font-size: 11px;
+  font-weight: 700;
+  color: #5f725f;
+}
+
 .inline-field-row {
   display: grid;
   gap: 10px;
@@ -2617,6 +2727,7 @@
   .evac-left-panel,
   .evac-right-panel,
   .evac-map-panel {
+    height: auto;
     min-height: auto;
     max-height: none;
   }

@@ -342,6 +342,82 @@
   margin-left: auto;
 }
 
+.filter-toolbar {
+  display: grid;
+  grid-template-columns: 2fr repeat(3, minmax(160px, 1fr)) auto;
+  gap: 14px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid var(--inv-border);
+  border-radius: 18px;
+  background: #fbfdfb;
+}
+
+.inventory-filter-toolbar-inventory {
+  margin-bottom: 0;
+}
+
+.filter-group {
+  min-width: 0;
+}
+
+.filter-group label,
+.rows-control label {
+  display: block;
+  margin: 0 0 8px;
+  color: var(--inv-text-soft);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: end;
+}
+
+.search-group {
+  min-width: 220px;
+}
+
+.table-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.inventory-table-topbar {
+  margin-top: -2px;
+}
+
+.table-meta {
+  color: var(--inv-text-soft);
+  font-size: 14px;
+}
+
+.rows-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rows-control label {
+  margin: 0;
+}
+
+.rows-select {
+  width: 86px;
+  min-height: 40px;
+  border: 1px solid var(--inv-border-strong);
+  border-radius: 12px;
+  padding: 8px 12px;
+  background: #fff;
+  color: var(--inv-text);
+}
+
 .inventory-meta-pill {
   display: inline-flex;
   align-items: center;
@@ -508,17 +584,32 @@
 .table-main-cell {
   display: grid;
   gap: 4px;
+  min-width: 0;
+}
+
+.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sortable span {
+  margin-left: 4px;
+  color: var(--inv-text-soft);
+  font-size: 11px;
 }
 
 .table-main-cell strong {
   color: var(--inv-primary-3);
   font-size: 14px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .table-main-cell span {
   color: var(--inv-text-soft);
   font-size: 12px;
   line-height: 1.35;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 
@@ -530,6 +621,7 @@
 .table-mini-stack strong {
   color: var(--inv-primary-3);
   font-size: 13px;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 
@@ -537,6 +629,7 @@
   color: var(--inv-text-soft);
   font-size: 12px;
   line-height: 1.35;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 
@@ -1317,6 +1410,18 @@
   min-width: 0;
 }
 
+.badge-category {
+  background: #ecfdf3;
+  color: #15803d;
+  border: 1px solid #d1fae5;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.release-selection-field-disabled {
+  opacity: 0.6;
+}
+
 .release-selection-field-wide {
   grid-column: 1 / -1;
 }
@@ -1330,6 +1435,16 @@
   letter-spacing: 0.04em;
 }
 
+.release-selection-field-disabled label {
+  color: #8a978d;
+}
+
+.inventory-field-helper {
+  color: #7b8780;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .inventory-inline-input {
   margin-top: 10px;
 }
@@ -1340,6 +1455,18 @@
   margin-top: 6px;
   color: var(--inv-text-soft);
   font-size: 12px;
+}
+
+.inventory-edit-lock-banner {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid #d8e6d8;
+  border-radius: 14px;
+  background: #f4f8f3;
+  color: var(--inv-primary-3);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .release-static-value {
@@ -1834,6 +1961,20 @@
   box-shadow: 0 16px 30px rgba(20, 83, 45, 0.12);
 }
 
+.template-summary-card.blocked {
+  opacity: 0.6;
+  border-color: #e8c7c7;
+  background:
+    linear-gradient(135deg, rgba(255, 244, 244, 0.95) 0%, rgba(245, 247, 250, 0.7) 100%),
+    #ffffff;
+}
+
+.template-summary-card.blocked:hover {
+  border-color: #dca8a8;
+  transform: none;
+  box-shadow: var(--inv-shadow-soft);
+}
+
 .template-summary-top {
   display: flex;
   justify-content: space-between;
@@ -1953,6 +2094,12 @@
   align-items: center;
   gap: 6px;
   min-height: 30px;
+}
+
+.badge-unavailable {
+  border-color: #d8dce2;
+  background: #f3f4f6;
+  color: #6b7280;
 }
 
 .release-shell .template-card-grid + .template-detail-panel {
@@ -2578,6 +2725,10 @@
     grid-template-columns: 1fr 1fr;
   }
 
+  .filter-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .release-layout,
   .release-mode-layout,
   .template-builder-layout,
@@ -2646,6 +2797,21 @@
 
   .template-card-grid {
     grid-template-columns: 1fr;
+  }
+
+  .filter-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-actions,
+  .table-topbar,
+  .rows-control {
+    width: 100%;
+  }
+
+  .filter-actions .btn,
+  .rows-select {
+    width: 100%;
   }
 
   .template-detail-head,

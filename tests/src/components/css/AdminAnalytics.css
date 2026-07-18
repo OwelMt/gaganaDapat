@@ -13,12 +13,12 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 100%;
-  min-height: 0;
+  height: auto;
+  min-height: 100%;
   background:
     radial-gradient(circle at top left, rgba(255, 255, 255, 0.92), transparent 34%),
     linear-gradient(180deg, var(--page-top) 0%, var(--page-bottom) 100%);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .analytics-page,
@@ -30,9 +30,7 @@
 .analytics-page .analytics-scroll {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
+  overflow: visible;
 }
 
 .analytics-page .analytics-container {
@@ -40,6 +38,7 @@
   margin-inline: auto;
   padding: 14px 14px 26px;
   color: var(--text);
+  min-height: max-content;
 }
 
 /* HEADER */
@@ -226,6 +225,92 @@
 }
 
 /* SHARED CARDS USED BY TAB COMPONENTS */
+.analytics-page div[class$="-card"],
+.analytics-page div[class*="-card "],
+.analytics-page section[class$="-card"],
+.analytics-page section[class*="-card "],
+.analytics-page article[class$="-card"],
+.analytics-page article[class*="-card "] {
+  position: relative;
+  overflow: hidden;
+}
+
+.analytics-page div[class$="-card"]::after,
+.analytics-page div[class*="-card "]::after,
+.analytics-page section[class$="-card"]::after,
+.analytics-page section[class*="-card "]::after,
+.analytics-page article[class$="-card"]::after,
+.analytics-page article[class*="-card "]::after {
+  content: "";
+  position: absolute;
+  right: -22px;
+  bottom: -26px;
+  width: 88px;
+  height: 88px;
+  border-radius: 999px;
+  background: rgba(20, 83, 45, 0.06);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.analytics-page div[class$="-card"] > *,
+.analytics-page div[class*="-card "] > *,
+.analytics-page section[class$="-card"] > *,
+.analytics-page section[class*="-card "] > *,
+.analytics-page article[class$="-card"] > *,
+.analytics-page article[class*="-card "] > * {
+  position: relative;
+  z-index: 1;
+}
+
+.analytics-page div[class$="-card"].success::after,
+.analytics-page div[class*="-card "].success::after,
+.analytics-page section[class$="-card"].success::after,
+.analytics-page section[class*="-card "].success::after,
+.analytics-page article[class$="-card"].success::after,
+.analytics-page article[class*="-card "].success::after {
+  background: rgba(22, 163, 74, 0.1);
+}
+
+.analytics-page div[class$="-card"].warning::after,
+.analytics-page div[class*="-card "].warning::after,
+.analytics-page section[class$="-card"].warning::after,
+.analytics-page section[class*="-card "].warning::after,
+.analytics-page article[class$="-card"].warning::after,
+.analytics-page article[class*="-card "].warning::after,
+.analytics-page div[class$="-card"].notice::after,
+.analytics-page div[class*="-card "].notice::after,
+.analytics-page section[class$="-card"].notice::after,
+.analytics-page section[class*="-card "].notice::after,
+.analytics-page article[class$="-card"].notice::after,
+.analytics-page article[class*="-card "].notice::after {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.analytics-page div[class$="-card"].danger::after,
+.analytics-page div[class*="-card "].danger::after,
+.analytics-page section[class$="-card"].danger::after,
+.analytics-page section[class*="-card "].danger::after,
+.analytics-page article[class$="-card"].danger::after,
+.analytics-page article[class*="-card "].danger::after,
+.analytics-page div[class$="-card"].critical::after,
+.analytics-page div[class*="-card "].critical::after,
+.analytics-page section[class$="-card"].critical::after,
+.analytics-page section[class*="-card "].critical::after,
+.analytics-page article[class$="-card"].critical::after,
+.analytics-page article[class*="-card "].critical::after {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.analytics-page div[class$="-card"].info::after,
+.analytics-page div[class*="-card "].info::after,
+.analytics-page section[class$="-card"].info::after,
+.analytics-page section[class*="-card "].info::after,
+.analytics-page article[class$="-card"].info::after,
+.analytics-page article[class*="-card "].info::after {
+  background: rgba(37, 99, 235, 0.08);
+}
+
 .analytics-page .a-card {
   position: relative;
   overflow: hidden;

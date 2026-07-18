@@ -636,6 +636,10 @@
   flex-direction: column;
 }
 
+.donation-form-group-disabled {
+  opacity: 0.6;
+}
+
 .donation-form-group.span-2,
 .donation-form-group.full-width {
   grid-column: 1 / -1;
@@ -652,6 +656,10 @@
 
 .donation-form-group label span {
   color: var(--danger);
+}
+
+.donation-form-group-disabled label {
+  color: #7b8b80;
 }
 
 .input,
@@ -685,6 +693,23 @@
 .input::placeholder,
 .textarea::placeholder {
   color: #9ca3af;
+}
+
+.input:disabled,
+.textarea:disabled,
+.rows-select:disabled {
+  background: #f3f6f4;
+  color: #8a948d;
+  border-color: #d8e0d9;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.input-helper-text {
+  margin-top: 6px;
+  color: #6f7f73;
+  font-size: 0.76rem;
+  line-height: 1.35;
 }
 
 .input:focus,
@@ -954,6 +979,9 @@
 .cell-main {
   color: var(--text-main);
   font-weight: 600;
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .badge {
@@ -987,6 +1015,8 @@
   color: var(--text-main);
   text-transform: capitalize;
   font-size: 0.88rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .source-cell small,
@@ -1004,6 +1034,8 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .proof-list {

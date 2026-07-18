@@ -34,6 +34,8 @@ import {
   FaUser,
   FaUserFriends,
 } from "react-icons/fa";
+import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
+import { point as turfPoint } from "@turf/helpers";
 
 import DashboardShell from "./layout/DashboardShell";
 import EvacMap from "./map/Map";
@@ -44,10 +46,10 @@ const BASE_URL = API_BASE_URL;
 
 const TOAST_LIMIT = 3;
 const TOAST_DURATION = 10000;
-const MAX_SEARCH_LENGTH = 120;
-const MAX_EVAC_NAME_LENGTH = 80;
-const MAX_LOCATION_LENGTH = 120;
-const MAX_REMARKS_LENGTH = 400;
+const MAX_SEARCH_LENGTH = 80;
+const MAX_EVAC_NAME_LENGTH = 60;
+const MAX_LOCATION_LENGTH = 90;
+const MAX_REMARKS_LENGTH = 280;
 const MAX_CAPACITY_VALUE = 1000000;
 const MAX_FLOOR_AREA_VALUE = 1000000;
 
@@ -75,15 +77,29 @@ const initialFormState = {
 
 const sanitizeText = (value) => String(value ?? "").trim();
 const safeLower = (value) => String(value ?? "").toLowerCase().trim();
-const sanitizeInputText = (value, maxLength) =>
+const trimLongTokens = (value, maxTokenLength = 28) =>
   String(value ?? "")
-    .replace(/[^\w\s.,()/#&-]/g, "")
+    .split(/(\s+)/)
+    .map((token) => (/\s+/.test(token) ? token : token.slice(0, maxTokenLength)))
+    .join("");
+const clampRepeatedPunctuation = (value) =>
+  String(value ?? "").replace(/([!?.,:;'"#&/%()+$-])\1{2,}/g, "$1$1");
+const sanitizeInputText = (value, maxLength) =>
+  clampRepeatedPunctuation(
+    trimLongTokens(String(value ?? "").normalize("NFKC"), 24)
+  )
+    .replace(/[^A-Za-z0-9\s.,()/#&-]/g, "")
     .replace(/\s+/g, " ")
+    .trimStart()
     .slice(0, maxLength);
 const sanitizeRemarksText = (value, maxLength) =>
-  String(value ?? "")
-    .replace(/[^\w\s.,()/#&:;!?'"%-]/g, "")
-    .replace(/\s+/g, " ")
+  clampRepeatedPunctuation(
+    trimLongTokens(String(value ?? "").normalize("NFKC").replace(/\r/g, ""), 42)
+  )
+    .replace(/[^A-Za-z0-9\s.,()/#&:;!?'"%+$\-\n]/g, "")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/[ ]*\n[ ]*/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .slice(0, maxLength);
 const sanitizeDigitsOnly = (value, maxLength = 7) =>
   String(value ?? "")
@@ -129,6 +145,69 @@ const getBoundsBarangayName = (entry) =>
       entry?.features?.[0]?.properties?.adm4_en ||
       entry?.features?.[0]?.properties?.barangay
   );
+
+const getBoundsGeoJSON = (entry) => {
+  if (!entry) return null;
+
+  if (entry.type === "FeatureCollection") {
+    const polygonFeatures = (entry.features || []).filter((feature) => {
+      const type = feature?.geometry?.type;
+      return type === "Polygon" || type === "MultiPolygon";
+    });
+
+    if (!polygonFeatures.length) return null;
+
+    return {
+      type: "FeatureCollection",
+      features: polygonFeatures,
+    };
+  }
+
+  if (entry.type === "Feature") return entry;
+
+  if (Array.isArray(entry.features)) {
+    return {
+      type: "FeatureCollection",
+      features: entry.features,
+    };
+  }
+
+  if (entry.geometry) {
+    return {
+      type: "Feature",
+      properties: entry.properties || {},
+      geometry: entry.geometry,
+    };
+  }
+
+  return null;
+};
+
+const isPointInsideBounds = (lat, lng, geojson) => {
+  if (lat === null || lng === null || Number.isNaN(Number(lat)) || Number.isNaN(Number(lng))) {
+    return false;
+  }
+
+  if (!geojson) return false;
+
+  try {
+    const clicked = turfPoint([Number(lng), Number(lat)]);
+
+    if (geojson.type === "FeatureCollection") {
+      return geojson.features.some((feature) =>
+        booleanPointInPolygon(clicked, feature)
+      );
+    }
+
+    if (geojson.type === "Feature") {
+      return booleanPointInPolygon(clicked, geojson);
+    }
+  } catch (error) {
+    console.error("Barangay bounds match failed:", error);
+  }
+
+  return false;
+};
 
 const getStoredRole = () => localStorage.getItem("role") || "";
 const getStoredUserId = () => localStorage.getItem("userId") || "";
@@ -270,8 +349,11 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [barangayLocked, setBarangayLocked] = useState(false);
   const [bulkPublicAction, setBulkPublicAction] = useState(null);
   const [pickMode, setPickMode] = useState(false);
+  const [markerLabelsVisible, setMarkerLabelsVisible] = useState(true);
 
   const [barangayBounds, setBarangayBounds] = useState([]);
   const [formData, setFormData] = useState(initialFormState);
@@ -608,13 +690,14 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
         if (showAddForm) setShowAddForm(false);
         if (showEditForm) setShowEditForm(false);
         if (showArchiveConfirm) setShowArchiveConfirm(false);
+        if (showDeleteConfirm) setShowDeleteConfirm(false);
         if (pickMode) setPickMode(false);
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [showAddForm, showEditForm, showArchiveConfirm, pickMode]);
+  }, [showAddForm, showEditForm, showArchiveConfirm, showDeleteConfirm, pickMode]);
 
   useEffect(() => {
     document.body.style.cursor = pickMode ? "crosshair" : "default";
@@ -1121,17 +1204,75 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     [updateFormField]
   );
 
+  const resolveBarangayForCoordinates = useCallback(
+    (lat, lng) => {
+      const matchedBounds = barangayBounds.find((entry) =>
+        isPointInsideBounds(lat, lng, getBoundsGeoJSON(entry))
+      );
+
+      if (!matchedBounds) return null;
+
+      const matchedName = getBoundsBarangayName(matchedBounds);
+      const matchedBarangay =
+        barangays.find(
+          (item) =>
+            normalizeBarangayKey(item.name) === normalizeBarangayKey(matchedName)
+        ) || null;
+
+      return {
+        barangayId:
+          matchedBarangay?._id ||
+          matchedBounds?._id ||
+          matchedBounds?.barangayId ||
+          "",
+        barangayName: matchedBarangay?.name || matchedName || "",
+      };
+    },
+    [barangayBounds, barangays]
+  );
+
+  const syncBarangayForCoordinates = useCallback(
+    (lat, lng) => {
+      if (showEditForm || isBarangayRole) return null;
+
+      const matchedBarangay = resolveBarangayForCoordinates(lat, lng);
+      setBarangayLocked(Boolean(matchedBarangay?.barangayName));
+
+      setFormData((prev) => ({
+        ...prev,
+        barangayId: matchedBarangay?.barangayId || "",
+        barangayName: matchedBarangay?.barangayName || "",
+      }));
+
+      return matchedBarangay;
+    },
+    [showEditForm, isBarangayRole, resolveBarangayForCoordinates]
+  );
+
   const handleLatitudeChange = useCallback(
     (e) => {
       const value = e.target.value.trim();
       if (value === "") {
         updateFormField("latitude", null);
+        if (!showEditForm && !isBarangayRole) {
+          setBarangayLocked(false);
+          setFormData((prev) => ({
+            ...prev,
+            barangayId: "",
+            barangayName: "",
+          }));
+        }
         return;
       }
       const num = Number(value);
-      if (!Number.isNaN(num)) updateFormField("latitude", num);
+      if (!Number.isNaN(num)) {
+        updateFormField("latitude", num);
+        if (formData.longitude !== null && formData.longitude !== "") {
+          syncBarangayForCoordinates(num, Number(formData.longitude));
+        }
+      }
     },
-    [updateFormField]
+    [updateFormField, formData.longitude, showEditForm, isBarangayRole, syncBarangayForCoordinates]
   );
 
   const handleLongitudeChange = useCallback(
@@ -1139,16 +1280,30 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       const value = e.target.value.trim();
       if (value === "") {
         updateFormField("longitude", null);
+        if (!showEditForm && !isBarangayRole) {
+          setBarangayLocked(false);
+          setFormData((prev) => ({
+            ...prev,
+            barangayId: "",
+            barangayName: "",
+          }));
+        }
         return;
       }
       const num = Number(value);
-      if (!Number.isNaN(num)) updateFormField("longitude", num);
+      if (!Number.isNaN(num)) {
+        updateFormField("longitude", num);
+        if (formData.latitude !== null && formData.latitude !== "") {
+          syncBarangayForCoordinates(Number(formData.latitude), num);
+        }
+      }
     },
-    [updateFormField]
+    [updateFormField, formData.latitude, showEditForm, isBarangayRole, syncBarangayForCoordinates]
   );
 
   const resetForm = useCallback(() => {
     setFormData(initialFormState);
+    setBarangayLocked(false);
   }, []);
 
   const cancelPickMode = useCallback(() => {
@@ -1203,6 +1358,7 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     }
 
     setFormData(baseForm);
+    setBarangayLocked(false);
     setShowAddForm(false);
     setShowEditForm(false);
     setPickMode(true);
@@ -1255,6 +1411,7 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     });
 
     setShowAddForm(false);
+    setBarangayLocked(false);
     setShowEditForm(true);
   }, [selectedPlace]);
 
@@ -1262,6 +1419,8 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     let locationLabel = "";
     let lat = null;
     let lng = null;
+    let barangayId = "";
+    let barangayName = "";
 
     if (args.length === 1 && args[0]?.latlng) {
       lat = args[0].latlng.lat;
@@ -1273,6 +1432,8 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       lng = Number(args[0]?.lng);
       locationLabel =
         args[0]?.label || args[0]?.location || args[0]?.locationLabel || "";
+      barangayId = String(args[0]?.barangayId || "");
+      barangayName = sanitizeText(args[0]?.barangayName || "");
     } else if (args.length >= 3) {
       locationLabel = args[0];
       lat = Number(args[1]);
@@ -1286,6 +1447,8 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       locationLabel: sanitizeText(locationLabel),
       lat,
       lng,
+      barangayId,
+      barangayName,
     };
   };
 
@@ -1308,7 +1471,13 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
 
   const handleMapSelectLocation = useCallback(
     (...args) => {
-      const { locationLabel, lat, lng } = normalizeMapArgs(...args);
+      const {
+        locationLabel,
+        lat,
+        lng,
+        barangayId: providedBarangayId,
+        barangayName: providedBarangayName,
+      } = normalizeMapArgs(...args);
 
       if (
         lat === null ||
@@ -1320,22 +1489,35 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       }
 
       if (pickMode) {
+        const matchedBarangay =
+          (providedBarangayName || providedBarangayId) ?
+            {
+              barangayId: providedBarangayId,
+              barangayName: providedBarangayName,
+            }
+          : resolveBarangayForCoordinates(lat, lng);
+
         setFormData((prev) => ({
           ...prev,
           location: locationLabel || prev.location,
           latitude: lat,
           longitude: lng,
+          barangayId: matchedBarangay?.barangayId || "",
+          barangayName: matchedBarangay?.barangayName || "",
         }));
+        setBarangayLocked(Boolean(matchedBarangay?.barangayName));
         setPickMode(false);
         setShowAddForm(true);
         flyTo(lat, lng, 18);
         pushNotification(
-          "Location selected. Complete the form and save the area.",
-          "success"
+          matchedBarangay?.barangayName
+            ? `Location selected. Barangay locked to ${matchedBarangay.barangayName}.`
+            : "Location selected. Please choose the barangay before saving.",
+          matchedBarangay?.barangayName ? "success" : "info"
         );
       }
     },
-    [pickMode, flyTo, pushNotification]
+    [pickMode, flyTo, pushNotification, resolveBarangayForCoordinates]
   );
 
   useEffect(() => {
@@ -1671,6 +1853,38 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       console.error("Unarchive evac area error:", error);
       pushNotification(
         error?.response?.data?.message || "Failed to unarchive evacuation area.",
+        "error"
+      );
+    } finally {
+      setLoadingSave(false);
+    }
+  }, [selectedPlace, refreshDataAfterMutation, pushNotification]);
+
+  const handlePermanentDeletePlace = useCallback(async () => {
+    if (!selectedPlace?._id) {
+      pushNotification("No evacuation area selected.", "error");
+      return;
+    }
+
+    setLoadingSave(true);
+    try {
+      await axios.delete(`${BASE_URL}/evacs/${selectedPlace._id}/permanent`, {
+        withCredentials: true,
+      });
+
+      setShowDeleteConfirm(false);
+      setSelectedId(null);
+      setPanelView("areas");
+      await refreshDataAfterMutation();
+      pushNotification(
+        "Archived evacuation area deleted successfully.",
+        "success"
+      );
+    } catch (error) {
+      console.error("Permanent delete evac area error:", error);
+      pushNotification(
+        error?.response?.data?.message ||
+          "Failed to delete archived evacuation area.",
         "error"
       );
     } finally {
@@ -2190,6 +2404,17 @@ const handleSaveOccupancy = useCallback(async () => {
                       value={ownBarangay?.name || localBarangayName || ""}
                       disabled
                     />
+                  ) : !showEditForm && barangayLocked ? (
+                    <>
+                      <input
+                        type="text"
+                        value={formData.barangayName || ""}
+                        disabled
+                      />
+                      <small className="field-note">
+                        Locked from the map location you selected.
+                      </small>
+                    </>
                   ) : (
                     <select
                       value={formData.barangayId || ""}
@@ -2484,6 +2709,67 @@ const handleSaveOccupancy = useCallback(async () => {
               disabled={loadingSave}
             >
               {loadingSave ? "Archiving..." : "Archive"}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+  };
+
+  const renderDeleteConfirm = () => {
+    if (!showDeleteConfirm || !selectedPlace) return null;
+
+    return createPortal(
+      <div
+        className="evac-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Delete archived evacuation area"
+        onClick={() => setShowDeleteConfirm(false)}
+      >
+        <div
+          className="evac-modal-card confirm-card"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="evac-modal-header">
+            <div>
+              <h3>Delete Archived Area</h3>
+              <p>
+                This will permanently delete <strong>{selectedPlace.name}</strong>.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="evac-modal-close"
+              onClick={() => setShowDeleteConfirm(false)}
+              aria-label="Close delete confirmation"
+            >
+              <FaTimes />
+            </button>
+          </div>
+
+          <div className="confirm-copy">
+            This action cannot be undone and will remove the archived evacuation
+            area from the system.
+          </div>
+
+          <div className="evac-modal-actions">
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => setShowDeleteConfirm(false)}
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              className="danger-btn"
+              onClick={handlePermanentDeletePlace}
+              disabled={loadingSave}
+            >
+              {loadingSave ? "Deleting..." : "Delete Area"}
             </button>
           </div>
         </div>
@@ -2903,6 +3189,25 @@ const handleSaveOccupancy = useCallback(async () => {
               </div>
 
               <div className="map-panel-actions">
+                <button
+                  type="button"
+                  className={`ghost-btn map-control-btn ${
+                    markerLabelsVisible ? "is-active" : ""
+                  }`}
+                  onClick={() => setMarkerLabelsVisible((current) => !current)}
+                  title={
+                    markerLabelsVisible
+                      ? "Nameplates are always visible. Click to switch to hover-only."
+                      : "Nameplates appear on hover. Click to always show them."
+                  }
+                >
+                  {markerLabelsVisible ? (
+                    <FaEye aria-hidden="true" />
+                  ) : (
+                    <FaEyeSlash aria-hidden="true" />
+                  )}
+                  {markerLabelsVisible ? "Nameplates On" : "Hover Labels"}
+                </button>
                 {canAddArea && pickMode && (
                   <button
                     type="button"
@@ -2950,6 +3255,7 @@ const handleSaveOccupancy = useCallback(async () => {
                 selectedBarangayName={selectedBarangayName}
                 barangayBounds={barangayBounds}
                 matchedBarangayBounds={matchedBarangayBounds}
+                markerLabelsVisible={markerLabelsVisible}
               />
 
               <MapLegend />
@@ -3561,14 +3867,25 @@ const handleSaveOccupancy = useCallback(async () => {
 
                     {(isPrivilegedOps || isBarangayRole) && (
                       selectedPlace?.isArchived ? (
-                        <button
-                          type="button"
-                          className="ghost-btn"
-                          onClick={handleUnarchivePlace}
-                        >
-                          <FaArchive aria-hidden="true" />
-                          Unarchive Area
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="ghost-btn"
+                            onClick={handleUnarchivePlace}
+                          >
+                            <FaArchive aria-hidden="true" />
+                            Unarchive Area
+                          </button>
+
+                          <button
+                            type="button"
+                            className="danger-btn"
+                            onClick={() => setShowDeleteConfirm(true)}
+                          >
+                            <FaTimes aria-hidden="true" />
+                            Delete Area
+                          </button>
+                        </>
                       ) : (
                         <button
                           type="button"
@@ -3750,6 +4067,7 @@ const handleSaveOccupancy = useCallback(async () => {
         })}
 
         {renderArchiveConfirm()}
+        {renderDeleteConfirm()}
         {renderBulkPublicConfirm()}
       </div>
     </DashboardShell>
