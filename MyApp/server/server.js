@@ -69,6 +69,22 @@ const yoloRoutes = require("./routes/yoloRoutes");
 const app = express();
 const server = http.createServer(app);
 
+const hazardLayerFiles = {
+  safe: path.join(__dirname, "..", "screens", "data", "Safe.json"),
+  medium: path.join(__dirname, "..", "screens", "data", "Medium.json"),
+  susceptible: path.join(
+    __dirname,
+    "..",
+    "screens",
+    "data",
+    "Susceptible_clean.json"
+  ),
+};
+
+function readHazardLayer(filePath) {
+  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+}
+
 app.set("trust proxy", 1);
 
 // --------------------
@@ -423,6 +439,21 @@ if (process.env.NODE_ENV !== "production") {
 // --------------------
 // Hazard proxy
 // --------------------
+app.get("/api/hazard-layers", (req, res) => {
+  try {
+    res.json({
+      safe: readHazardLayer(hazardLayerFiles.safe),
+      medium: readHazardLayer(hazardLayerFiles.medium),
+      susceptible: readHazardLayer(hazardLayerFiles.susceptible),
+    });
+  } catch (err) {
+    res.status(500).json({
+      message: "Failed to load hazard layers.",
+      error: err.message,
+    });
+  }
+});
+
 app.get("/hazards", async (req, res) => {
   try {
     const citiesRes = await fetch("https://api.mapakalamidad.ph/cities");
