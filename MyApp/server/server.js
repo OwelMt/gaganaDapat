@@ -27,6 +27,12 @@ if (process.env.NODE_ENV !== "production") {
 
 mongoose.set("bufferCommands", false);
 
+function resolveRouteModule(routeModule) {
+  return routeModule && typeof routeModule === "object" && routeModule.default
+    ? routeModule.default
+    : routeModule;
+}
+
 // --------------------
 // Routes
 // --------------------
@@ -63,7 +69,9 @@ const overviewAnalyticsRoutes = require("./routes/overviewAnalysticsRoutes");
 const reliefAnalyticsRoutes = require("./routes/reliefAnalyticsRoutes");
 const incidentAnalyticsRoutes = require("./routes/incidentAnalyticsRoutes");
 const evacAnalyticsRoutes = require("./routes/EvacAnalyticsRoutes");
-const waterLevelRoutes = require("./routes/waterLevelRoutes");
+const waterLevelRoutes = resolveRouteModule(
+  require("./routes/waterLevelRoutes")
+);
 const yoloRoutes = require("./routes/yoloRoutes");
 
 const app = express();
