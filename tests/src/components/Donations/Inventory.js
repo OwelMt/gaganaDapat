@@ -2927,9 +2927,6 @@ useEffect(() => {
                     <h3 className="summary-value">
                       {formatMoney(activeSummary.totalMonetaryAmount)}
                     </h3>
-                    <span className="summary-note">
-                      {activeSummary.monetaryCount} monetary record(s)
-                    </span>
                   </div>
 
                   <div className="summary-card summary-card-emphasis success">
@@ -2940,9 +2937,6 @@ useEffect(() => {
                     <h3 className="summary-value">
                       {activeSummary.totalGoodsQuantity.toLocaleString()}
                     </h3>
-                    <span className="summary-note">
-                      {activeSummary.goodsCount} goods record(s)
-                    </span>
                   </div>
 
                   <div className="summary-card accent">
@@ -2953,7 +2947,6 @@ useEffect(() => {
                     <h3 className="summary-value">
                       {activeSummary.foodEligibleCount.toLocaleString()}
                     </h3>
-                    <span className="summary-note">Eligible for food packs</span>
                   </div>
 
                   <div className="summary-card muted">
@@ -2964,9 +2957,6 @@ useEffect(() => {
                     <h3 className="summary-value">
                       {activeSummary.applianceCount.toLocaleString()}
                     </h3>
-                    <span className="summary-note">
-                      Total quantity: {activeSummary.totalApplianceQuantity.toLocaleString()}
-                    </span>
                   </div>
 
                   <div className="summary-card danger">
@@ -2977,7 +2967,6 @@ useEffect(() => {
                     <h3 className="summary-value">
                       {activeSummary.expiredCount.toLocaleString()}
                     </h3>
-                    <span className="summary-note">Needs review or removal</span>
                   </div>
 
                   <div className="summary-card warning">
@@ -2988,7 +2977,6 @@ useEffect(() => {
                     <h3 className="summary-value">
                       {activeSummary.expiringSoonCount.toLocaleString()}
                     </h3>
-                    <span className="summary-note">30 days or less</span>
                   </div>
                 </>
               </div>

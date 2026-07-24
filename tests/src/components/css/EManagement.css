@@ -778,20 +778,38 @@
 }
 
 .barangay-bound-label {
-  border: 1px solid rgba(15, 90, 32, 0.18);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.96);
+  pointer-events: none;
+  border: 1px solid rgba(22, 101, 52, 0.16);
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(239, 249, 241, 0.88));
   color: #14532d;
-  box-shadow: 0 10px 24px rgba(15, 90, 32, 0.14);
+  box-shadow:
+    0 10px 24px rgba(15, 72, 34, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(12px);
   padding: 0;
+}
+
+.barangay-bound-label::before {
+  display: none;
 }
 
 .barangay-bound-label .leaflet-tooltip-content {
   margin: 0;
-  padding: 8px 12px;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.03em;
+  padding: 7px 13px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.barangay-bound-label__text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--dashboard-font-tight);
+  font-weight: 900;
+  letter-spacing: -0.025em;
+  line-height: 1;
 }
 
 .map-stage .leaflet-interactive:focus,
@@ -3039,7 +3057,7 @@
 :root[data-theme="dark"] .barangay-bound-label,
 :root[data-theme="dark"] .map-add-place-floating,
 :root[data-theme="dark"] .pick-mode-banner {
-  background: rgba(19, 49, 27, 0.96) !important;
+  background: linear-gradient(135deg, rgba(19, 49, 27, 0.96), rgba(27, 67, 38, 0.9)) !important;
   color: var(--ev-text) !important;
   border-color: rgba(157, 203, 168, 0.22) !important;
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24) !important;

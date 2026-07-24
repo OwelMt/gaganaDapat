@@ -29,6 +29,7 @@ import hero1 from "../../assets/images/hero1.jpg";
 import hero2 from "../../assets/images/hero2.jpg";
 import hero3 from "../../assets/images/hero3.jpg";
 import EvacMap from "../map/Map";
+import PublicDigitalTwinPanel from "./PublicDigitalTwinPanel";
 import { API_BASE_URL } from "../../config/api";
 
 const BASE_URL = API_BASE_URL;
@@ -128,9 +129,12 @@ const NAV_ITEMS = [
   { id: "hazard-focus", label: "Hazard" },
   { id: "incident-focus", label: "Incidents" },
   { id: "updates", label: "Updates" },
+  { id: "footer-info", label: "Contacts" },
+];
+
+const TWIN_NAV_ITEMS = [
   { id: "digital-twin", label: "Digital Twin" },
   { id: "virtual-twin", label: "Virtual Twin" },
-  { id: "footer-info", label: "Contacts" },
 ];
 
 function safeJsonParse(value, fallback) {
@@ -461,6 +465,11 @@ export default function Dashboard() {
       ) || null
     );
   }, [filteredPublicPlaces, selectedPublicPlaceId]);
+
+  const handlePublicBarangayFilterChange = (nextBarangay) => {
+    setPublicBarangayFilter(nextBarangay);
+    setSelectedPublicPlaceId(null);
+  };
 
   const focusedBarangayLabel =
     publicBarangayFilter === "all" ? "All Barangays" : publicBarangayFilter;
@@ -1276,17 +1285,19 @@ export default function Dashboard() {
             </div>
 
             <div className="header-right">
-              <form className="header-search-wrap" onSubmit={handleSearchSubmit}>
-                <input
-                  type="text"
-                  className="header-search"
-                  placeholder="Search weather, hazard, incident, barangay, contacts..."
-                  value={searchText}
-                  onChange={(e) =>
-                    setSearchText(sanitizeSearchInput(e.target.value))
-                  }
-                />
-              </form>
+              <div className="header-public-actions">
+                <form className="header-search-wrap" onSubmit={handleSearchSubmit}>
+                  <input
+                    type="text"
+                    className="header-search"
+                    placeholder="Search weather, hazard, incident, barangay, contacts..."
+                    value={searchText}
+                    onChange={(e) =>
+                      setSearchText(sanitizeSearchInput(e.target.value))
+                    }
+                  />
+                </form>
+              </div>
 
               {isPrivilegedUser && (
                 <div className="mode-toggle-wrap">
@@ -1367,31 +1378,37 @@ export default function Dashboard() {
                 </button>
               ))}
             </nav>
+
+            <div className="header-twin-links" aria-label="Twin views">
+              {TWIN_NAV_ITEMS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`nav-link-btn twin-link-btn ${
+                    activeSection === item.id ? "active" : ""
+                  }`}
+                  onClick={() => handleNavClick(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
         </header>
 
         {isTwinViewActive ? (
           <section className="landing-twin-shell" id={activeTwinView}>
             <div className="landing-wide-shell">
-              <div className="landing-twin-stage">
-                {activeTwinView === "digital-twin" ? (
-                  <div className="landing-twin-frame-card">
-                    <iframe
-                      title="SagipBayan Digital Twin"
-                      src="/unity/digital-twin/index.html"
-                      className="landing-twin-frame"
-                      allowFullScreen
-                    />
-                  </div>
-                ) : (
+              {activeTwinView === "digital-twin" ? (
+                <PublicDigitalTwinPanel />
+              ) : (
+                <div className="landing-twin-stage">
                   <div className="landing-twin-placeholder-card">
                     <strong>Virtual Twin</strong>
-                    <p>
-                      Virtual Twin
-                    </p>
+                    <p>Virtual Twin</p>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </section>
         ) : (
@@ -1560,60 +1577,6 @@ export default function Dashboard() {
                     </>
                   )}
 
-                  <div className="landing-hero-actions">
-                    <button
-                      type="button"
-                      className="hero-btn primary"
-                      onClick={scrollToWeather}
-                    >
-                      {isInlineEditing ? (
-                        <input
-                          className="landing-inline-input cta-inline-input"
-                          type="text"
-                          value={draftContent.hero.primaryCtaLabel}
-                          maxLength={24}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) =>
-                            updateDraft("hero.primaryCtaLabel", e.target.value)
-                          }
-                          placeholder="Primary button"
-                        />
-                      ) : (
-                        pageContent.hero.primaryCtaLabel || "View Weather"
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      className="hero-btn secondary"
-                      onClick={scrollToMap}
-                    >
-                      View Evacuation Map
-                    </button>
-
-                    <button
-                      type="button"
-                      className="hero-btn ghost"
-                      onClick={scrollToFooter}
-                    >
-                      {isInlineEditing ? (
-                        <input
-                          className="landing-inline-input cta-inline-input"
-                          type="text"
-                          value={draftContent.hero.secondaryCtaLabel}
-                          maxLength={24}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) =>
-                            updateDraft("hero.secondaryCtaLabel", e.target.value)
-                          }
-                          placeholder="Secondary button"
-                        />
-                      ) : (
-                        pageContent.hero.secondaryCtaLabel || "Emergency Contacts"
-                      )}
-                    </button>
-                  </div>
-
                   {isInlineEditing && (
                     <div className="landing-hero-image-manager">
                       <div className="landing-hero-image-manager-head">
@@ -1715,31 +1678,6 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  <div className="hero-highlights">
-                    <div className="hero-highlight-card">
-                      <FaCloudSun />
-                      <div>
-                        <strong>Live Weather Outlook</strong>
-                        <span>Quick rain, wind, and temperature view for Jaen.</span>
-                      </div>
-                    </div>
-
-                    <div className="hero-highlight-card">
-                      <FaMap />
-                      <div>
-                        <strong>Barangay-Based Public Map</strong>
-                        <span>Focus the page on a specific barangay when needed.</span>
-                      </div>
-                    </div>
-
-                    <div className="hero-highlight-card">
-                      <FaBell />
-                      <div>
-                        <strong>Official Advisories</strong>
-                        <span>Updates, preparedness, contacts, and public guidance.</span>
-                      </div>
-                    </div>
-                  </div>
                 </div>
 
                 <div className="landing-hero-side">
@@ -1831,15 +1769,43 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="hero-slide-indicators" aria-hidden="true">
-                {activeHeroImages.map((_, index) => (
-                  <span
-                    key={`hero-dot-${index}`}
-                    className={`hero-slide-dot ${
-                      currentHero === index ? "active" : ""
-                    }`}
-                  />
-                ))}
+              <div className="hero-lower-dock">
+                <div className="hero-highlights">
+                  <div className="hero-highlight-card">
+                    <FaCloudSun />
+                    <div>
+                      <strong>Live Weather Outlook</strong>
+                      <span>Quick rain, wind, and temperature view for Jaen.</span>
+                    </div>
+                  </div>
+
+                  <div className="hero-highlight-card">
+                    <FaMap />
+                    <div>
+                      <strong>Barangay-Based Public Map</strong>
+                      <span>Focus the page on a specific barangay when needed.</span>
+                    </div>
+                  </div>
+
+                  <div className="hero-highlight-card">
+                    <FaBell />
+                    <div>
+                      <strong>Official Advisories</strong>
+                      <span>Updates, preparedness, contacts, and public guidance.</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="hero-slide-indicators" aria-hidden="true">
+                  {activeHeroImages.map((_, index) => (
+                    <span
+                      key={`hero-dot-${index}`}
+                      className={`hero-slide-dot ${
+                        currentHero === index ? "active" : ""
+                      }`}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -1973,10 +1939,6 @@ export default function Dashboard() {
                     <div>
                       <span className="section-kicker">Evacuation Areas</span>
                       <h2>Public Evacuation Map</h2>
-                      <p>
-                        View public evacuation areas and capacity status by
-                        barangay.
-                      </p>
                     </div>
                   </div>
 
@@ -1985,7 +1947,9 @@ export default function Dashboard() {
                       <span>Barangay</span>
                       <select
                         value={publicBarangayFilter}
-                        onChange={(e) => setPublicBarangayFilter(e.target.value)}
+                        onChange={(e) =>
+                          handlePublicBarangayFilterChange(e.target.value)
+                        }
                       >
                         <option value="all">All Barangays</option>
                         {publicBarangayOptions.map((item) => (
@@ -2034,7 +1998,15 @@ export default function Dashboard() {
                             places={filteredPublicPlaces}
                             barangayBounds={publicBarangayBounds}
                             selectedPlaceId={selectedPublicPlaceId}
-                            onSelectPlace={setSelectedPublicPlaceId}
+                            onSelectPlace={(place) =>
+                              setSelectedPublicPlaceId(place?._id || null)
+                            }
+                            selectedBarangayName={
+                              publicBarangayFilter === "all"
+                                ? ""
+                                : publicBarangayFilter
+                            }
+                            onSelectBarangay={handlePublicBarangayFilterChange}
                             readOnly
                             publicMode
                             hazardLayers={hazardLayers}
@@ -2087,10 +2059,6 @@ export default function Dashboard() {
                   <div className="landing-section-head">
                     <span className="section-kicker">Hazard Focus</span>
                     <h2>Hazard Monitoring</h2>
-                    <p>
-                      Barangay-focused hazard information can be shown here for
-                      public viewing.
-                    </p>
                   </div>
 
                   <div className="focus-info-grid">
@@ -2145,23 +2113,15 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <p className="landing-empty-copy">
-                    {hazardError
-                      ? hazardError
-                      : showHazardOverlay
-                      ? "Flood hazard polygons are currently visible on the public map alongside evacuation area pins."
-                      : "Turn on the hazard layer to show Safe, Medium, and Susceptible flood zones on the public map."}
-                  </p>
+                  {hazardError ? (
+                    <p className="landing-empty-copy">{hazardError}</p>
+                  ) : null}
                 </section>
 
                 <section className="landing-side-card focus-card" id="incident-focus">
                   <div className="landing-section-head">
                     <span className="section-kicker">Incident Focus</span>
                     <h2>Incident Reports</h2>
-                    <p>
-                      Public incident information now includes resolved report
-                      summaries from the incident module.
-                    </p>
                   </div>
 
                   {incidentsLoading ? (

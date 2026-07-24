@@ -282,10 +282,11 @@ export default function AuditTrails() {
                 <div>
                   <span className="audit-eyebrow">Admin Oversight</span>
                   <h1 className="audit-title">System Audit Trail</h1>
-                  <p className="audit-subtitle">
-                    Review cross-module activity by account, module, request, and time.
-                    {lastUpdated ? ` Last updated ${getTimeAgo(lastUpdated)}.` : ""}
-                  </p>
+                  {lastUpdated ? (
+                    <p className="audit-subtitle">
+                      Last updated {getTimeAgo(lastUpdated)}.
+                    </p>
+                  ) : null}
                 </div>
               </div>
 

@@ -30,8 +30,9 @@
 }
 
 .ea-page-shell {
-  max-width: 1380px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -175,13 +176,13 @@
   border: 1px solid var(--ea-border);
   border-radius: var(--ea-radius-xl);
   box-shadow: var(--ea-shadow);
-  min-height: 680px;
 }
 
 .ea-sidebar-card {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 680px;
 }
 
 .ea-editor-card {
@@ -189,6 +190,7 @@
   flex-direction: column;
   overflow: hidden;
   background: linear-gradient(180deg, #ffffff 0%, #fbfdfb 100%);
+  min-height: 680px;
 }
 
 .ea-sidebar-top {
@@ -235,6 +237,7 @@
 }
 
 .ea-list {
+  flex: 1 1 auto;
   padding: 14px;
   display: flex;
   flex-direction: column;

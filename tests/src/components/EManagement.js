@@ -125,8 +125,6 @@ const numberOrZero = (value) => {
   return Number.isNaN(num) ? 0 : num;
 };
 
-const LIMITED_OCCUPANCY_PERCENT = 75;
-
 const normalizeBarangayKey = (value) =>
   safeLower(value).replace(/\s+/g, " ").trim();
 
@@ -274,7 +272,7 @@ function SummaryCard({ tone, icon, label, value, sub, urgent = false }) {
       <div>
         <div className="summary-label">{label}</div>
         <div className="summary-value">{value}</div>
-        <div className="summary-sub">{sub}</div>
+        {sub ? <div className="summary-sub">{sub}</div> : null}
       </div>
     </div>
   );
@@ -2940,13 +2938,7 @@ const handleSaveOccupancy = useCallback(async () => {
             icon={<FaBuilding />}
             label="Evacuation Areas"
             value={formatNumber(effectiveAnalytics.totalPlaces)}
-            sub={
-              isBarangayRole
-                ? "Areas under your barangay"
-                : barangayFilter === "all"
-                ? "Across all barangays"
-                : `Within ${barangayFilter}`
-            }
+            sub=""
           />
 
           <SummaryCard
@@ -2954,7 +2946,7 @@ const handleSaveOccupancy = useCallback(async () => {
             icon={<FaCheckCircle />}
             label="Available"
             value={formatNumber(effectiveAnalytics.availableCount)}
-            sub="Ready for use"
+            sub=""
           />
 
           <SummaryCard
@@ -2962,7 +2954,7 @@ const handleSaveOccupancy = useCallback(async () => {
             icon={<FaExclamationTriangle />}
             label="Limited"
             value={formatNumber(effectiveAnalytics.limitedCount)}
-            sub="Needs monitoring"
+            sub=""
             urgent={effectiveAnalytics.limitedCount > 0}
           />
 
@@ -2971,7 +2963,7 @@ const handleSaveOccupancy = useCallback(async () => {
             icon={<FaTimesCircle />}
             label="Full"
             value={formatNumber(effectiveAnalytics.fullCount)}
-            sub={getCapacityPressureLabel(effectiveAnalytics)}
+            sub=""
             urgent={effectiveAnalytics.fullCount > 0}
           />
 
@@ -2980,7 +2972,7 @@ const handleSaveOccupancy = useCallback(async () => {
             icon={<FaArchive />}
             label="Archived"
             value={formatNumber(effectiveAnalytics.archivedCount || 0)}
-            sub="Not shown in active view"
+            sub=""
           />
 
           <SummaryCard
@@ -2988,7 +2980,7 @@ const handleSaveOccupancy = useCallback(async () => {
             icon={<FaUser />}
             label="Individual Capacity"
             value={formatNumber(effectiveAnalytics.totalIndividualCapacity)}
-            sub="People supported"
+            sub=""
           />
         </section>
 
@@ -3073,7 +3065,6 @@ const handleSaveOccupancy = useCallback(async () => {
               <div className="panel-head">
                 <div>
                   <h2>Barangay Overview</h2>
-                  <p>Review distribution by barangay and status.</p>
                 </div>
               </div>
 
@@ -3178,14 +3169,7 @@ const handleSaveOccupancy = useCallback(async () => {
           <section className="evac-map-panel">
             <div className="panel-head compact">
               <div>
-                  <h2>Evacuation Map</h2>
-                <p>
-                  {pickMode
-                    ? "Pick a location on the map or cancel pick mode."
-                    : selectedPlace
-                    ? "Selected evacuation area is highlighted on the map."
-                    : "Browse and select an evacuation area."}
-                </p>
+                <h2>Evacuation Map</h2>
               </div>
 
               <div className="map-panel-actions">
@@ -3271,9 +3255,6 @@ const handleSaveOccupancy = useCallback(async () => {
                   </div>
                   <div className="map-add-place-content">
                     <div className="map-add-place-title">Add Evacuation Area</div>
-                    <div className="map-add-place-sub">
-                      Start by pinning the location on the map.
-                    </div>
                   </div>
                 </button>
               )}
@@ -3843,10 +3824,6 @@ const handleSaveOccupancy = useCallback(async () => {
           </button>
         </div>
 
-        <p className="occupancy-helper-text">
-          Type freely, then save once. Status is automatic: below {LIMITED_OCCUPANCY_PERCENT}%
-          is available, {LIMITED_OCCUPANCY_PERCENT}% to 99% is limited, and 100% or more is full.
-        </p>
       </>
     );
   })()}

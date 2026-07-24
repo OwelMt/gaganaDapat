@@ -445,6 +445,39 @@ export const getLatestWaterLevel = async (req, res) => {
   }
 };
 
+// ======================================================
+// GET RAW WATER-LEVEL HISTORY BY CAMERA
+// GET /api/water-levels/history/:camera_id
+// ======================================================
+
+export const getWaterLevelHistoryByCamera = async (req, res) => {
+  try {
+    const cameraId = String(req.params.camera_id || "").trim();
+
+    if (!isValidCameraId(cameraId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid camera_id.",
+      });
+    }
+
+    const data = await WaterLevel.find({
+      camera_id: cameraId,
+    })
+      .sort({ timestamp: 1 })
+      .select(
+        "water_level warning_level danger_level status camera_id timestamp"
+      )
+      .lean();
+
+    return res.status(200).json(data);
+  } catch (error) {
+    console.error("getWaterLevelHistoryByCamera error:", error);
+
+    return res.status(500).json([]);
+  }
+};
+
 
 // ======================================================
 // GET DAILY WATER-LEVEL HISTORY

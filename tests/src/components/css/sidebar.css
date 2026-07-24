@@ -101,6 +101,9 @@ body {
   min-height: 0;
   padding: 10px 10px 10px 0;
   position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
 .admin-main.evac-shell-scroll {
@@ -319,29 +322,27 @@ body {
 }
 
 .admin-content {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  flex: 0 0 auto;
+  min-height: max-content;
+  overflow: visible;
   padding: 0;
-  scrollbar-gutter: stable;
 }
 
 .admin-content-inner {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  min-height: max-content;
   background: rgba(255, 255, 255, 0.58);
   border: 1px solid rgba(15, 90, 32, 0.08);
   border-radius: 30px;
   box-shadow: 0 18px 44px rgba(15, 90, 32, 0.06);
-  overflow: hidden;
+  overflow: visible;
   backdrop-filter: blur(6px);
 }
 
 .shell-page-content {
-  flex: 1;
-  min-height: 0;
+  flex: 0 0 auto;
+  min-height: max-content;
 }
 
 .admin-content.evac-scroll-layout .admin-content-inner {
@@ -352,6 +353,7 @@ body {
 .admin-content.evac-scroll-layout {
   overflow: visible;
   flex: 0 0 auto;
+  min-height: max-content;
 }
 
 .admin-content.evac-scroll-layout .shell-page-content,

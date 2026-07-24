@@ -197,9 +197,6 @@ export default function TimeInOut() {
                 <div>
                   <span className="tio-eyebrow">Admin Oversight</span>
                   <h1 className="tio-title">Account Time Logs</h1>
-                  <p className="tio-subtitle">
-                    Review login activity, active sessions, and recorded time in and time out events.
-                  </p>
                 </div>
               </div>
 

@@ -1662,11 +1662,6 @@ const InventoryAdd = () => {
                     <span className="summary-icon"><FaArchive /></span>
                   </div>
                   <h3 className="summary-value">{summary.totalItems}</h3>
-                  <span className="summary-note">
-                    {isAdmin || isAccountant
-                      ? "All monitored donation entries"
-                      : "All goods and appliance entries"}
-                  </span>
                 </div>
 
                 {allowedDonationTypes.includes("goods") ? (
@@ -1689,9 +1684,18 @@ const InventoryAdd = () => {
                       <span className="summary-icon"><FaMoneyBillWave /></span>
                     </div>
                     <h3 className="summary-value">{summary.totalMonetaryEntries}</h3>
-                    <span className="summary-note">
-                      Total amount: PHP {summary.totalMonetaryAmount.toLocaleString()}
-                    </span>
+                  </div>
+                ) : null}
+
+                {allowedDonationTypes.includes("monetary") ? (
+                  <div className="summary-card info">
+                    <div className="summary-card-top">
+                      <p className="summary-label">Total Monetary Amount</p>
+                      <span className="summary-icon"><FaMoneyBillWave /></span>
+                    </div>
+                    <h3 className="summary-value">
+                      PHP {summary.totalMonetaryAmount.toLocaleString()}
+                    </h3>
                   </div>
                 ) : null}
 
@@ -1714,7 +1718,6 @@ const InventoryAdd = () => {
                     <span className="summary-icon"><FaBell /></span>
                   </div>
                   <h3 className="summary-value">{summary.recentDonationsCount}</h3>
-                  <span className="summary-note">Last 7 days</span>
                 </div>
               </div>
             )}

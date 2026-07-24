@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import {
   FaBell,
   FaCheck,
-  FaDonate,
   FaExclamationTriangle,
   FaExternalLinkAlt,
   FaInbox,
@@ -16,7 +15,6 @@ import "../css/DonationValidationQueue.css";
 import { groupDonationRowsByReference } from "./donationReferenceUtils";
 import { useAuth } from "../../context/AuthContext";
 import {
-  getDonationQueueOwnerLabel,
   getDonationQueueTypeForRole,
   normalizeRole,
 } from "../auth/roleAccessUtils";
@@ -164,7 +162,6 @@ export default function DonationValidationQueue() {
   const { user } = useAuth();
   const role = normalizeRole(user?.role || localStorage.getItem("role"));
   const queueTypeParam = getDonationQueueTypeForRole(role);
-  const queueOwnerLabel = getDonationQueueOwnerLabel(role);
   const [rows, setRows] = useState([]);
   const [loadingQueue, setLoadingQueue] = useState(true);
   const [selectedDonation, setSelectedDonation] = useState(null);
@@ -496,15 +493,6 @@ export default function DonationValidationQueue() {
                     ? "Review mobile monetary donations before inventory intake"
                     : "Review mobile donations before inventory intake"}
                 </h1>
-                <div className="rrl-title-meta">
-                  <span className="rrl-top-pill">
-                    <FaDonate />
-                    Physical receipt validation
-                  </span>
-                  <span className="rrl-top-pill subtle">
-                    Inventory only after {queueOwnerLabel} confirmation
-                  </span>
-                </div>
               </div>
             </div>
 
@@ -515,7 +503,6 @@ export default function DonationValidationQueue() {
                   <span className="rrl-total-icon"><FaInbox /></span>
                 </div>
                 <strong>{topTotals.total}</strong>
-                <span className="rrl-total-note">All mobile donation records</span>
               </div>
               <div className="rrl-total-card pending">
                 <div className="rrl-total-card-top">
@@ -523,7 +510,6 @@ export default function DonationValidationQueue() {
                   <span className="rrl-total-icon"><FaExclamationTriangle /></span>
                 </div>
                 <strong>{topTotals.pending}</strong>
-                <span className="rrl-total-note">First-time submissions</span>
               </div>
               <div className="rrl-total-card warning">
                 <div className="rrl-total-card-top">
@@ -531,7 +517,6 @@ export default function DonationValidationQueue() {
                   <span className="rrl-total-icon"><FaUndo /></span>
                 </div>
                 <strong>{topTotals.resubmitted}</strong>
-                <span className="rrl-total-note">Reopened after not received</span>
               </div>
               <div className="rrl-total-card success">
                 <div className="rrl-total-card-top">
@@ -539,7 +524,6 @@ export default function DonationValidationQueue() {
                   <span className="rrl-total-icon"><FaCheck /></span>
                 </div>
                 <strong>{topTotals.received}</strong>
-                <span className="rrl-total-note">Already moved to inventory</span>
               </div>
             </div>
           </section>

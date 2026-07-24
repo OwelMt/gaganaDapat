@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../css/EditAccount.css';
 import {
@@ -24,6 +24,7 @@ import { API_BASE_URL } from "../../config/api";
 
 export default function EditAccount() {
   const notificationTimeoutsRef = useRef({});
+  const editorCardRef = useRef(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -44,6 +45,7 @@ export default function EditAccount() {
   const [pendingSelectionId, setPendingSelectionId] = useState(null);
   const [archiveTargetId, setArchiveTargetId] = useState(null);
   const [updateTargetId, setUpdateTargetId] = useState(null);
+  const [sidebarHeight, setSidebarHeight] = useState(null);
 
   const BASE_URL = API_BASE_URL;
 
@@ -195,6 +197,35 @@ export default function EditAccount() {
       !!selectedForm.confirmPassword
     );
   }, [selected, selectedForm]);
+
+  useLayoutEffect(() => {
+    const editorNode = editorCardRef.current;
+    if (!editorNode) return undefined;
+
+    const syncSidebarHeight = () => {
+      const nextHeight = Math.max(editorNode.offsetHeight || 0, 680);
+      setSidebarHeight((current) => (current === nextHeight ? current : nextHeight));
+    };
+
+    syncSidebarHeight();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', syncSidebarHeight);
+      return () => window.removeEventListener('resize', syncSidebarHeight);
+    }
+
+    const observer = new ResizeObserver(() => {
+      syncSidebarHeight();
+    });
+
+    observer.observe(editorNode);
+    window.addEventListener('resize', syncSidebarHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', syncSidebarHeight);
+    };
+  }, [selected?._id, selectedForm, hasUnsavedChanges]);
 
   const handleSelectAccount = (id) => {
     if (id === open) return;
@@ -401,7 +432,10 @@ export default function EditAccount() {
         </section>
 
         <section className="ea-workspace">
-          <aside className="ea-sidebar-card">
+          <aside
+            className="ea-sidebar-card"
+            style={sidebarHeight ? { height: `${sidebarHeight}px` } : undefined}
+          >
             <div className="ea-sidebar-top">
               <div className="ea-listbar">
                 <input
@@ -465,7 +499,7 @@ export default function EditAccount() {
             </div>
           </aside>
 
-          <section className="ea-editor-card">
+          <section className="ea-editor-card" ref={editorCardRef}>
             {!selected || !selectedForm ? (
               <div className="ea-placeholder ea-placeholder--centered">
                 <div className="ea-empty-illustration">ID</div>

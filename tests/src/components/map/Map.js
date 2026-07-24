@@ -313,17 +313,47 @@ function getBarangayBoundsLabel(entry, fallbackIndex = 0) {
   return directLabel || `Barangay ${fallbackIndex + 1}`;
 }
 
+function getBarangayGeoBounds(entry) {
+  const geoData = getBarangayBoundsData(entry);
+  if (!geoData) return null;
+
+  const bounds = L.geoJSON(geoData).getBounds();
+  return bounds.isValid() ? bounds : null;
+}
+
+function getBarangayLabelFontSize(zoom = 13) {
+  if (zoom >= 17) return 16;
+  if (zoom >= 16) return 15;
+  if (zoom >= 15) return 14;
+  if (zoom >= 14) return 13;
+  return 12;
+}
+
 function buildBarangayPolygonStyle({
   colorKey = "",
   index = 0,
   isBarangayRole = false,
   isOwnedBarangay = false,
   hovered = false,
+  showHazardOverlay = false,
 }) {
   const { hue, saturation, lightness } = getBarangayColorParts(
     colorKey,
     index
   );
+
+  if (showHazardOverlay) {
+    return {
+      color: hovered || isOwnedBarangay
+        ? "rgba(71, 85, 105, 0.92)"
+        : "rgba(100, 116, 139, 0.58)",
+      weight: hovered || isOwnedBarangay ? 2.6 : 1.35,
+      fillColor: hovered || isOwnedBarangay
+        ? "rgba(148, 163, 184, 0.24)"
+        : "rgba(148, 163, 184, 0.12)",
+      fillOpacity: hovered || isOwnedBarangay ? 0.34 : 0.22,
+    };
+  }
 
   if (isBarangayRole) {
     if (isOwnedBarangay) {
@@ -462,6 +492,41 @@ function FitToJaenBounds({ bounds, publicMode = false }) {
   return null;
 }
 
+function FitToSelectedBarangay({
+  selectedBounds,
+  fallbackBounds,
+  publicMode = false,
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!publicMode) return;
+
+    const targetBounds = selectedBounds || fallbackBounds;
+    if (!targetBounds) return;
+
+    let cancelled = false;
+
+    map.fitBounds(targetBounds, {
+      padding: selectedBounds ? [34, 34] : [28, 28],
+      maxZoom: selectedBounds ? 16 : 14,
+    });
+
+    const timer = setTimeout(() => {
+      if (!cancelled && map?._container) {
+        map.invalidateSize();
+      }
+    }, 150);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [selectedBounds, fallbackBounds, map, publicMode]);
+
+  return null;
+}
+
 /* ---------------- Map Updater ---------------- */
 
 function MapUpdater({ position, zoom, allowedBounds, publicMode = false }) {
@@ -515,6 +580,20 @@ function MapUpdater({ position, zoom, allowedBounds, publicMode = false }) {
       window.removeEventListener("resize", handleResize);
     };
   }, [map]);
+
+  return null;
+}
+
+function MapZoomTracker({ onZoomChange }) {
+  const map = useMapEvents({
+    zoomend() {
+      onZoomChange?.(map.getZoom());
+    },
+  });
+
+  useEffect(() => {
+    onZoomChange?.(map.getZoom());
+  }, [map, onZoomChange]);
 
   return null;
 }
@@ -746,6 +825,8 @@ const Map = ({
   markerLabelsVisible = true,
   hazardLayers = null,
   showHazardOverlay = false,
+  selectedBarangayName = "",
+  onSelectBarangay,
 }) => {
   const jaenBounds = useMemo(() => {
     if (!jaenGeoJSON) return null;
@@ -807,6 +888,7 @@ const Map = ({
 
   const [position, setPosition] = useState(initialCenter);
   const [zoom, setZoom] = useState(publicMode ? 12 : 13);
+  const [currentZoom, setCurrentZoom] = useState(publicMode ? 13 : 14);
   const [placeName, setPlaceName] = useState("Jaen, Nueva Ecija");
   const [hoveredBarangayKey, setHoveredBarangayKey] = useState("");
   const renderedBarangayBounds = useMemo(() => {
@@ -826,6 +908,21 @@ const Map = ({
       return aOwned ? 1 : -1;
     });
   }, [barangayBounds, matchedBarangayBounds]);
+
+  const selectedBarangayBounds = useMemo(() => {
+    if (!selectedBarangayName || safeLower(selectedBarangayName) === "all") {
+      return null;
+    }
+
+    const matchedBarangay = renderedBarangayBounds.find((entry, index) => {
+      return (
+        safeLower(getBarangayBoundsLabel(entry, index)) ===
+        safeLower(selectedBarangayName)
+      );
+    });
+
+    return getBarangayGeoBounds(matchedBarangay);
+  }, [renderedBarangayBounds, selectedBarangayName]);
 
   useEffect(() => {
     setPosition(initialCenter);
@@ -855,7 +952,13 @@ const Map = ({
       }}
     >
       <FitToJaenBounds bounds={jaenBounds} publicMode={publicMode} />
+      <FitToSelectedBarangay
+        selectedBounds={selectedBarangayBounds}
+        fallbackBounds={jaenBounds}
+        publicMode={publicMode}
+      />
       <MapBusBridge allowedBounds={effectiveBounds} publicMode={publicMode} />
+      <MapZoomTracker onZoomChange={setCurrentZoom} />
       <MapUpdater
         position={position}
         zoom={zoom}
@@ -947,6 +1050,7 @@ const Map = ({
           isBarangayRole,
           isOwnedBarangay,
           hovered: hoveredBarangayKey === barangayKey,
+          showHazardOverlay,
         });
 
         return polygonSets.map((polygon, polygonIndex) => (
@@ -955,6 +1059,7 @@ const Map = ({
             positions={polygon}
             pathOptions={style}
             eventHandlers={{
+              click: () => onSelectBarangay?.(label),
               mouseover: () => setHoveredBarangayKey(barangayKey),
               mouseout: () => setHoveredBarangayKey((current) =>
                 current === barangayKey ? "" : current
@@ -962,12 +1067,20 @@ const Map = ({
             }}
           >
             <Tooltip
-              sticky
-              direction="top"
-              className="barangay-bound-label"
-              opacity={0.96}
+              permanent
+              direction="center"
+              interactive={false}
+              className={`barangay-bound-label ${
+                showHazardOverlay ? "is-hazard-on" : ""
+              }`.trim()}
+              opacity={0.98}
             >
-              {label}
+              <span
+                className="barangay-bound-label__text"
+                style={{ fontSize: `${getBarangayLabelFontSize(currentZoom)}px` }}
+              >
+                {label}
+              </span>
             </Tooltip>
           </Polygon>
         ));
