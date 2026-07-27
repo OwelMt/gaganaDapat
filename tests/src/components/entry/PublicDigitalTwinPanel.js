@@ -1,58 +1,26 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE_URL } from "../../config/api";
+import {
+  DAILY_HISTORY_LIMIT,
+  DEFAULT_CAMERA_ID,
+  formatDateTime,
+  formatLevel,
+  formatShortDate,
+  getStatusLabel,
+  getStatusTone,
+  normalizeCameraIds,
+  normalizeDailyHistory,
+  normalizeLatestReading,
+  toNumber,
+} from "../DigitalTwin/waterTwinUtils";
 
 const BASE_URL = API_BASE_URL;
-const DEFAULT_CAMERA_ID = "cam_1";
-const DAILY_HISTORY_LIMIT = 7;
-
-function toNumber(value, fallback = 0) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function formatDateTime(value) {
-  if (!value) return "No sync yet";
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "No sync yet";
-
-  return parsed.toLocaleString("en-PH", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function formatShortDate(value) {
-  if (!value) return "Unknown day";
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return String(value);
-
-  return parsed.toLocaleDateString("en-PH", {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function getStatusTone(status) {
-  const normalized = String(status || "").toUpperCase();
-  if (normalized === "DANGER") return "danger";
-  if (normalized === "WARNING") return "warning";
-  return "safe";
-}
-
-function getStatusLabel(status) {
-  const normalized = String(status || "").toUpperCase();
-  if (normalized === "DANGER") return "Danger";
-  if (normalized === "WARNING") return "Warning";
-  return "Safe";
-}
 
 async function fetchJson(path) {
-  const response = await fetch(`${BASE_URL}${path}`);
+  const response = await fetch(`${BASE_URL}${path}`, {
+    credentials: "include",
+  });
+
   if (!response.ok) {
     const message = await response.text();
     throw new Error(message || "Request failed.");
@@ -72,129 +40,103 @@ export default function PublicDigitalTwinPanel() {
   const [error, setError] = useState("");
   const [lastSyncedAt, setLastSyncedAt] = useState("");
 
-  const cameraIds = useMemo(() => {
-    const unique = Array.from(
-      new Set(
-        (allReadings || [])
-          .map((item) => String(item?.camera_id || "").trim())
-          .filter(Boolean)
-      )
-    );
-
-    return unique.length ? unique : [DEFAULT_CAMERA_ID];
-  }, [allReadings]);
+  const cameraIds = useMemo(
+    () => normalizeCameraIds(allReadings, [DEFAULT_CAMERA_ID]),
+    [allReadings]
+  );
 
   const currentLevel = toNumber(latestReading?.water_level, 0);
   const warningLevel = toNumber(latestReading?.warning_level, 8);
   const dangerLevel = toNumber(latestReading?.danger_level, 10);
   const currentStatus = String(latestReading?.status || "SAFE").toUpperCase();
   const statusTone = getStatusTone(currentStatus);
-  const latestTimestamp = latestReading?.timestamp || latestReading?.createdAt || lastSyncedAt;
+  const statusLabel = getStatusLabel(currentStatus);
+  const selectedHistory = dailyHistory.slice(0, DAILY_HISTORY_LIMIT);
+  const latestTimestamp =
+    latestReading?.timestamp || latestReading?.createdAt || lastSyncedAt;
 
-  const fetchTwinData = useCallback(async () => {
-    const data = await fetchJson("/api/water-levels");
-    const items = Array.isArray(data?.data) ? data.data : [];
-    setAllReadings(items);
+  const loadCameraCatalog = useCallback(async () => {
+    try {
+      const data = await fetchJson("/api/water-levels?limit=200");
+      const items = Array.isArray(data?.data) ? data.data : [];
+      setAllReadings(items);
 
-    const availableCameras = Array.from(
-      new Set(
-        items.map((item) => String(item?.camera_id || "").trim()).filter(Boolean)
-      )
-    );
-
-    if (!availableCameras.includes(selectedCamera)) {
-      setSelectedCamera(availableCameras[0] || DEFAULT_CAMERA_ID);
+      const nextCameraIds = normalizeCameraIds(items, [DEFAULT_CAMERA_ID]);
+      if (!nextCameraIds.includes(selectedCamera)) {
+        setSelectedCamera(nextCameraIds[0] || DEFAULT_CAMERA_ID);
+      }
+    } catch (catalogError) {
+      console.warn("Unable to load camera catalog:", catalogError);
     }
   }, [selectedCamera]);
 
-  const fetchSelectedCameraData = useCallback(
-    async (cameraId) => {
-      if (!cameraId) return;
+  const loadSelectedCameraData = useCallback(async (cameraId) => {
+    if (!cameraId) return;
 
-      setHistoryLoading(true);
+    setLoading(true);
+    setHistoryLoading(true);
+    setError("");
 
-      const [latestResult, dailyHistoryResult] = await Promise.all([
-        fetchJson(`/api/water-levels/latest/${encodeURIComponent(cameraId)}`).catch(
-          (latestError) => ({ error: latestError })
-        ),
-        fetchJson(
-          `/api/water-levels/history/daily?camera_id=${encodeURIComponent(
-            cameraId
-          )}&limit=${DAILY_HISTORY_LIMIT}`
-        ).catch((historyError) => ({ error: historyError })),
-      ]);
+    const [latestResult, historyResult] = await Promise.allSettled([
+      fetchJson(`/api/water-levels/latest/${encodeURIComponent(cameraId)}`),
+      fetchJson(
+        `/api/water-levels/history/daily?camera_id=${encodeURIComponent(
+          cameraId
+        )}&page=1&limit=${DAILY_HISTORY_LIMIT}`
+      ),
+    ]);
 
-      if (latestResult?.error) {
-        throw latestResult.error;
-      }
+    if (latestResult.status === "fulfilled") {
+      setLatestReading(normalizeLatestReading(latestResult.value, cameraId));
+    } else {
+      setLatestReading(null);
+    }
 
-      if (dailyHistoryResult?.error) {
-        throw dailyHistoryResult.error;
-      }
+    if (historyResult.status === "fulfilled") {
+      const historyItems = Array.isArray(historyResult.value?.data?.data)
+        ? historyResult.value.data.data
+        : Array.isArray(historyResult.value?.data)
+          ? historyResult.value.data
+          : [];
 
-      const nextLatest = latestResult || null;
-      const nextDailyHistory = Array.isArray(dailyHistoryResult?.data)
-        ? dailyHistoryResult.data
-        : [];
+      const nextHistory = normalizeDailyHistory(historyItems).slice(
+        0,
+        DAILY_HISTORY_LIMIT
+      );
+      setDailyHistory(nextHistory);
+    } else {
+      setDailyHistory([]);
+    }
 
-      setLatestReading(nextLatest);
-      setDailyHistory(nextDailyHistory);
-      setLastSyncedAt(new Date().toISOString());
-      setHistoryLoading(false);
-    },
-    []
-  );
+    const errors = [];
 
-  useEffect(() => {
-    let isActive = true;
+    if (latestResult.status === "rejected") {
+      errors.push(
+        latestResult.reason?.message ||
+          "Unable to load the latest Digital Twin reading."
+      );
+    }
 
-    const load = async () => {
-      try {
-        setError("");
-        setLoading(true);
-        await fetchTwinData();
-      } catch (loadError) {
-        if (!isActive) return;
-        setError(loadError?.message || "Unable to load Digital Twin data.");
-      } finally {
-        if (isActive) {
-          setLoading(false);
-        }
-      }
-    };
+    if (historyResult.status === "rejected") {
+      errors.push(
+        historyResult.reason?.message ||
+          "Unable to load recent Digital Twin history."
+      );
+    }
 
-    load();
-
-    return () => {
-      isActive = false;
-    };
-  }, [fetchTwinData]);
+    setError(errors.join(" "));
+    setLastSyncedAt(new Date().toISOString());
+    setLoading(false);
+    setHistoryLoading(false);
+  }, []);
 
   useEffect(() => {
-    let isActive = true;
+    loadCameraCatalog();
+  }, [loadCameraCatalog]);
 
-    const loadCamera = async () => {
-      try {
-        setError("");
-        await fetchSelectedCameraData(selectedCamera);
-      } catch (loadError) {
-        if (!isActive) return;
-        setError(loadError?.message || "Unable to load Digital Twin data.");
-        setDailyHistory([]);
-      } finally {
-        if (isActive) {
-          setLoading(false);
-          setHistoryLoading(false);
-        }
-      }
-    };
-
-    loadCamera();
-
-    return () => {
-      isActive = false;
-    };
-  }, [fetchSelectedCameraData, selectedCamera]);
+  useEffect(() => {
+    loadSelectedCameraData(selectedCamera);
+  }, [loadSelectedCameraData, selectedCamera]);
 
   useEffect(() => {
     if (!iframeRef.current?.contentWindow) return;
@@ -226,8 +168,8 @@ export default function PublicDigitalTwinPanel() {
 
   return (
     <div className="landing-twin-stage">
-      <div className="landing-twin-data-card">
-        <div className="landing-twin-topbar">
+      <div className="landing-twin-data-card landing-twin-data-card--public">
+        <div className="landing-twin-topbar landing-twin-topbar--public">
           <div>
             <span className="landing-twin-kicker">Public Water Monitoring</span>
             <h2>Digital Twin</h2>
@@ -235,11 +177,11 @@ export default function PublicDigitalTwinPanel() {
 
           <div className={`landing-twin-status-pill ${statusTone}`}>
             <span className="landing-twin-status-dot" aria-hidden="true" />
-            {getStatusLabel(currentStatus)}
+            {statusLabel}
           </div>
         </div>
 
-        <div className="landing-twin-toolbar">
+        <div className="landing-twin-toolbar landing-twin-toolbar--public">
           <label className="landing-twin-camera-picker">
             <span>Camera</span>
             <select
@@ -255,29 +197,24 @@ export default function PublicDigitalTwinPanel() {
           </label>
 
           <div className="landing-twin-sync-chip">
-            Last Sync: {formatDateTime(lastSyncedAt)}
+            Last synced: {formatDateTime(lastSyncedAt)}
           </div>
         </div>
 
-        <div className="landing-twin-summary-grid">
-          <article className="landing-twin-summary-card">
+        <div className="landing-twin-summary-grid landing-twin-summary-grid--compact">
+          <article className="landing-twin-summary-card landing-twin-summary-card--compact">
             <span>Current Level</span>
-            <strong>{currentLevel.toFixed(2)} m</strong>
+            <strong>{formatLevel(currentLevel)}</strong>
           </article>
 
-          <article className="landing-twin-summary-card">
+          <article className="landing-twin-summary-card landing-twin-summary-card--compact">
             <span>Warning Level</span>
-            <strong>{warningLevel.toFixed(2)} m</strong>
+            <strong>{formatLevel(warningLevel)}</strong>
           </article>
 
-          <article className="landing-twin-summary-card">
+          <article className="landing-twin-summary-card landing-twin-summary-card--compact">
             <span>Danger Level</span>
-            <strong>{dangerLevel.toFixed(2)} m</strong>
-          </article>
-
-          <article className="landing-twin-summary-card">
-            <span>History Days</span>
-            <strong>{dailyHistory.length}</strong>
+            <strong>{formatLevel(dangerLevel)}</strong>
           </article>
         </div>
 
@@ -289,7 +226,7 @@ export default function PublicDigitalTwinPanel() {
           </div>
         ) : null}
 
-        <div className="landing-twin-board">
+        <div className="landing-twin-board landing-twin-board--public">
           <div className="landing-twin-frame-card">
             <iframe
               ref={iframeRef}
@@ -302,33 +239,42 @@ export default function PublicDigitalTwinPanel() {
 
           <aside className="landing-twin-history-card">
             <div className="landing-twin-history-head">
-              <h3>Recent Daily Trend</h3>
-              <span>{selectedCamera}</span>
+              <div>
+                <h3>Recent History</h3>
+                <span>{selectedCamera}</span>
+              </div>
+
+              <small className="landing-twin-history-sync">
+                {formatDateTime(latestTimestamp)}
+              </small>
             </div>
 
             {historyLoading ? (
               <div className="landing-twin-history-empty">Loading history...</div>
-            ) : dailyHistory.length ? (
+            ) : selectedHistory.length ? (
               <div className="landing-twin-history-list">
-                {dailyHistory.map((entry) => (
-                  <div key={`${entry.camera_id}-${entry.date}`} className="landing-twin-history-item">
+                {selectedHistory.map((entry) => (
+                  <div
+                    key={`${entry.camera_id}-${entry.date}`}
+                    className="landing-twin-history-item"
+                  >
                     <div className="landing-twin-history-copy">
                       <strong>{formatShortDate(entry.date)}</strong>
                       <span>
-                        {toNumber(entry.minimum_level).toFixed(2)} m to{" "}
-                        {toNumber(entry.maximum_level).toFixed(2)} m
+                        {formatLevel(entry.lowestLevel)} to{" "}
+                        {formatLevel(entry.highestLevel)}
                       </span>
                     </div>
 
                     <div className="landing-twin-history-meta">
                       <span
                         className={`landing-twin-history-status ${getStatusTone(
-                          entry.latest_status
+                          entry.latestStatus
                         )}`}
                       >
-                        {getStatusLabel(entry.latest_status)}
+                        {getStatusLabel(entry.latestStatus)}
                       </span>
-                      <small>{toNumber(entry.latest_level).toFixed(2)} m</small>
+                      <small>{formatLevel(entry.latestLevel)}</small>
                     </div>
                   </div>
                 ))}

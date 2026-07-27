@@ -513,6 +513,10 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.landing-twin-summary-grid--compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .landing-twin-summary-card {
   position: relative;
   overflow: hidden;
@@ -558,6 +562,16 @@
   line-height: 1;
 }
 
+.landing-twin-summary-card--compact {
+  min-height: 112px;
+  padding: 16px;
+}
+
+.landing-twin-summary-card--compact strong {
+  margin-top: 12px;
+  font-size: clamp(1.6rem, 2.6vw, 2.1rem);
+}
+
 .landing-twin-inline-alert {
   margin-top: 16px;
   padding: 12px 16px;
@@ -582,6 +596,10 @@
   grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.9fr);
   gap: 18px;
   align-items: start;
+}
+
+.landing-twin-board--public {
+  align-items: stretch;
 }
 
 .landing-twin-header {
@@ -666,6 +684,16 @@
   min-height: 720px;
 }
 
+.landing-twin-board--public .landing-twin-frame-card,
+.landing-twin-board--public .landing-twin-history-card {
+  min-height: 620px;
+}
+
+.landing-twin-board--public .landing-twin-frame {
+  height: 620px;
+  min-height: 620px;
+}
+
 .landing-twin-history-head {
   display: flex;
   align-items: center;
@@ -689,6 +717,13 @@
   color: #1c5a35;
   font-size: 0.82rem;
   font-weight: 800;
+}
+
+.landing-twin-history-sync {
+  color: #5f7568;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: right;
 }
 
 .landing-twin-history-list {
