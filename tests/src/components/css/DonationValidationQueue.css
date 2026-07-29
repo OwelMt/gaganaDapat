@@ -57,7 +57,10 @@
 }
 
 .dqv-page .rrl-queue-list {
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
   padding-right: 4px;
 }
 
@@ -68,8 +71,12 @@
 .dqv-page .rrl-queue-item {
   padding: 16px 18px;
   border-left-width: 4px;
-  min-height: 116px;
+  min-height: 128px;
   border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  box-sizing: border-box;
 }
 
 .dqv-page .rrl-queue-item::after {

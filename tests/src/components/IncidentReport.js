@@ -15,11 +15,13 @@ import {
   Tooltip,
   GeoJSON,
   Polygon,
+  useMap,
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { point as turfPoint } from "@turf/helpers";
+import { getBasemapTileLayerProps } from "./map/mapBasemap";
 import {
   FaBell,
   FaCalendarDays,
@@ -41,7 +43,6 @@ import {
   FaUser,
   FaWandMagicSparkles,
 } from "react-icons/fa6";
-import incidentImage from "../assets/images/incident-icon.png";
 import jaenGeoJSON from "./data/jaen.json";
 import DashboardShell from "./layout/DashboardShell";
 import "../components/css/IncidentReporting.css";
@@ -51,19 +52,15 @@ const BASE_URL = API_BASE_URL;
 
 const TOAST_LIMIT = 3;
 const TOAST_DURATION = 10000;
-const BOUNDS_BUFFER = 0.01;
+const BOUNDS_BUFFER = 0.006;
+const JAEN_MIN_ZOOM = 13;
+const JAEN_FIT_MAX_ZOOM = 14.35;
+const INCIDENT_MAP_FIT_PADDING = [6, 6];
 
 const JAEN_CENTER = {
   lat: 15.3382,
   lng: 120.9056,
 };
-
-const incidentIcon = new L.Icon({
-  iconUrl: incidentImage,
-  iconSize: [35, 35],
-  iconAnchor: [17, 35],
-  popupAnchor: [0, -35],
-});
 
 const jaenStyle = {
   color: "#08661f",
@@ -77,27 +74,138 @@ const jaenStyle = {
 const maskStyle = {
   stroke: false,
   fillColor: "#1f2937",
-  fillOpacity: 0.28,
+  fillOpacity: 0.16,
+  fillRule: "evenodd",
   interactive: false,
 };
 
-function getBarangayColorParts(index = 0) {
-  const hue = Math.round((index * 137.508 + 24) % 360);
+function FitIncidentMapToJaen({ bounds, maxBounds, fitKey = 0 }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!bounds) return;
+
+    let cancelled = false;
+
+    const focusMap = () => {
+      map.fitBounds(bounds, {
+        padding: INCIDENT_MAP_FIT_PADDING,
+        maxZoom: JAEN_FIT_MAX_ZOOM,
+      });
+      map.setMaxBounds(maxBounds || bounds);
+    };
+
+    focusMap();
+
+    const refit = () => {
+      if (!cancelled && map?._container) {
+        map.invalidateSize();
+        focusMap();
+      }
+    };
+
+    const frame = window.requestAnimationFrame(refit);
+    const timer = setTimeout(() => {
+      if (!cancelled && map?._container) {
+        map.invalidateSize();
+        focusMap();
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
+  }, [bounds, fitKey, map, maxBounds]);
+
+  return null;
+}
+
+const buildIncidentDivIcon = (tone, icon) =>
+  L.divIcon({
+    className: `incident-map-marker incident-map-marker--${tone}`,
+    html: `<span class="incident-map-marker__inner" aria-hidden="true">${icon}</span>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+    popupAnchor: [0, -18],
+  });
+
+const incidentMapIcons = {
+  fire: buildIncidentDivIcon(
+    "fire",
+    '<svg viewBox="0 0 24 24" focusable="false"><path fill="currentColor" d="M12.6 2.4c.5 2.8-.8 4.5-2.2 6.1-1.5 1.8-3.1 3.6-2.2 6.7.5 1.8 2.1 3.1 4 3.1 2.6 0 4.5-2 4.5-4.7 0-2.1-1.2-4-3.4-5.8.1 1.5-.4 2.6-1.4 3.4-.6.5-1.5.1-1.5-.7 0-1.7 2.3-3.7 2.2-8.1ZM12 22c-4.2 0-7.5-2.8-7.5-7 0-3.2 1.8-5.5 3.5-7.5 1.5-1.8 2.9-3.4 2.4-5.9-.1-.7.6-1.2 1.2-.8 5.1 3.3 8 7.3 8 12.3 0 5.2-3.7 8.9-7.6 8.9Z"/></svg>'
+  ),
+  flood: buildIncidentDivIcon(
+    "flood",
+    '<svg viewBox="0 0 24 24" focusable="false"><path fill="currentColor" d="M12 2.2 7.4 8.6C6 10.6 5.3 12.4 5.3 14.2 5.3 18 8.2 21 12 21s6.7-3 6.7-6.8c0-1.8-.7-3.6-2.1-5.6L12 2.2Zm-3.8 12c.4 2.3 1.8 3.5 3.8 3.5 1.2 0 2.2-.4 3.1-1.2.4-.3.9-.3 1.2.1.3.4.3.9-.1 1.2-1.2 1.1-2.6 1.6-4.2 1.6-2.9 0-5-1.8-5.5-4.9-.1-.5.2-.9.7-1 .5-.1.9.2 1 .7Z"/></svg>'
+  ),
+  quake: buildIncidentDivIcon(
+    "quake",
+    '<svg viewBox="0 0 24 24" focusable="false"><path fill="currentColor" d="M11.2 2h6.1l-3.2 6.2H19L9.8 22l1.7-9H6l5.2-11Z"/></svg>'
+  ),
+  storm: buildIncidentDivIcon(
+    "storm",
+    '<svg viewBox="0 0 24 24" focusable="false"><path fill="currentColor" d="M12.8 3a7.5 7.5 0 0 1 6.8 4.4 5.4 5.4 0 0 0-4.7-1.4 5.2 5.2 0 0 0-4.3 4.4 3.6 3.6 0 0 1-2.4-3.4C8.2 4.8 10 3 12.8 3ZM4.1 11.5a7.5 7.5 0 0 0 5.6 6.4 5.4 5.4 0 0 1-1-4.8 5.2 5.2 0 0 1 4.8-3.8 3.6 3.6 0 0 0-3.1-2.8c-2.8-.4-5.5 1.7-6.3 5Zm15.8 1a7.5 7.5 0 0 1-6.2 7.1 5.4 5.4 0 0 0 3.7-3.3 5.2 5.2 0 0 0-1.4-5.9 3.6 3.6 0 0 1 3.8.8c1.8 1.7 1.6 3.8.1 1.3Z"/></svg>'
+  ),
+  default: buildIncidentDivIcon("default", "!"),
+};
+
+const getIncidentMapIcon = (incident) => {
+  const type = safeLower(incident?.type);
+  if (type.includes("fire")) return incidentMapIcons.fire;
+  if (type.includes("flood")) return incidentMapIcons.flood;
+  if (type.includes("earthquake") || type.includes("quake")) {
+    return incidentMapIcons.quake;
+  }
+  if (type.includes("typhoon") || type.includes("storm")) {
+    return incidentMapIcons.storm;
+  }
+  return incidentMapIcons.default;
+};
+
+function getBarangayPaletteSeed(colorKey = "") {
+  const normalized = safeLower(colorKey);
+  if (!normalized) return 0;
+
+  let hash = 0;
+  for (let i = 0; i < normalized.length; i += 1) {
+    hash = (hash * 31 + normalized.charCodeAt(i)) % 1000003;
+  }
+
+  return hash;
+}
+
+function getBarangayColorParts(colorKey = "", fallbackIndex = 0) {
+  const normalized = safeLower(colorKey);
+
+  if (normalized === "hilera") {
+    return { hue: 132, saturation: 68, lightness: 42 };
+  }
+
+  const seed = normalized ? getBarangayPaletteSeed(normalized) : fallbackIndex;
+  const hue = Math.round((seed * 137.508 + 24) % 360);
   const saturationCycle = [78, 64, 86, 58];
   const lightnessCycle = [48, 60, 42, 66];
-  const saturation = saturationCycle[index % saturationCycle.length];
-  const lightness = lightnessCycle[index % lightnessCycle.length];
+  const saturation = saturationCycle[seed % saturationCycle.length];
+  const lightness = lightnessCycle[seed % lightnessCycle.length];
 
   return { hue, saturation, lightness };
 }
 
-function getBarangayOutlineColor(index = 0) {
-  const { hue, saturation, lightness } = getBarangayColorParts(index);
+function getBarangayOutlineColor(colorKey = "", fallbackIndex = 0) {
+  const { hue, saturation, lightness } = getBarangayColorParts(
+    colorKey,
+    fallbackIndex
+  );
   return `hsl(${hue}, ${Math.min(88, saturation + 8)}%, ${Math.max(34, lightness - 8)}%)`;
 }
 
-function getBarangayFillColor(index = 0) {
-  const { hue, saturation, lightness } = getBarangayColorParts(index);
+function getBarangayFillColor(colorKey = "", fallbackIndex = 0) {
+  const { hue, saturation, lightness } = getBarangayColorParts(
+    colorKey,
+    fallbackIndex
+  );
   return `hsla(${hue}, ${saturation}%, ${lightness}%, 0.54)`;
 }
 
@@ -366,6 +474,198 @@ function isPointInsideJaen(lat, lng) {
   }
 }
 
+const normalizeBarangayKey = (value) =>
+  safeLower(value).replace(/\s+/g, " ").trim();
+
+const countGeometryVertices = (geometry) => {
+  if (!geometry) return 0;
+
+  if (geometry.type === "Polygon") {
+    return geometry.coordinates?.flat(1)?.length || 0;
+  }
+
+  if (geometry.type === "MultiPolygon") {
+    return geometry.coordinates?.flat(2)?.length || 0;
+  }
+
+  return 0;
+};
+
+const getBarangayBoundsLabel = (entry, index = 0) => {
+  return (
+    entry?.barangayName ||
+    entry?.name ||
+    entry?.properties?.barangayName ||
+    entry?.properties?.name ||
+    entry?.properties?.NAME ||
+    entry?.properties?.adm4_en ||
+    entry?.properties?.barangay ||
+    entry?.features?.[0]?.properties?.barangayName ||
+    entry?.features?.[0]?.properties?.name ||
+    entry?.features?.[0]?.properties?.NAME ||
+    entry?.features?.[0]?.properties?.adm4_en ||
+    entry?.features?.[0]?.properties?.barangay ||
+    `Barangay ${index + 1}`
+  );
+};
+
+const getBarangayBoundsGeoJSON = (entry) => {
+  if (!entry) return null;
+
+  if (entry.type === "FeatureCollection" || Array.isArray(entry.features)) {
+    const polygonFeatures = (entry.features || []).filter((feature) => {
+      const type = feature?.geometry?.type;
+      return type === "Polygon" || type === "MultiPolygon";
+    });
+
+    if (!polygonFeatures.length) return null;
+
+    const chosenFeature =
+      [...polygonFeatures].sort(
+        (a, b) =>
+          countGeometryVertices(b?.geometry) - countGeometryVertices(a?.geometry)
+      )[0] || null;
+
+    return chosenFeature
+      ? {
+          type: "Feature",
+          properties: {
+            ...(entry.properties || {}),
+            ...(chosenFeature.properties || {}),
+          },
+          geometry: chosenFeature.geometry,
+        }
+      : null;
+  }
+
+  if (entry.type === "Feature") return entry;
+
+  const geometry = entry.features?.[0]?.geometry || entry.geometry;
+  if (!geometry) return null;
+
+  return {
+    type: "Feature",
+    properties: entry.properties || entry.features?.[0]?.properties || {},
+    geometry,
+  };
+};
+
+const ringToLeafletPositions = (ring = []) =>
+  ring.map(([lng, lat]) => [lat, lng]);
+
+const geometryToLeafletPolygons = (geometry) => {
+  if (!geometry) return [];
+
+  if (geometry.type === "Polygon") {
+    return [geometry.coordinates.map(ringToLeafletPositions)];
+  }
+
+  if (geometry.type === "MultiPolygon") {
+    return geometry.coordinates.map((polygon) =>
+      polygon.map(ringToLeafletPositions)
+    );
+  }
+
+  return [];
+};
+
+const getPolygonCenter = (polygon) => {
+  try {
+    return L.polygon(polygon).getBounds().getCenter();
+  } catch (error) {
+    return null;
+  }
+};
+
+const getIncidentBarangayName = (incident = {}) => {
+  return (
+    incident.barangay ||
+    incident.barangayName ||
+    incident.reporterBarangay ||
+    incident.locationBarangay ||
+    ""
+  );
+};
+
+const isIncidentInsideBarangay = (incident, boundsGeoJSON) => {
+  const lat = Number(incident?.latitude);
+  const lng = Number(incident?.longitude);
+  if (Number.isNaN(lat) || Number.isNaN(lng) || !boundsGeoJSON) return false;
+
+  try {
+    return booleanPointInPolygon(turfPoint([lng, lat]), boundsGeoJSON);
+  } catch (error) {
+    return false;
+  }
+};
+
+const getIncidentMarkerPosition = (incident, barangayBounds = []) => {
+  const lat = Number(incident?.latitude);
+  const lng = Number(incident?.longitude);
+
+  if (!Number.isNaN(lat) && !Number.isNaN(lng) && isPointInsideJaen(lat, lng)) {
+    return [lat, lng];
+  }
+
+  const barangayHint = normalizeBarangayKey(
+    getIncidentBarangayName(incident) || incident?.location
+  );
+
+  const matchedBounds = barangayBounds.find((entry, index) => {
+    const label = normalizeBarangayKey(getBarangayBoundsLabel(entry, index));
+    return label && barangayHint && barangayHint.includes(label);
+  });
+
+  const geoJSON = getBarangayBoundsGeoJSON(matchedBounds);
+  const geometry = geoJSON?.geometry;
+  const polygons = geometryToLeafletPolygons(geometry).filter(
+    (polygon) => Array.isArray(polygon?.[0]) && polygon[0].length >= 3
+  );
+  const center = polygons.length ? getPolygonCenter(polygons[0]) : null;
+
+  return center ? [center.lat, center.lng] : null;
+};
+
+const getIncidentBarangayTone = (count, maxCount) => {
+  if (!count) return "normal";
+
+  const highThreshold = Math.max(3, Math.ceil(maxCount * 0.6));
+  if (count >= highThreshold) return "high";
+  return "active";
+};
+
+const buildIncidentBarangayStyle = ({ label = "", index, count, maxCount }) => {
+  const tone = getIncidentBarangayTone(count, maxCount);
+
+  if (tone === "high") {
+    return {
+      color: "#b91c1c",
+      weight: 3,
+      opacity: 0.96,
+      fillColor: "#ef4444",
+      fillOpacity: 0.48,
+    };
+  }
+
+  if (tone === "active") {
+    return {
+      color: "#c2410c",
+      weight: 2.5,
+      opacity: 0.92,
+      fillColor: "#f97316",
+      fillOpacity: 0.34,
+    };
+  }
+
+  return {
+    color: getBarangayOutlineColor(label, index),
+    weight: 2,
+    opacity: 0.9,
+    fillColor: getBarangayFillColor(label, index),
+    fillOpacity: 0.42,
+  };
+};
+
 function SummaryCard({ tone, icon, label, value, sub, urgent = false }) {
   return (
     <div className={`incident-summary-card ${tone} ${urgent ? "urgent" : ""}`}>
@@ -391,6 +691,7 @@ function SummaryCard({ tone, icon, label, value, sub, urgent = false }) {
 export default function IncidentReport() {
   const navigate = useNavigate();
   const detailsRef = useRef(null);
+  const basemapTileProps = useMemo(() => getBasemapTileLayerProps(), []);
   const notificationTimersRef = useRef({});
   const thresholdSignatureRef = useRef("");
 
@@ -575,6 +876,13 @@ export default function IncidentReport() {
         jaenBounds.getNorthEast().lng + BOUNDS_BUFFER,
       ],
     ]);
+  }, [jaenBounds]);
+
+  const initialMapCenter = useMemo(() => {
+    if (!jaenBounds) return [JAEN_CENTER.lat, JAEN_CENTER.lng];
+
+    const center = jaenBounds.getCenter();
+    return [center.lat, center.lng];
   }, [jaenBounds]);
 
   const maskGeoJSON = useMemo(() => buildInverseMaskGeoJSON(jaenGeoJSON), []);
@@ -769,9 +1077,44 @@ export default function IncidentReport() {
 
   const visibleMapIncidents = useMemo(() => {
     return sortIncidentsByPriorityThenNewest(
-      baseFilteredIncidents.filter((item) => !isIncidentRejected(item))
+      baseFilteredIncidents.filter(
+        (item) => getIncidentWorkflowStatus(item) !== "resolved"
+      )
     );
   }, [baseFilteredIncidents]);
+
+  const incidentCountsByBarangay = useMemo(() => {
+    const counts = new Map();
+
+    visibleMapIncidents.forEach((incident) => {
+      const directBarangay = normalizeBarangayKey(getIncidentBarangayName(incident));
+
+      if (directBarangay) {
+        counts.set(directBarangay, (counts.get(directBarangay) || 0) + 1);
+        return;
+      }
+
+      const matchedBounds = barangayBounds.find((bounds) =>
+        isIncidentInsideBarangay(incident, getBarangayBoundsGeoJSON(bounds))
+      );
+
+      if (!matchedBounds) return;
+
+      const matchedName = normalizeBarangayKey(
+        getBarangayBoundsLabel(matchedBounds)
+      );
+
+      if (matchedName) {
+        counts.set(matchedName, (counts.get(matchedName) || 0) + 1);
+      }
+    });
+
+    return counts;
+  }, [barangayBounds, visibleMapIncidents]);
+
+  const maxIncidentBarangayCount = useMemo(() => {
+    return Math.max(0, ...Array.from(incidentCountsByBarangay.values()));
+  }, [incidentCountsByBarangay]);
 
   const selectionCandidates = useMemo(() => {
     const seen = new Set();
@@ -1575,71 +1918,97 @@ export default function IncidentReport() {
             <div className="panel-head">
               <div>
                 <h2>Incident Map</h2>
-                <p>
-                  Same Jaen-bounded map behavior as your evacuation module, with
-                  the boundary visible.
-                </p>
               </div>
             </div>
 
             <div className="incident-map-stage">
               <MapContainer
-                center={[JAEN_CENTER.lat, JAEN_CENTER.lng]}
-                zoom={14}
-                minZoom={13}
+                center={initialMapCenter}
+                zoom={JAEN_MIN_ZOOM}
+                minZoom={JAEN_MIN_ZOOM}
                 maxZoom={18}
+                zoomSnap={0.25}
+                zoomDelta={0.5}
                 maxBounds={allowedBounds || undefined}
                 maxBoundsViscosity={1.0}
                 style={{ height: "100%", width: "100%" }}
               >
-                <TileLayer
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  attribution="© OpenStreetMap contributors"
+                <FitIncidentMapToJaen
+                  bounds={jaenBounds}
+                  maxBounds={allowedBounds}
+                  fitKey={barangayBounds.length}
                 />
+                <TileLayer {...basemapTileProps} />
 
                 <GeoJSON data={maskGeoJSON} style={maskStyle} />
                 <GeoJSON data={jaenGeoJSON} style={jaenStyle} />
 
                 {Array.isArray(barangayBounds) &&
                   barangayBounds.map((item, index) => {
-                    const geo = item.features?.[0]?.geometry || item.geometry;
+                    const geoJSON = getBarangayBoundsGeoJSON(item);
+                    const geo = geoJSON?.geometry;
                     if (!geo) return null;
 
-                    const positions =
-                      geo.type === "Polygon"
-                        ? geo.coordinates[0].map(([lng, lat]) => [lat, lng])
-                        : geo.type === "MultiPolygon"
-                        ? geo.coordinates[0][0].map(([lng, lat]) => [lat, lng])
-                        : [];
-
-                    if (!positions.length) return null;
-
-                    return (
-                      <Polygon
-                        key={item._id || index}
-                        positions={positions}
-                        pathOptions={{
-                          color: getBarangayOutlineColor(index),
-                          weight: 2,
-                          fillColor: getBarangayFillColor(index),
-                          fillOpacity: 0.54,
-                        }}
-                      />
+                    const label = getBarangayBoundsLabel(item, index);
+                    const count =
+                      incidentCountsByBarangay.get(normalizeBarangayKey(label)) ||
+                      0;
+                    const tone = getIncidentBarangayTone(
+                      count,
+                      maxIncidentBarangayCount
                     );
+                    const polygons = geometryToLeafletPolygons(geo).filter(
+                      (polygon) =>
+                        Array.isArray(polygon?.[0]) && polygon[0].length >= 3
+                    );
+
+                    if (!polygons.length) return null;
+
+                    return polygons.map((polygon, polygonIndex) => (
+                      <Polygon
+                        key={`${item._id || label || index}-${polygonIndex}`}
+                        positions={polygon}
+                        pathOptions={buildIncidentBarangayStyle({
+                          label,
+                          index,
+                          count,
+                          maxCount: maxIncidentBarangayCount,
+                        })}
+                      >
+                        <Tooltip
+                          permanent
+                          direction="center"
+                          interactive={false}
+                          className={`incident-barangay-bound-label is-${tone}`}
+                          opacity={0.98}
+                          position={getPolygonCenter(polygon) || undefined}
+                        >
+                          <span className="incident-barangay-bound-label__text">
+                            {label}
+                          </span>
+                          {count > 0 && (
+                            <span className="incident-barangay-bound-label__count">
+                              {count}
+                            </span>
+                          )}
+                        </Tooltip>
+                      </Polygon>
+                    ));
                   })}
 
                 {visibleMapIncidents.map((incident) => {
-                  const lat = Number(incident.latitude);
-                  const lng = Number(incident.longitude);
+                  const position = getIncidentMarkerPosition(
+                    incident,
+                    barangayBounds
+                  );
 
-                  if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
-                  if (!isPointInsideJaen(lat, lng)) return null;
+                  if (!position) return null;
 
                   return (
                     <Marker
                       key={incident._id}
-                      position={[lat, lng]}
-                      icon={incidentIcon}
+                      position={position}
+                      icon={getIncidentMapIcon(incident)}
                       eventHandlers={{
                         click: () => handleQueueSelect(incident._id),
                       }}

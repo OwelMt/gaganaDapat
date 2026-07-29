@@ -159,7 +159,7 @@ html, body, #root {
 
 .tio-filters {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px) auto;
+  grid-template-columns: minmax(280px, 1.35fr) minmax(180px, 0.8fr) minmax(200px, 0.8fr) auto;
   gap: 12px;
   align-items: end;
   padding: 14px;

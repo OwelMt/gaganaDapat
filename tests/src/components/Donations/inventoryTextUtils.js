@@ -45,7 +45,7 @@ const sanitizeWithPattern = (
   const normalized = clampRepeatedPunctuation(
     trimLongTokens(cleaned, maxTokenLength)
   )
-    .trim()
+    .trimStart()
     .slice(0, maxLength);
 
   return lowercase ? normalized.toLowerCase() : normalized;
@@ -79,15 +79,10 @@ export const sanitizeInventoryNoteText = (
   );
 
 export const sanitizeInventoryReferenceText = (value = "") =>
-  sanitizeWithPattern(
-    value,
-    MAX_INVENTORY_REFERENCE_LENGTH,
-    /[^A-Za-z0-9\s/#().-]/g,
-    {
-      allowLineBreaks: false,
-      maxTokenLength: MAX_INVENTORY_REFERENCE_LENGTH,
-    }
-  ).toUpperCase();
+  String(value || "")
+    .normalize("NFKC")
+    .replace(/\D/g, "")
+    .slice(0, MAX_INVENTORY_REFERENCE_LENGTH);
 
 export const sanitizeInventorySearchText = (value = "") =>
   sanitizeWithPattern(

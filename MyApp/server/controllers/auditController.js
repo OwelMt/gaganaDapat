@@ -79,6 +79,16 @@ const getAuditLogs = async (req, res) => {
       .sort({ actionAt: -1, createdAt: -1 })
       .limit(limit);
 
+    const filterOptionsQuery = {};
+    if (days > 0) {
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      filterOptionsQuery.$or = [{ createdAt: { $gte: since } }, { actionAt: { $gte: since } }];
+    }
+
+    const filterOptionAudits = await Audit.find(filterOptionsQuery)
+      .sort({ actionAt: -1, createdAt: -1 })
+      .limit(500);
+
     const normalizedEvents = audits
       .map(mapAuditDocToEvent)
       .sort((a, b) => {
@@ -91,12 +101,14 @@ const getAuditLogs = async (req, res) => {
       ? normalizedEvents.filter((event) => buildAuditSearchText(event).includes(searchQuery))
       : normalizedEvents;
 
+    const optionBaseEvents = filterOptionAudits.map(mapAuditDocToEvent);
+
     const availableModules = Array.from(
-      new Set(filterBaseEvents.map((event) => event.module).filter(Boolean))
+      new Set(optionBaseEvents.map((event) => event.module).filter(Boolean))
     ).sort();
 
     const availableActorRoles = Array.from(
-      new Set(filterBaseEvents.map((event) => event.actorRole).filter(Boolean))
+      new Set(optionBaseEvents.map((event) => event.actorRole).filter(Boolean))
     ).sort();
 
     res.json({

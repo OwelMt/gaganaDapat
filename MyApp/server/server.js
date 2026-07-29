@@ -373,6 +373,12 @@ app.use("/uploads/monetary", express.static(monetaryDir));
 app.use("/uploads/proofs", express.static(proofsDir));
 app.use("/uploads/relief-requests", express.static(reliefRequestsDir));
 app.use("/uploads/avatars", express.static(avatarsDir));
+app.use("/uploads", (req, res) => {
+  res.status(404).json({
+    message:
+      "Uploaded file not found. If this was an older local upload, it may no longer exist on the server.",
+  });
+});
 
 // --------------------
 // API Routes

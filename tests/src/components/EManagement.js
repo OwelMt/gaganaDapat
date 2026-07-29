@@ -125,6 +125,16 @@ const numberOrZero = (value) => {
   return Number.isNaN(num) ? 0 : num;
 };
 
+const deriveCapacityStatusFromOccupancy = (currentOccupants, capacityIndividual) => {
+  const current = Number(currentOccupants || 0);
+  const capacity = Number(capacityIndividual || 0);
+  if (capacity > 0 && current >= capacity) return "full";
+  if (capacity > 0 && Math.round((current / capacity) * 100) >= 75) {
+    return "limited";
+  }
+  return "available";
+};
+
 const normalizeBarangayKey = (value) =>
   safeLower(value).replace(/\s+/g, " ").trim();
 
@@ -278,10 +288,13 @@ function SummaryCard({ tone, icon, label, value, sub, urgent = false }) {
   );
 }
 
-function MapLegend() {
+function MapLegend({ inline = false }) {
   return (
-    <div className="map-legend-card" aria-label="Map legend">
-      <div className="map-legend-title">Map Legend</div>
+    <div
+      className={`map-legend-card ${inline ? "map-legend-card-inline" : ""}`}
+      aria-label="Map legend"
+    >
+      {!inline && <div className="map-legend-title">Map Legend</div>}
       <div className="map-legend-items">
         <div className="map-legend-item">
           <span className="map-legend-dot available" />
@@ -308,7 +321,9 @@ export default function EManagement() {
   const navigate = useNavigate();
   const location = useLocation();
   const nameRef = useRef(null);
+  const evacPageTopRef = useRef(null);
   const notificationTimersRef = useRef({});
+  const occupancyAutoSaveTimerRef = useRef(null);
 
   const [places, setPlaces] = useState([]);
   const [allPlaces, setAllPlaces] = useState([]);
@@ -1010,6 +1025,16 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       null
     );
   }, [filteredPlaces, selectedId]);
+
+  const scrollEvacuationToTop = useCallback(() => {
+    const target = evacPageTopRef.current;
+    if (target?.scrollIntoView) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   const selectedPlaceHistory = useMemo(() => {
     if (!selectedPlace) return [];
@@ -1990,12 +2015,21 @@ useEffect(() => {
 
 const handleOccupancyDraftChange = useCallback((field, value) => {
   const cleaned = String(value || "").replace(/[^\d]/g, "");
+  const maxByField = {
+    currentOccupants: Number(selectedPlace?.capacityIndividual || 0),
+    currentFamilies: Number(selectedPlace?.capacityFamily || 0),
+    occupiedBeds: Number(selectedPlace?.bedCapacity || 0),
+  };
+  const maxValue = maxByField[field] || 0;
+  const nextNumber = Number(cleaned || 0);
+  const nextValue =
+    maxValue > 0 ? Math.min(nextNumber, maxValue) : nextNumber;
 
   setOccupancyDraft((prev) => ({
     ...prev,
-    [field]: cleaned,
+    [field]: cleaned === "" ? "" : String(nextValue),
   }));
-}, []);
+}, [selectedPlace]);
 
 const handleOccupancyStep = useCallback(
   (field, delta) => {
@@ -2047,7 +2081,7 @@ const handleResetOccupancyDraft = useCallback(() => {
   });
 }, [selectedPlace]);
 
-const handleSaveOccupancy = useCallback(async () => {
+const handleSaveOccupancy = useCallback(async ({ silent = false } = {}) => {
   if (!selectedPlace?._id || savingOccupancy) return;
 
   const nextOccupants = Number(occupancyDraft.currentOccupants || 0);
@@ -2112,12 +2146,14 @@ const handleSaveOccupancy = useCallback(async () => {
     const params = buildEvacQueryParams();
     await Promise.all([fetchHistory(params), fetchAnalytics(params)]);
 
-    pushNotification(
-      `Occupancy saved: ${formatNumber(
-        updatedPlace.currentOccupants || 0
-      )}/${formatNumber(updatedPlace.capacityIndividual || 0)} people.`,
-      "success"
-    );
+    if (!silent) {
+      pushNotification(
+        `Occupancy saved: ${formatNumber(
+          updatedPlace.currentOccupants || 0
+        )}/${formatNumber(updatedPlace.capacityIndividual || 0)} people.`,
+        "success"
+      );
+    }
   } catch (error) {
     console.error("Save occupancy error:", error);
     pushNotification(
@@ -2137,6 +2173,26 @@ const handleSaveOccupancy = useCallback(async () => {
   fetchHistory,
   fetchAnalytics,
 ]);
+
+useEffect(() => {
+  if (!selectedPlace?._id || !hasOccupancyChanges || savingOccupancy) {
+    return undefined;
+  }
+
+  if (occupancyAutoSaveTimerRef.current) {
+    clearTimeout(occupancyAutoSaveTimerRef.current);
+  }
+
+  occupancyAutoSaveTimerRef.current = setTimeout(() => {
+    handleSaveOccupancy({ silent: true });
+  }, 700);
+
+  return () => {
+    if (occupancyAutoSaveTimerRef.current) {
+      clearTimeout(occupancyAutoSaveTimerRef.current);
+    }
+  };
+}, [selectedPlace?._id, hasOccupancyChanges, savingOccupancy, handleSaveOccupancy]);
 
   const handleStatusChange = useCallback(
     async (nextStatus) => {
@@ -2857,6 +2913,7 @@ const handleSaveOccupancy = useCallback(async () => {
   return (
     <DashboardShell>
       <div
+        ref={evacPageTopRef}
         className={`evac-dashboard-page ${
           isBarangayRole ? "barangay-mode-page" : ""
         }`}
@@ -3062,9 +3119,28 @@ const handleSaveOccupancy = useCallback(async () => {
         >
           {!isBarangayRole && (
             <aside className="evac-left-panel">
-              <div className="panel-head">
-                <div>
-                  <h2>Barangay Overview</h2>
+              <div className="panel-head barangay-overview-head">
+                <h2>Barangay Overview</h2>
+                <div
+                  className="barangay-overview-legend"
+                  aria-label="Barangay overview legend"
+                >
+                  <span className="overview-legend-item">
+                    <span className="overview-legend-dot available" />
+                    Available
+                  </span>
+                  <span className="overview-legend-item">
+                    <span className="overview-legend-dot limited" />
+                    Limited
+                  </span>
+                  <span className="overview-legend-item">
+                    <span className="overview-legend-dot full" />
+                    Full
+                  </span>
+                  <span className="overview-legend-item">
+                    <span className="overview-legend-dot archived" />
+                    Archived
+                  </span>
                 </div>
               </div>
 
@@ -3167,9 +3243,10 @@ const handleSaveOccupancy = useCallback(async () => {
           )}
 
           <section className="evac-map-panel">
-            <div className="panel-head compact">
-              <div>
+            <div className="panel-head compact map-panel-head">
+              <div className="map-panel-title-block">
                 <h2>Evacuation Map</h2>
+                <MapLegend inline />
               </div>
 
               <div className="map-panel-actions">
@@ -3232,6 +3309,7 @@ const handleSaveOccupancy = useCallback(async () => {
                   setSelectedId(place._id);
                   setPanelView("details");
                   setMobileTaskPanelOpen(true);
+                  scrollEvacuationToTop();
                 }}
                 pickMode={pickMode}
                 isBarangayRole={isBarangayRole}
@@ -3241,8 +3319,6 @@ const handleSaveOccupancy = useCallback(async () => {
                 matchedBarangayBounds={matchedBarangayBounds}
                 markerLabelsVisible={markerLabelsVisible}
               />
-
-              <MapLegend />
 
               {canAddArea && !pickMode && (
                 <button
@@ -3377,6 +3453,7 @@ const handleSaveOccupancy = useCallback(async () => {
               setSelectedId(place._id);
               setPanelView("details");
               setMobileTaskPanelOpen(true);
+              scrollEvacuationToTop();
             }}
           >
             <div className="place-card-top">
@@ -3528,7 +3605,16 @@ const handleSaveOccupancy = useCallback(async () => {
 
                   <div className="details-kpi-grid occupancy-aware">
   {(() => {
-    const occupancy = getOccupancyNumbers(selectedPlace);
+    const occupancy = getOccupancyNumbers({
+      ...selectedPlace,
+      currentOccupants: Number(occupancyDraft.currentOccupants || 0),
+      currentFamilies: Number(occupancyDraft.currentFamilies || 0),
+      occupiedBeds: Number(occupancyDraft.occupiedBeds || 0),
+    });
+    const draftCapacityStatus = deriveCapacityStatusFromOccupancy(
+      occupancy.currentOccupants,
+      occupancy.capacityIndividual
+    );
 
     return (
       <>
@@ -3544,7 +3630,7 @@ const handleSaveOccupancy = useCallback(async () => {
           <div className="occupancy-mini-progress">
             <div
               className={`occupancy-mini-fill ${getStatusClass(
-                selectedPlace.capacityStatus
+                draftCapacityStatus
               )}`}
               style={{ width: `${occupancy.individualDisplayPercent}%` }}
             />
@@ -3613,7 +3699,16 @@ const handleSaveOccupancy = useCallback(async () => {
 
                   <div className="ops-card occupancy-control-card">
   {(() => {
-    const occupancy = getOccupancyNumbers(selectedPlace);
+    const occupancy = getOccupancyNumbers({
+      ...selectedPlace,
+      currentOccupants: Number(occupancyDraft.currentOccupants || 0),
+      currentFamilies: Number(occupancyDraft.currentFamilies || 0),
+      occupiedBeds: Number(occupancyDraft.occupiedBeds || 0),
+    });
+    const draftCapacityStatus = deriveCapacityStatusFromOccupancy(
+      occupancy.currentOccupants,
+      occupancy.capacityIndividual
+    );
 
     return (
       <>
@@ -3639,7 +3734,7 @@ const handleSaveOccupancy = useCallback(async () => {
         <div className="occupancy-progress-track">
           <div
             className={`occupancy-progress-fill ${getStatusClass(
-              selectedPlace.capacityStatus
+              draftCapacityStatus
             )}`}
             style={{ width: `${occupancy.individualDisplayPercent}%` }}
           />
@@ -3771,7 +3866,7 @@ const handleSaveOccupancy = useCallback(async () => {
           <button
             type="button"
             className={`status-action-btn available ${
-              safeLower(selectedPlace.capacityStatus) === "available"
+              safeLower(draftCapacityStatus) === "available"
                 ? "active"
                 : ""
             }`}
@@ -3784,7 +3879,7 @@ const handleSaveOccupancy = useCallback(async () => {
           <button
             type="button"
             className={`status-action-btn limited ${
-              safeLower(selectedPlace.capacityStatus) === "limited" ? "active" : ""
+              safeLower(draftCapacityStatus) === "limited" ? "active" : ""
             }`}
             disabled
           >
@@ -3795,7 +3890,7 @@ const handleSaveOccupancy = useCallback(async () => {
           <button
             type="button"
             className={`status-action-btn full ${
-              safeLower(selectedPlace.capacityStatus) === "full" ? "active" : ""
+              safeLower(draftCapacityStatus) === "full" ? "active" : ""
             }`}
             disabled
           >
@@ -3804,7 +3899,7 @@ const handleSaveOccupancy = useCallback(async () => {
           </button>
         </div>
 
-        <div className="occupancy-save-row">
+        <div className="occupancy-save-row occupancy-autosave-row">
           <button
             type="button"
             className="ghost-btn"
@@ -3814,14 +3909,13 @@ const handleSaveOccupancy = useCallback(async () => {
             Reset
           </button>
 
-          <button
-            type="button"
-            className="primary-btn"
-            onClick={handleSaveOccupancy}
-            disabled={!hasOccupancyChanges || savingOccupancy}
-          >
-            {savingOccupancy ? "Saving..." : "Save Occupancy"}
-          </button>
+          <span className="occupancy-autosave-status">
+            {savingOccupancy
+              ? "Saving..."
+              : hasOccupancyChanges
+              ? "Autosaves after changes"
+              : "Saved"}
+          </span>
         </div>
 
       </>

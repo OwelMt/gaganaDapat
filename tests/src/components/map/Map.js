@@ -17,41 +17,48 @@ import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { point as turfPoint } from "@turf/helpers";
 import "leaflet/dist/leaflet.css";
 import jaenGeoJSON from "../data/jaen.json";
+import { getBasemapTileLayerProps } from "./mapBasemap";
 
 const DEFAULT_CENTER = [15.3382, 120.9056];
-const BOUNDS_BUFFER = 0.01;
+const BOUNDS_BUFFER = 0.035;
+const JAEN_MIN_ZOOM = 12.25;
+const JAEN_INITIAL_ZOOM = 13;
+const JAEN_FIT_MAX_ZOOM = 13;
 
 /* ---------------- Icons ---------------- */
 
+const STATUS_MARKER_SIZE = 24;
+const STATUS_MARKER_ANCHOR = [12, 24];
+
 const blueIcon = new L.Icon({
   iconUrl: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png",
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
+  iconSize: [STATUS_MARKER_SIZE, STATUS_MARKER_SIZE],
+  iconAnchor: STATUS_MARKER_ANCHOR,
 });
 
 const greenIcon = new L.Icon({
   iconUrl: "https://maps.google.com/mapfiles/ms/icons/green-dot.png",
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
+  iconSize: [STATUS_MARKER_SIZE, STATUS_MARKER_SIZE],
+  iconAnchor: STATUS_MARKER_ANCHOR,
 });
 
 const orangeIcon = new L.Icon({
   iconUrl: "https://maps.google.com/mapfiles/ms/icons/orange-dot.png",
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
+  iconSize: [STATUS_MARKER_SIZE, STATUS_MARKER_SIZE],
+  iconAnchor: STATUS_MARKER_ANCHOR,
 });
 
 const redIcon = new L.Icon({
   iconUrl: "https://maps.google.com/mapfiles/ms/icons/red-dot.png",
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
+  iconSize: [STATUS_MARKER_SIZE, STATUS_MARKER_SIZE],
+  iconAnchor: STATUS_MARKER_ANCHOR,
 });
 
 const greyIcon = L.divIcon({
   className: "custom-evac-archived-marker",
   html: '<span class="custom-evac-archived-marker__dot"></span>',
-  iconSize: [22, 22],
-  iconAnchor: [11, 11],
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
 });
 
 /* ---------------- Styles ---------------- */
@@ -473,7 +480,8 @@ function FitToJaenBounds({ bounds, publicMode = false }) {
     let cancelled = false;
 
     map.fitBounds(bounds, {
-      padding: publicMode ? [28, 28] : [20, 20],
+      padding: publicMode ? [58, 58] : [48, 48],
+      maxZoom: JAEN_FIT_MAX_ZOOM,
     });
     map.setMaxBounds(bounds);
 
@@ -508,8 +516,8 @@ function FitToSelectedBarangay({
     let cancelled = false;
 
     map.fitBounds(targetBounds, {
-      padding: selectedBounds ? [34, 34] : [28, 28],
-      maxZoom: selectedBounds ? 16 : 14,
+      padding: selectedBounds ? [48, 48] : [58, 58],
+      maxZoom: selectedBounds ? 15 : JAEN_FIT_MAX_ZOOM,
     });
 
     const timer = setTimeout(() => {
@@ -539,9 +547,7 @@ function MapUpdater({ position, zoom, allowedBounds, publicMode = false }) {
 
     const target = L.latLng(position[0], position[1]);
 
-    if (publicMode) {
-      map.setView(position, zoom);
-    } else if (!allowedBounds || allowedBounds.contains(target)) {
+    if (!allowedBounds || allowedBounds.contains(target)) {
       map.setView(position, zoom);
     }
 
@@ -783,7 +789,7 @@ function FlyToOnClickMarker({
         <Tooltip
           key="marker-label-permanent"
           direction="top"
-          offset={[0, -28]}
+          offset={[0, -24]}
           opacity={1}
           permanent
           className="evac-marker-label"
@@ -794,7 +800,7 @@ function FlyToOnClickMarker({
         <Tooltip
           key="marker-label-hover"
           direction="top"
-          offset={[0, -28]}
+          offset={[0, -24]}
           opacity={1}
           className="evac-marker-label"
         >
@@ -849,25 +855,9 @@ const Map = ({
       ]
     );
   }, [jaenBounds]);
+  const basemapTileProps = useMemo(() => getBasemapTileLayerProps(), []);
 
-  const relaxedPublicBounds = useMemo(() => {
-    if (!jaenBounds) return null;
-
-    return L.latLngBounds(
-      [
-        [
-          jaenBounds.getSouthWest().lat - 0.08,
-          jaenBounds.getSouthWest().lng - 0.08,
-        ],
-        [
-          jaenBounds.getNorthEast().lat + 0.08,
-          jaenBounds.getNorthEast().lng + 0.08,
-        ],
-      ]
-    );
-  }, [jaenBounds]);
-
-  const effectiveBounds = publicMode ? relaxedPublicBounds : allowedBounds;
+  const effectiveBounds = allowedBounds;
 
   const maskGeoJSON = useMemo(() => {
     return buildInverseMaskGeoJSON(jaenGeoJSON);
@@ -887,8 +877,8 @@ const Map = ({
   }, [jaenBounds]);
 
   const [position, setPosition] = useState(initialCenter);
-  const [zoom, setZoom] = useState(publicMode ? 12 : 13);
-  const [currentZoom, setCurrentZoom] = useState(publicMode ? 13 : 14);
+  const [zoom, setZoom] = useState(JAEN_MIN_ZOOM);
+  const [currentZoom, setCurrentZoom] = useState(publicMode ? JAEN_MIN_ZOOM : JAEN_INITIAL_ZOOM);
   const [placeName, setPlaceName] = useState("Jaen, Nueva Ecija");
   const [hoveredBarangayKey, setHoveredBarangayKey] = useState("");
   const renderedBarangayBounds = useMemo(() => {
@@ -929,15 +919,17 @@ const Map = ({
   }, [initialCenter]);
 
   useEffect(() => {
-    setZoom(publicMode ? 12 : 13);
+    setZoom(JAEN_MIN_ZOOM);
   }, [publicMode]);
 
   return (
     <MapContainer
       center={initialCenter}
-      zoom={publicMode ? 13 : 14}
-      minZoom={13}
+      zoom={publicMode ? JAEN_MIN_ZOOM : JAEN_INITIAL_ZOOM}
+      minZoom={JAEN_MIN_ZOOM}
       maxZoom={18}
+      zoomSnap={0.25}
+      zoomDelta={0.5}
       maxBounds={effectiveBounds || jaenBounds || undefined}
       maxBoundsViscosity={1.0}
       style={{ height: "100%", width: "100%" }}
@@ -976,10 +968,7 @@ const Map = ({
         pickBoundaryGeoJSON={pickBoundaryGeoJSON}
       />
 
-      <TileLayer
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        attribution="© OpenStreetMap contributors"
-      />
+      <TileLayer {...basemapTileProps} />
 
       <GeoJSON data={maskGeoJSON} style={maskStyle} />
       {showHazardOverlay && hazardLayers?.safe ? (

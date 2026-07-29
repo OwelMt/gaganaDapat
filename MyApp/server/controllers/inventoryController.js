@@ -1,9 +1,14 @@
 const PDFDocument = require("pdfkit");
+const fs = require("fs");
+const path = require("path");
+const { Readable } = require("stream");
 const Donation = require("../models/Donation");
 const InventoryItem = require("../models/InventoryItem");
+const InventoryProofFile = require("../models/InventoryProofFile");
 const InventoryLog = require("../models/InventoryLog");
 const Notification = require("../models/Notification");
 const ReliefRelease = require("../models/ReliefRelease");
+const cloudinary = require("../config/cloudinary");
 const createNotification = require("../utils/createNotification");
 const { callAiAnalyticsProvider } = require("../utils/aiAnalyticsProvider");
 const {
@@ -58,6 +63,292 @@ const VALID_REPORT_TYPES = [
 const normalizeString = (value) => {
   if (value === undefined || value === null) return "";
   return String(value).trim();
+};
+
+const getProofContentType = (fileUrl = "", fallback = "") => {
+  const normalized = String(fileUrl || "").split("?")[0].toLowerCase();
+  if (normalized.endsWith(".pdf")) return "application/pdf";
+  if (normalized.endsWith(".doc")) return "application/msword";
+  if (normalized.endsWith(".docx")) {
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
+  return fallback || "application/octet-stream";
+};
+
+const isDocumentProofUpload = (file = {}) => {
+  const extension = path.extname(file.originalname || file.filename || "").toLowerCase();
+  const mimetype = String(file.mimetype || "").toLowerCase();
+
+  return (
+    [".pdf", ".doc", ".docx"].includes(extension) ||
+    mimetype.includes("pdf") ||
+    mimetype.includes("msword") ||
+    mimetype.includes("wordprocessingml")
+  );
+};
+
+const getProofPreviewFileName = (fileUrl = "") => {
+  const normalized = String(fileUrl || "").split("?")[0].replace(/\\/g, "/");
+  return decodeURIComponent(normalized.split("/").pop() || "proof-file");
+};
+
+const getInventoryProofFileId = (rawUrl = "") => {
+  const normalized = String(rawUrl || "").trim();
+  const match = normalized.match(/\/api\/inventory\/proof-file\/([a-f0-9]{24})(?:\/|$)/i);
+
+  return match ? match[1] : "";
+};
+
+const sendProofPreviewMessage = (res, status, message) =>
+  res.status(status).type("html").send(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #f8fbf7;
+        color: #0b3d24;
+        font-family: "Montserrat", "Poppins", sans-serif;
+      }
+      .message {
+        max-width: 520px;
+        padding: 32px;
+        text-align: center;
+        border: 1px solid #cfe5d7;
+        border-radius: 20px;
+        background: #ffffff;
+      }
+      strong {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 18px;
+      }
+      p {
+        margin: 0;
+        color: #5f7568;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="message">
+      <strong>Document preview unavailable</strong>
+      <p>${message}</p>
+    </div>
+  </body>
+</html>`);
+
+const getLocalProofPath = (rawUrl = "") => {
+  const normalized = String(rawUrl || "").trim().replace(/\\/g, "/");
+  if (!normalized) return "";
+
+  const uploadsIndex = normalized.indexOf("/uploads/");
+  const localPath =
+    normalized.startsWith("uploads/")
+      ? normalized
+      : normalized.startsWith("/uploads/")
+      ? normalized.slice(1)
+      : uploadsIndex >= 0
+      ? normalized.slice(uploadsIndex + 1)
+      : "";
+
+  if (!localPath) return "";
+
+  const decodedLocalPath = decodeURIComponent(localPath);
+  const resolved = path.resolve(__dirname, "..", decodedLocalPath);
+  const uploadsRoot = path.resolve(__dirname, "..", "uploads");
+
+  return resolved.startsWith(uploadsRoot) ? resolved : "";
+};
+
+const buildProofFetchCandidates = (rawUrl = "") => {
+  const candidates = [rawUrl];
+
+  if (/res\.cloudinary\.com/i.test(rawUrl) && /\/image\/upload\//i.test(rawUrl)) {
+    candidates.push(rawUrl.replace(/\/image\/upload\//i, "/raw/upload/"));
+  }
+
+  return candidates.filter(
+    (candidate, index, all) => candidate && all.indexOf(candidate) === index
+  );
+};
+
+const streamInventoryProofFile = async (req, res) => {
+  const proofFile = await InventoryProofFile.findById(req.params.id);
+
+  if (!proofFile?.data) {
+    return sendProofPreviewMessage(res, 404, "Proof file not found.");
+  }
+
+  const proofBuffer = Buffer.isBuffer(proofFile.data)
+    ? proofFile.data
+    : Buffer.from(proofFile.data?.buffer || proofFile.data || []);
+  const safeFilename = String(proofFile.filename || "proof-file").replace(/"/g, "");
+
+  res.setHeader("Content-Type", proofFile.contentType || "application/octet-stream");
+  res.setHeader(
+    "Content-Disposition",
+    `inline; filename="${safeFilename}"`
+  );
+  res.setHeader("Content-Length", proofBuffer.length);
+
+  return res.send(proofBuffer);
+};
+
+const previewInventoryProof = async (req, res) => {
+  try {
+    const rawUrl = normalizeString(req.query.url);
+
+    if (!rawUrl) {
+      return sendProofPreviewMessage(res, 400, "Proof URL is required.");
+    }
+
+    const proofFileId = getInventoryProofFileId(rawUrl);
+    if (proofFileId) {
+      req.params.id = proofFileId;
+      return streamInventoryProofFile(req, res);
+    }
+
+    const localPath = getLocalProofPath(rawUrl);
+    if (localPath && fs.existsSync(localPath)) {
+      res.setHeader("Content-Type", getProofContentType(localPath));
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${getProofPreviewFileName(localPath)}"`
+      );
+      return fs.createReadStream(localPath).pipe(res);
+    }
+
+    if (!/^https?:\/\//i.test(rawUrl)) {
+      return sendProofPreviewMessage(res, 404, "Proof file not found.");
+    }
+
+    const parsedUrl = new URL(rawUrl);
+    const allowedHosts = [
+      "res.cloudinary.com",
+      "localhost",
+      "127.0.0.1",
+    ];
+    const isAllowedHost = allowedHosts.some((host) =>
+      parsedUrl.hostname === host || parsedUrl.hostname.endsWith(`.${host}`)
+    );
+
+    if (!isAllowedHost) {
+      return sendProofPreviewMessage(res, 400, "Unsupported proof file host.");
+    }
+
+    let response = null;
+    let previewUrl = rawUrl;
+
+    for (const candidate of buildProofFetchCandidates(rawUrl)) {
+      response = await fetch(candidate);
+      if (response.ok && response.body) {
+        previewUrl = candidate;
+        break;
+      }
+    }
+
+    if (!response.ok || !response.body) {
+      return sendProofPreviewMessage(
+        res,
+        404,
+        "This proof file cannot be previewed from its current storage URL. Re-upload it so the system can save a durable preview copy."
+      );
+    }
+
+    res.setHeader(
+      "Content-Type",
+      getProofContentType(previewUrl, response.headers.get("content-type") || "")
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${getProofPreviewFileName(previewUrl)}"`
+    );
+
+    return Readable.fromWeb(response.body).pipe(res);
+  } catch (err) {
+    console.error("Preview inventory proof error:", err);
+    return sendProofPreviewMessage(res, 500, "Failed to preview proof file.");
+  }
+};
+
+const uploadInventoryProofFile = async (file) => {
+  if (!file) return "";
+
+  const isDocument = isDocumentProofUpload(file);
+  if (isDocument) {
+    const data =
+      file.buffer ||
+      (file.path && fs.existsSync(file.path) ? fs.readFileSync(file.path) : null);
+
+    if (data) {
+      const savedProof = await InventoryProofFile.create({
+        filename: file.originalname || file.filename || "proof-file",
+        contentType: file.mimetype || getProofContentType(file.originalname || file.filename),
+        size: file.size || data.length,
+        data,
+      });
+
+      return `/api/inventory/proof-file/${savedProof._id}/${encodeURIComponent(
+        savedProof.filename
+      )}`;
+    }
+  }
+
+  const uploadOptions = {
+    folder: "evacuation_app/inventory_proofs",
+    resource_type: "image",
+    use_filename: true,
+    unique_filename: true,
+  };
+
+  if (file.buffer) {
+    const result = await new Promise((resolve, reject) => {
+      cloudinary.uploader
+        .upload_stream(
+          uploadOptions,
+          (err, uploadResult) => {
+            if (err) return reject(err);
+            return resolve(uploadResult);
+          }
+        )
+        .end(file.buffer);
+    });
+
+    return result.secure_url || "";
+  }
+
+  const localFilePath =
+    file.path ||
+    (file.filename
+      ? path.join(__dirname, "..", "uploads", "proofs", file.filename)
+      : "");
+
+  if (localFilePath && fs.existsSync(localFilePath)) {
+    const result = await cloudinary.uploader.upload(localFilePath, uploadOptions);
+
+    return result.secure_url || "";
+  }
+
+  if (file.filename) {
+    return `uploads/proofs/${file.filename}`;
+  }
+
+  return "";
+};
+
+const uploadInventoryProofFiles = async (files = []) => {
+  const uploaded = await Promise.all(
+    (Array.isArray(files) ? files : [])
+      .filter(Boolean)
+      .map((file) => uploadInventoryProofFile(file))
+  );
+
+  return uploaded.filter(Boolean);
 };
 
 const normalizeLower = (value, fallback) => {
@@ -2317,13 +2608,9 @@ const addInventory = async (req, res) => {
       return res.status(403).json({ message: roleAccessError });
     }
 
-    let proofFiles = [];
-
-    if (Array.isArray(req.files)) {
-      proofFiles = req.files.map((file) => file.filename);
-    } else if (req.file) {
-      proofFiles = [req.file.filename];
-    }
+    const proofFiles = await uploadInventoryProofFiles(
+      Array.isArray(req.files) ? req.files : req.file ? [req.file] : []
+    );
 
     const itemData = {
       type: data.type,
@@ -2570,7 +2857,7 @@ const updateInventory = async (req, res) => {
     }
 
     if (req.files && req.files.length > 0) {
-      const newFiles = req.files.map((file) => file.filename);
+      const newFiles = await uploadInventoryProofFiles(req.files);
       item.proofFiles = [...(item.proofFiles || []), ...newFiles];
     }
 
@@ -2896,5 +3183,7 @@ module.exports = {
   getDonationAiInsights,
 
   getInventoryCategories,
+  streamInventoryProofFile,
+  previewInventoryProof,
   exportInventoryPdf,
 };

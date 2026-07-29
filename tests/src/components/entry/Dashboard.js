@@ -11,6 +11,7 @@ import {
   FaEyeSlash,
   FaFacebookF,
   FaMapMarkedAlt,
+  FaSearch,
   FaPhoneAlt,
   FaSave,
   FaShieldAlt,
@@ -30,6 +31,7 @@ import hero2 from "../../assets/images/hero2.jpg";
 import hero3 from "../../assets/images/hero3.jpg";
 import EvacMap from "../map/Map";
 import PublicDigitalTwinPanel from "./PublicDigitalTwinPanel";
+import FloodVirtualTwin from "./FloodVirtualTwin";
 import { API_BASE_URL } from "../../config/api";
 
 const BASE_URL = API_BASE_URL;
@@ -261,7 +263,7 @@ function sanitizeSearchInput(value) {
   return String(value || "")
     .replace(/[<>]/g, "")
     .replace(/\s+/g, " ")
-    .trim()
+    .trimStart()
     .slice(0, 100);
 }
 
@@ -662,7 +664,7 @@ export default function Dashboard() {
   function handleSearchSubmit(e) {
     e.preventDefault();
 
-    const value = sanitizeSearchInput(searchText).toLowerCase();
+    const value = sanitizeSearchInput(searchText).trim().toLowerCase();
 
     if (!value) return;
 
@@ -1287,15 +1289,18 @@ export default function Dashboard() {
             <div className="header-right">
               <div className="header-public-actions">
                 <form className="header-search-wrap" onSubmit={handleSearchSubmit}>
-                  <input
-                    type="text"
-                    className="header-search"
-                    placeholder="Search weather, hazard, incident, barangay, contacts..."
-                    value={searchText}
-                    onChange={(e) =>
-                      setSearchText(sanitizeSearchInput(e.target.value))
-                    }
-                  />
+                  <div className="header-search-shell">
+                    <FaSearch className="header-search-icon" aria-hidden="true" />
+                    <input
+                      type="text"
+                      className="header-search"
+                      placeholder="Search weather, hazard, incident, barangay, contacts..."
+                      value={searchText}
+                      onChange={(e) =>
+                        setSearchText(sanitizeSearchInput(e.target.value))
+                      }
+                    />
+                  </div>
                 </form>
               </div>
 
@@ -1402,12 +1407,7 @@ export default function Dashboard() {
               {activeTwinView === "digital-twin" ? (
                 <PublicDigitalTwinPanel />
               ) : (
-                <div className="landing-twin-stage">
-                  <div className="landing-twin-placeholder-card">
-                    <strong>Virtual Twin</strong>
-                    <p>Virtual Twin</p>
-                  </div>
-                </div>
+                <FloodVirtualTwin />
               )}
             </div>
           </section>

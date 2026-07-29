@@ -7,6 +7,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import incidentImage from '../assets/images/incident-icon.png';
 import { API_BASE_URL } from "../config/api";
+import { getBasemapTileLayerProps } from "./map/mapBasemap";
 
 const incidentIcon = new L.Icon({
   iconUrl: incidentImage,
@@ -28,6 +29,7 @@ export default function Admin() {
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [incidents, setIncidents] = useState([]);
   const [statusMap, setStatusMap] = useState({});
+  const basemapTileProps = getBasemapTileLayerProps();
 
   useEffect(() => {
     const storedRole = localStorage.getItem('role');
@@ -112,10 +114,7 @@ export default function Admin() {
           ]}
           maxBoundsViscosity={1.0}
         >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution="&copy; OpenStreetMap contributors"
-          />
+          <TileLayer {...basemapTileProps} />
           {incidents.map(incident => (
             incident.latitude != null && incident.longitude != null && (
               <Marker

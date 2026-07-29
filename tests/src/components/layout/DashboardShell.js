@@ -227,6 +227,12 @@ export default function DashboardShell({ children, variant }) {
         }`}
       >
         <header className="dashboard-topbar">
+          <div className="shell-system-brand" aria-label="System identity">
+            <strong className="shell-system-title">
+              Jaen Disaster Information and Management System.
+            </strong>
+          </div>
+
           <div className="shell-topbar-actions">
             <div className="shell-quick-actions" aria-label="Quick actions">
               <button

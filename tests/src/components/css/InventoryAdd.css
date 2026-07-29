@@ -149,6 +149,11 @@
   border-color: #ddd6fe;
 }
 
+.summary-card.danger {
+  background: linear-gradient(180deg, #ffffff 0%, var(--danger-soft) 100%);
+  border-color: #f1c5c5;
+}
+
 .summary-card.muted {
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
 }
@@ -187,6 +192,11 @@
 .summary-card.accent .summary-icon {
   background: #ede9fe;
   color: #6d28d9;
+}
+
+.summary-card.danger .summary-icon {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .summary-label {
@@ -1009,14 +1019,16 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 86px;
 }
 
 .source-cell strong {
   color: var(--text-main);
   text-transform: capitalize;
   font-size: 0.88rem;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  white-space: nowrap;
 }
 
 .source-cell small,
@@ -1055,6 +1067,10 @@
   background: #f8fcf8;
   text-decoration: none;
   min-width: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
 
 .proof-card:hover {
@@ -1088,6 +1104,126 @@
   font-weight: 700;
   line-height: 1.35;
   word-break: break-word;
+}
+
+.inventory-add-proof-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(6px);
+}
+
+.inventory-add-proof-modal-card {
+  position: relative;
+  width: min(920px, 92vw);
+  max-height: 88vh;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #0f172a;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inventory-add-proof-modal-card img,
+.inventory-add-proof-modal-card iframe {
+  width: 100%;
+  height: min(760px, 88vh);
+  max-height: 88vh;
+  border: 0;
+  object-fit: contain;
+  display: block;
+  background: #0f172a;
+}
+
+.inventory-add-proof-modal-card img {
+  height: auto;
+}
+
+.proof-document-preview-state {
+  width: min(540px, 86vw);
+  min-height: 260px;
+  padding: 42px 32px;
+  color: #ffffff;
+  text-align: center;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 14px;
+}
+
+.proof-document-preview-state p {
+  margin: 0;
+  max-width: 420px;
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1.6;
+}
+
+.proof-document-preview-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 3px solid rgba(255, 255, 255, 0.24);
+  border-top-color: #ffffff;
+  animation: proof-preview-spin 0.8s linear infinite;
+}
+
+@keyframes proof-preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.inventory-add-proof-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(15, 23, 42, 0.78);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.inventory-add-proof-modal-empty {
+  width: min(540px, 86vw);
+  min-height: 260px;
+  padding: 42px 32px;
+  color: #ffffff;
+  text-align: center;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 14px;
+}
+
+.inventory-add-proof-modal-empty svg {
+  font-size: 34px;
+  opacity: 0.82;
+}
+
+.inventory-add-proof-modal-empty h3 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.inventory-add-proof-modal-empty p {
+  margin: 0;
+  max-width: 420px;
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1.6;
 }
 
 .date-cell {

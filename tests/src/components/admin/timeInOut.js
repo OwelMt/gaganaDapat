@@ -5,6 +5,7 @@ import {
   FaClock,
   FaFilter,
   FaRedo,
+  FaSearch,
   FaSignInAlt,
   FaSignOutAlt,
   FaTable,
@@ -15,12 +16,32 @@ import "../css/timeInOut.css";
 import DashboardShell from "../layout/DashboardShell";
 import { API_BASE_URL } from "../../config/api";
 
+const ROLE_OPTIONS = [
+  { value: "", label: "All Roles" },
+  { value: "admin", label: "Admin" },
+  { value: "drrmo", label: "DRRMO" },
+  { value: "accountant", label: "Accountant" },
+  { value: "barangay", label: "Barangay" },
+];
+
+const getRoleLabel = (role) => {
+  const normalized = String(role || "").trim().toLowerCase();
+
+  if (normalized === "brgy" || normalized === "barangay") return "Barangay";
+  if (normalized === "accountant" || normalized === "accounting") return "Accountant";
+  if (normalized === "drrmo") return "DRRMO";
+  if (normalized === "admin") return "Admin";
+
+  return role || "-";
+};
+
 export default function TimeInOut() {
   const navigate = useNavigate();
   const BASE_URL = API_BASE_URL;
   const PAGE_SIZE = 18;
 
   const [logs, setLogs] = useState([]);
+  const [searchFilter, setSearchFilter] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [page, setPage] = useState(1);
@@ -100,6 +121,7 @@ export default function TimeInOut() {
 
     try {
       const qs = new URLSearchParams({
+        search: searchFilter.trim(),
         role: roleFilter || "",
         date: dateFilter || "",
         page: String(uiPage),
@@ -166,12 +188,12 @@ export default function TimeInOut() {
   useEffect(() => {
     setPage(1);
     setTotalCount(0);
-  }, [roleFilter, dateFilter]);
+  }, [searchFilter, roleFilter, dateFilter]);
 
   useEffect(() => {
     fetchWindow(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, roleFilter, dateFilter]);
+  }, [page, searchFilter, roleFilter, dateFilter]);
 
   const hasLogs = logs.length > 0;
   const canPrev = page > 1;
@@ -227,6 +249,21 @@ export default function TimeInOut() {
           <div className="tio-filters">
             <label className="tio-filter-group">
               <span className="tio-filter-label">
+                <FaSearch />
+                Search
+              </span>
+              <input
+                className="tio-input"
+                type="search"
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                placeholder="Search username, role, barangay..."
+                aria-label="Search account time logs"
+              />
+            </label>
+
+            <label className="tio-filter-group">
+              <span className="tio-filter-label">
                 <FaFilter />
                 Role
               </span>
@@ -236,10 +273,11 @@ export default function TimeInOut() {
                 onChange={(e) => setRoleFilter(e.target.value)}
                 aria-label="Filter by role"
               >
-                <option value="">All Roles</option>
-                <option value="admin">Admin</option>
-                <option value="drrmo">DRRMO</option>
-                <option value="brgy">BRGY</option>
+                {ROLE_OPTIONS.map((option) => (
+                  <option key={option.value || "all"} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </label>
 
@@ -261,10 +299,11 @@ export default function TimeInOut() {
               type="button"
               className="tio-button tio-button-ghost"
               onClick={() => {
+                setSearchFilter("");
                 setRoleFilter("");
                 setDateFilter("");
               }}
-              disabled={!roleFilter && !dateFilter}
+              disabled={!searchFilter && !roleFilter && !dateFilter}
             >
               Clear Filters
             </button>
@@ -357,8 +396,8 @@ export default function TimeInOut() {
                           <td data-label="Username" title={log.username || ""}>
                             {log.username || "—"}
                           </td>
-                          <td data-label="Role" title={log.role || ""}>
-                            {log.role || "—"}
+                          <td data-label="Role" title={getRoleLabel(log.role)}>
+                            {getRoleLabel(log.role)}
                           </td>
                           <td data-label="Status">
                             {log.timeOut === null ? (

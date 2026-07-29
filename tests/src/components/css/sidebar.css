@@ -114,8 +114,9 @@ body {
 .dashboard-topbar {
   flex: 0 0 auto;
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
+  gap: 18px;
   min-height: 72px;
   padding: 12px 18px;
   margin: 0 0 12px;
@@ -127,6 +128,27 @@ body {
   overflow: visible;
   position: relative;
   z-index: 12;
+}
+
+.shell-system-brand {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding-left: 12px;
+}
+
+.shell-system-title {
+  display: block;
+  color: var(--sb-accent-strong);
+  font-size: clamp(17px, 1.5vw, 24px);
+  font-weight: 850;
+  line-height: 1.08;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .shell-topbar-actions {
@@ -526,7 +548,7 @@ body {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 4px 8px;
+  padding: 14px 4px 8px;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
 }
@@ -566,8 +588,8 @@ body {
 
 .sidebar-group {
   display: grid;
-  gap: 7px;
-  margin-bottom: 14px;
+  gap: 9px;
+  margin-bottom: 18px;
 }
 
 .sidebar-group:last-child {
@@ -1154,6 +1176,22 @@ body {
   .mobile-sidebar-toggle {
     z-index: 90;
   }
+
+  .dashboard-topbar {
+    align-items: flex-start;
+    gap: 10px;
+    padding-left: 56px;
+  }
+
+  .shell-system-brand {
+    padding-left: 0;
+    gap: 3px;
+  }
+
+  .shell-system-title {
+    max-width: min(46vw, 360px);
+    font-size: 14px;
+  }
 }
 
 .sidebar-utility-group {
@@ -1266,6 +1304,16 @@ body {
 
   .shell-profile-inline {
     max-width: 210px;
+  }
+
+  .dashboard-topbar {
+    padding: 10px 12px 10px 52px;
+  }
+
+  .shell-system-title {
+    max-width: 34vw;
+    font-size: 12px;
+    line-height: 1.15;
   }
 
   .shell-topbar-actions {

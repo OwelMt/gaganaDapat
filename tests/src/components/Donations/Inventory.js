@@ -39,6 +39,12 @@ import {
   buildInventoryItemLookup,
   summarizeTemplateHealth,
 } from "./foodPackTemplateHealthUtils";
+import ProofDocumentPreview from "./ProofDocumentPreview";
+import {
+  buildProofFileHref,
+  buildProofFileHrefCandidates,
+  isImageProofFile,
+} from "./proofFileUtils";
 import {
   MAX_INVENTORY_CATEGORY_LENGTH as MAX_CUSTOM_CATEGORY_LENGTH,
   MAX_INVENTORY_DESCRIPTION_LENGTH as MAX_DESCRIPTION_LENGTH,
@@ -231,6 +237,7 @@ export default function Inventory() {
   const [notifications, setNotifications] = useState([]);
   const notificationTimersRef = useRef({});
   const [confirmationDialog, setConfirmationDialog] = useState(null);
+  const [proofPreview, setProofPreview] = useState(null);
   const templateModalRef = useRef(null);
   const releaseProofInputRef = useRef(null);
   const expiredNoticeCountRef = useRef(0);
@@ -2550,33 +2557,32 @@ useEffect(() => {
     return (
       <div className="proof-list">
         {proofFiles.map((file, index) => {
-          const rawValue = typeof file === "string" ? file : "";
-          const fileName = typeof file === "string" ? file : file?.filename;
-          const path =
-            typeof file === "string" && rawValue.includes("/")
-              ? rawValue
-              : typeof file === "string"
-              ? ""
-              : file?.path;
-
-          const href = path
-            ? path.startsWith("http")
-              ? path
-              : `${BASE_URL}/${path.replace(/^\/+/, "")}`
-            : fileName
-            ? `${BASE_URL}/uploads/${fileName}`
-            : "#";
+          const fileName =
+            typeof file === "string"
+              ? file
+              : file?.filename || file?.fileName || file?.name || `file-${index + 1}`;
+          const candidates = buildProofFileHrefCandidates(file, BASE_URL);
+          const href = candidates[0] || buildProofFileHref(file, BASE_URL) || "#";
+          const isImage = isImageProofFile(file);
 
           return (
-            <a
+            <button
               key={`${fileName || "file"}-${index}`}
-              href={href}
-              target="_blank"
-              rel="noreferrer"
-              className="file-link"
+              type="button"
+              className="file-link proof-preview-link"
+              onClick={() =>
+                setProofPreview({
+                  candidates: candidates.length ? candidates : [href].filter(Boolean),
+                  index: 0,
+                  isImage,
+                  name: fileName || `Proof ${index + 1}`,
+                  label: isImage ? `Image Proof ${index + 1}` : `Document Proof ${index + 1}`,
+                  missing: !href,
+                })
+              }
             >
-              View File {index + 1}
-            </a>
+              {isImage ? `View Image ${index + 1}` : `View File ${index + 1}`}
+            </button>
           );
         })}
       </div>
@@ -2816,6 +2822,66 @@ useEffect(() => {
       document.body
     )
   : null}
+
+          {proofPreview && typeof document !== "undefined"
+            ? createPortal(
+                <div
+                  className="inventory-image-modal"
+                  role="presentation"
+                  onClick={() => setProofPreview(null)}
+                >
+                  <div
+                    className="inventory-image-modal-card"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={proofPreview.label || "Inventory proof preview"}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      className="inventory-image-modal-close"
+                      onClick={() => setProofPreview(null)}
+                      aria-label="Close proof preview"
+                    >
+                      <FaTimes />
+                    </button>
+                    {!proofPreview.missing && proofPreview.candidates?.[proofPreview.index] ? (
+                      proofPreview.isImage ? (
+                      <img
+                        src={proofPreview.candidates[proofPreview.index]}
+                        alt={proofPreview.name || "Inventory proof"}
+                        onError={() => {
+                          setProofPreview((current) => {
+                            if (!current) return current;
+                            const nextIndex = current.index + 1;
+                            if (nextIndex < (current.candidates?.length || 0)) {
+                              return { ...current, index: nextIndex };
+                            }
+                            return { ...current, missing: true };
+                          });
+                        }}
+                      />
+                      ) : (
+                        <ProofDocumentPreview
+                          title={proofPreview.label || "Inventory proof document"}
+                          candidates={proofPreview.candidates || []}
+                        />
+                      )
+                    ) : (
+                      <div className="inventory-image-modal-empty">
+                        <FaFilePdf />
+                        <h3>Proof file not available</h3>
+                        <p>
+                          This record points to a local upload that is not available on
+                          this server. Re-upload the proof file to save a durable copy.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>,
+                document.body
+              )
+            : null}
 
           {confirmationDialog && typeof document !== "undefined"
             ? createPortal(
@@ -3363,6 +3429,8 @@ useEffect(() => {
                               type="text"
                               name="referenceNumber"
                               className="input"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
                               value={itemForm.referenceNumber}
                               onChange={handleItemFormChange}
                               maxLength={MAX_INVENTORY_REFERENCE_LENGTH}
@@ -4972,6 +5040,7 @@ useEffect(() => {
                                 )}
                               </span>
                             </th>
+                            {viewType === "monetary" && <th>Reference No.</th>}
                             {viewType === "goods" && <th>Unit</th>}
                             {viewType === "goods" && (
                               <th
@@ -5038,6 +5107,14 @@ useEffect(() => {
                                 )}
                               </td>
 
+                              {viewType === "monetary" && (
+                                <td>
+                                  <div className="table-mini-stack">
+                                    <strong>{getReferenceNumber(item) || "-"}</strong>
+                                  </div>
+                                </td>
+                              )}
+
                               {viewType === "goods" && <td>{item.unit || "-"}</td>}
 
                               {viewType === "goods" && (
@@ -5067,7 +5144,7 @@ useEffect(() => {
                               )}
 
                               <td>
-                                <div className="table-mini-stack">
+                                <div className="table-mini-stack source-cell-safe">
                                   <strong>
                                     {Array.isArray(item._sourceTypes) &&
                                     item._sourceTypes.length > 0

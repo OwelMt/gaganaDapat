@@ -47,7 +47,12 @@ import {
   validateFutureOrTodayInventoryDate,
 } from "./inventoryExpiryUtils";
 import { API_BASE_URL } from "../../config/api";
-import { buildProofFileHref, isImageProofFile } from "./proofFileUtils";
+import ProofDocumentPreview from "./ProofDocumentPreview";
+import {
+  buildProofFileHref,
+  buildProofFileHrefCandidates,
+  isImageProofFile,
+} from "./proofFileUtils";
 import {
   MAX_INVENTORY_CATEGORY_LENGTH as MAX_CUSTOM_CATEGORY_LENGTH,
   MAX_INVENTORY_DESCRIPTION_LENGTH as MAX_DESCRIPTION_LENGTH,
@@ -162,6 +167,7 @@ const InventoryAdd = () => {
   const [items, setItems] = useState([]);
   const [archivedItems, setArchivedItems] = useState([]);
   const [proofFiles, setProofFiles] = useState([]);
+  const [proofPreview, setProofPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -847,6 +853,38 @@ const InventoryAdd = () => {
     }
   };
 
+  const keepTextInputKeysLocal = (e) => {
+    e.stopPropagation();
+  };
+
+  const handleReferenceNumberKeyDown = (e) => {
+    keepTextInputKeysLocal(e);
+
+    if (
+      e.ctrlKey ||
+      e.metaKey ||
+      e.altKey ||
+      [
+        "Backspace",
+        "Delete",
+        "Tab",
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "ArrowDown",
+        "Home",
+        "End",
+        "Enter",
+      ].includes(e.key)
+    ) {
+      return;
+    }
+
+    if (!/^\d$/.test(e.key)) {
+      e.preventDefault();
+    }
+  };
+
   const validateForm = () => {
     const errors = {};
 
@@ -1361,6 +1399,9 @@ const InventoryAdd = () => {
     const recentDonationsCount = items.filter((item) =>
       isRecentDonation(item.createdAt)
     ).length;
+    const expiredItemsCount = goodsItems.filter(
+      (item) => getExpiryStatus(item) === "expired"
+    ).length;
 
     return {
       totalItems,
@@ -1370,7 +1411,8 @@ const InventoryAdd = () => {
       totalGoodsQuantity,
       totalMonetaryAmount,
       totalApplianceQuantity,
-      recentDonationsCount
+      recentDonationsCount,
+      expiredItemsCount
     };
   }, [items, goodsItems, monetaryItems, applianceItems, isAdmin]);
 
@@ -1495,7 +1537,7 @@ const InventoryAdd = () => {
   };
 
   const tableColSpan =
-    donationType === "goods" ? 11 : donationType === "appliance" ? 10 : 8;
+    donationType === "goods" ? 11 : donationType === "appliance" ? 10 : 9;
 
   if (!canAccessInventoryAdd) {
     return (
@@ -1531,6 +1573,67 @@ const InventoryAdd = () => {
                       <span className="notification-text">{toast.message}</span>
                     </button>
                   ))}
+                </div>,
+                document.body
+              )
+            : null}
+
+          {proofPreview && typeof document !== "undefined"
+            ? createPortal(
+                <div
+                  className="inventory-add-proof-modal"
+                  role="presentation"
+                  onClick={() => setProofPreview(null)}
+                >
+                  <div
+                    className="inventory-add-proof-modal-card"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={proofPreview.label || "Proof preview"}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      className="inventory-add-proof-modal-close"
+                      onClick={() => setProofPreview(null)}
+                      aria-label="Close proof preview"
+                    >
+                      <FaTimes />
+                    </button>
+
+                    {!proofPreview.missing && proofPreview.candidates?.[proofPreview.index] ? (
+                      proofPreview.isImage ? (
+                        <img
+                          src={proofPreview.candidates[proofPreview.index]}
+                          alt={proofPreview.label || "Proof preview"}
+                          onError={() => {
+                            setProofPreview((current) => {
+                              if (!current) return current;
+                              const nextIndex = current.index + 1;
+                              if (nextIndex < (current.candidates?.length || 0)) {
+                                return { ...current, index: nextIndex };
+                              }
+                              return { ...current, missing: true };
+                            });
+                          }}
+                        />
+                      ) : (
+                        <ProofDocumentPreview
+                          title={proofPreview.label || "Proof document"}
+                          candidates={proofPreview.candidates || []}
+                        />
+                      )
+                    ) : (
+                      <div className="inventory-add-proof-modal-empty">
+                        <FaFilePdf />
+                        <h3>Proof file not available</h3>
+                        <p>
+                          This proof points to an older local upload that is no longer
+                          on this server. Re-upload the proof file to save a durable copy.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>,
                 document.body
               )
@@ -1719,6 +1822,14 @@ const InventoryAdd = () => {
                   </div>
                   <h3 className="summary-value">{summary.recentDonationsCount}</h3>
                 </div>
+
+                <div className="summary-card danger">
+                  <div className="summary-card-top">
+                    <p className="summary-label">Expired Items</p>
+                    <span className="summary-icon"><FaExclamationTriangle /></span>
+                  </div>
+                  <h3 className="summary-value">{summary.expiredItemsCount}</h3>
+                </div>
               </div>
             )}
           </div>
@@ -1871,6 +1982,7 @@ const InventoryAdd = () => {
                           placeholder={getPrimaryFieldPlaceholder()}
                           value={form.name}
                           onChange={handleChange}
+                          onKeyDown={keepTextInputKeysLocal}
                           className={`input ${formErrors.name ? "input-error" : ""}`}
                         />
                         {formErrors.name && (
@@ -1923,6 +2035,7 @@ const InventoryAdd = () => {
                                 placeholder="e.g. medicine, water, shelter kits"
                                 value={form.customCategory}
                                 onChange={handleChange}
+                                onKeyDown={keepTextInputKeysLocal}
                                 className={`input ${
                                   formErrors.customCategory ? "input-error" : ""
                                 }`}
@@ -2014,6 +2127,7 @@ const InventoryAdd = () => {
                                     placeholder="e.g. tray, bundle, pair"
                                     value={form.unit}
                                     onChange={handleChange}
+                                    onKeyDown={keepTextInputKeysLocal}
                                     className={`input donation-inline-input ${
                                       formErrors.unit ? "input-error" : ""
                                     }`}
@@ -2090,6 +2204,7 @@ const InventoryAdd = () => {
                                   placeholder="e.g. 6 months, 1 year"
                                   value={form.usageDuration}
                                   onChange={handleChange}
+                                  onKeyDown={keepTextInputKeysLocal}
                                   disabled={form.condition !== "used_item"}
                                   className={`input ${
                                     formErrors.usageDuration ? "input-error" : ""
@@ -2144,9 +2259,12 @@ const InventoryAdd = () => {
                               id="referenceNumber"
                               type="text"
                               name="referenceNumber"
-                              placeholder="e.g. GCash ref, bank transfer ref"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              placeholder="e.g. 1234567890"
                               value={form.referenceNumber}
                               onChange={handleChange}
+                              onKeyDown={handleReferenceNumberKeyDown}
                               maxLength={40}
                               className={`input ${
                                 formErrors.referenceNumber ? "input-error" : ""
@@ -2208,6 +2326,7 @@ const InventoryAdd = () => {
                             placeholder={getSourceNamePlaceholder()}
                             value={form.sourceName}
                             onChange={handleChange}
+                            onKeyDown={keepTextInputKeysLocal}
                             className={`input ${formErrors.sourceName ? "input-error" : ""}`}
                           />
                           {formErrors.sourceName && (
@@ -2241,6 +2360,7 @@ const InventoryAdd = () => {
                           }
                           value={form.description}
                           onChange={handleChange}
+                          onKeyDown={keepTextInputKeysLocal}
                           className={`textarea ${formErrors.description ? "input-error" : ""}`}
                           rows="4"
                         />
@@ -2553,6 +2673,8 @@ const InventoryAdd = () => {
                           <span>{sortArrow("quantity")}</span>
                         </th>
 
+                        {donationType === "monetary" && <th>Reference No.</th>}
+
                         {donationType === "goods" && <th>Unit</th>}
                         {donationType === "appliance" && <th>Condition</th>}
                         {donationType === "appliance" && <th>Usage Duration</th>}
@@ -2631,6 +2753,16 @@ const InventoryAdd = () => {
                                 : Number(item.quantity || 0).toLocaleString()}
                             </td>
 
+                            {donationType === "monetary" && (
+                              <td>
+                                <div className="cell-main">
+                                  {item.referenceNumber ||
+                                    extractReferenceFromDescription(item.description) ||
+                                    "-"}
+                                </div>
+                              </td>
+                            )}
+
                             {donationType === "goods" && <td>{item.unit || "-"}</td>}
                             {donationType === "appliance" && (
                               <td>{formatCategory(String(item.condition || "").replace(/_/g, " "))}</td>
@@ -2662,38 +2794,63 @@ const InventoryAdd = () => {
                             </td>
 
                             <td>
-                              <div className="description-cell" title={item.description || ""}>
-                                {item.description || "-"}
+                              <div
+                                className="description-cell"
+                                title={
+                                  donationType === "monetary"
+                                    ? stripReferenceFromDescription(item.description)
+                                    : item.description || ""
+                                }
+                              >
+                                {donationType === "monetary"
+                                  ? stripReferenceFromDescription(item.description) || "-"
+                                  : item.description || "-"}
                               </div>
                             </td>
 
                             <td>
                               {item.proofFiles && item.proofFiles.length > 0 ? (
                                 <div className="proof-list">
-                                  {item.proofFiles.map((file, idx) => (
-                                    <a
-                                      key={idx}
-                                      href={buildProofFileHref(file, BASE_URL)}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className={`proof-card ${isImageProofFile(file) ? "proof-card-image" : "proof-card-document"}`}
-                                    >
-                                      {isImageProofFile(file) ? (
-                                        <img
-                                          src={buildProofFileHref(file, BASE_URL)}
-                                          alt={`Proof ${idx + 1}`}
-                                          className="proof-thumb"
-                                        />
-                                      ) : (
-                                        <div className="proof-doc-icon">
-                                          <FaFilePdf />
-                                        </div>
-                                      )}
-                                      <span className="proof-card-label">
-                                        {isImageProofFile(file) ? `Image Proof ${idx + 1}` : `Document Proof ${idx + 1}`}
-                                      </span>
-                                    </a>
-                                  ))}
+                                  {item.proofFiles.map((file, idx) => {
+                                    const candidates = buildProofFileHrefCandidates(file, BASE_URL);
+                                    const href = candidates[0] || buildProofFileHref(file, BASE_URL);
+                                    const isImage = isImageProofFile(file);
+                                    const previewLabel = isImage
+                                      ? `Image Proof ${idx + 1}`
+                                      : `Document Proof ${idx + 1}`;
+
+                                    return (
+                                      <button
+                                        key={idx}
+                                        type="button"
+                                        className={`proof-card ${isImage ? "proof-card-image" : "proof-card-document"}`}
+                                        onClick={() =>
+                                          setProofPreview({
+                                            candidates: candidates.length ? candidates : [href].filter(Boolean),
+                                            index: 0,
+                                            isImage,
+                                            label: previewLabel,
+                                            missing: !href,
+                                          })
+                                        }
+                                      >
+                                        {isImage ? (
+                                          <img
+                                            src={href}
+                                            alt={`Proof ${idx + 1}`}
+                                            className="proof-thumb"
+                                          />
+                                        ) : (
+                                          <div className="proof-doc-icon">
+                                            <FaFilePdf />
+                                          </div>
+                                        )}
+                                        <span className="proof-card-label">
+                                          {isImage ? `View Image ${idx + 1}` : `View File ${idx + 1}`}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
                                 </div>
                               ) : (
                                 <span className="muted-text">No files</span>

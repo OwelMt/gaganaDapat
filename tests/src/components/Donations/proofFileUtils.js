@@ -1,4 +1,5 @@
 const IMAGE_PROOF_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "gif", "heic", "heif"];
+const DOCUMENT_PROOF_EXTENSIONS = ["pdf", "doc", "docx"];
 
 const extractProofFileValue = (value = "") => {
   if (typeof value === "string") {
@@ -30,8 +31,26 @@ const getFileExtension = (value = "") => {
   return parts.length > 1 ? parts.pop() : "";
 };
 
+export const getProofFileExtension = getFileExtension;
+
 export const isImageProofFile = (value = "") =>
-  IMAGE_PROOF_EXTENSIONS.includes(getFileExtension(value));
+  Boolean(
+    value &&
+      typeof value === "object" &&
+      String(value.type || value.mimeType || value.mimetype || "")
+        .toLowerCase()
+        .startsWith("image/")
+  ) || IMAGE_PROOF_EXTENSIONS.includes(getFileExtension(value));
+
+export const isDocumentProofFile = (value = "") =>
+  DOCUMENT_PROOF_EXTENSIONS.includes(getFileExtension(value)) ||
+  Boolean(
+    value &&
+      typeof value === "object" &&
+      /pdf|wordprocessingml|msword/i.test(
+        String(value.type || value.mimeType || value.mimetype || "")
+      )
+  );
 
 const withBaseUrl = (path = "", baseUrl = "") => {
   const normalizedBaseUrl = String(baseUrl || "").trim().replace(/\/+$/, "");
@@ -54,6 +73,11 @@ export const buildProofFileHrefCandidates = (value = "", baseUrl = "") => {
   }
 
   const normalizedWithoutLeadingSlash = normalizedValue.replace(/^\/+/, "");
+
+  if (normalizedWithoutLeadingSlash.startsWith("api/")) {
+    return [withBaseUrl(normalizedWithoutLeadingSlash, baseUrl)];
+  }
+
   const fileName = normalizedWithoutLeadingSlash.split("/").pop() || normalizedWithoutLeadingSlash;
   const hasDirectorySegments = normalizedWithoutLeadingSlash.includes("/");
   const candidates = [

@@ -20,22 +20,23 @@ describe("inventoryTextUtils", () => {
 
   test("keeps note text readable while removing unsupported characters", () => {
     expect(
-      sanitizeInventoryNoteText("Donation from jp $$$$\nReference...🚫🚫")
+      sanitizeInventoryNoteText("Donation from jp $$$$\nReference...ðŸš«ðŸš«")
     ).toBe("Donation from jp $$\nReference..");
   });
 
   test("normalizes reference numbers and caps their length", () => {
     const value = sanitizeInventoryReferenceText(" abc-1234 / test ref @@@ ");
-    expect(value).toBe("ABC-1234 / TEST REF");
+    expect(value).toBe("1234");
     expect(sanitizeInventoryReferenceText("x".repeat(100))).toHaveLength(
       MAX_INVENTORY_REFERENCE_LENGTH
     );
   });
 
   test("sanitizes search text and removes noisy symbols", () => {
-    expect(sanitizeInventorySearchText("donor ### name %% alert 🚫")).toBe(
+    expect(sanitizeInventorySearchText("donor ### name %% alert ðŸš«")).toBe(
       "donor ## name alert"
     );
+    expect(sanitizeInventorySearchText("donor name ")).toBe("donor name ");
   });
 
   test("tightens template name and description limits", () => {

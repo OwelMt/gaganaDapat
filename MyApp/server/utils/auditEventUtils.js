@@ -39,6 +39,8 @@ const normalizeModuleValue = (value) => {
 const normalizeActorRoleValue = (value) => {
   const normalized = normalizeLower(value);
   if (normalized === "all") return "system";
+  if (normalized === "brgy") return "barangay";
+  if (normalized === "accounting") return "accountant";
   return VALID_ACTOR_ROLES.has(normalized) ? normalized : "system";
 };
 
