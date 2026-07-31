@@ -199,6 +199,7 @@ function LoginGate({ children }) {
 const ROUTES = [
   { path: "/", element: <Dashboard /> },
   { path: "/Login", element: <Login /> },
+  { path: "/login", element: <Navigate to="/Login" replace /> },
   { path: "/auditTrails", element: <AuditTrails />, roles: ADMIN_ONLY },
   { path: "/evacuation", element: <EManagement />, roles: ALL_AUTH },
   { path: "/drrmo/evacuation-centers", element: <EManagement />, roles: ADMIN_DRRMO },

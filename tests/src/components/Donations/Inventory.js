@@ -291,7 +291,7 @@ export default function Inventory() {
     if (!normalized) return "-";
     if (normalized === "external") return "Donated";
     if (normalized === "internal") return "LGU";
-    if (normalized === "government") return "Government";
+    if (normalized === "government") return "NGO";
     const v = String(value || "").trim();
     return v.charAt(0).toUpperCase() + v.slice(1);
   };
@@ -3452,7 +3452,7 @@ useEffect(() => {
                           disabled={isItemClassificationLocked}
                         >
                           <option value="external">Donated</option>
-                          <option value="government">Government</option>
+                          <option value="government">NGO</option>
                           <option value="internal">LGU</option>
                         </select>
                       </div>

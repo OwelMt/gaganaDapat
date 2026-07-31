@@ -2119,6 +2119,12 @@ const registerIncident = async (req, res) => {
         incident.approvedByMDRRMO,
     });
 
+    await notifyIncidentEvent({
+      req,
+      incident,
+      eventType: "created",
+    });
+
     console.log("Incident registered:", incident);
 
     return res.status(201).json({

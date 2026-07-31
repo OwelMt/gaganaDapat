@@ -46,6 +46,7 @@ export default function EditAccount() {
   const [archiveTargetId, setArchiveTargetId] = useState(null);
   const [updateTargetId, setUpdateTargetId] = useState(null);
   const [sidebarHeight, setSidebarHeight] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const BASE_URL = API_BASE_URL;
 
@@ -103,6 +104,7 @@ export default function EditAccount() {
         };
       });
       setForms(mappedForms);
+      setFieldErrors({});
 
       if (safeData.length > 0) {
         const firstVisible = safeData.find((account) => account.role !== 'admin');
@@ -136,6 +138,18 @@ export default function EditAccount() {
       ...prev,
       [id]: { ...prev[id], [field]: nextValue }
     }));
+
+    setFieldErrors((prev) => {
+      if (!prev[id]?.[field]) return prev;
+
+      const nextAccountErrors = { ...prev[id] };
+      delete nextAccountErrors[field];
+
+      return {
+        ...prev,
+        [id]: nextAccountErrors
+      };
+    });
   };
 
   const visibleAccounts = useMemo(
@@ -164,6 +178,7 @@ export default function EditAccount() {
   );
 
   const selectedForm = selected ? forms[selected._id] : null;
+  const selectedErrors = selected ? fieldErrors[selected._id] || {} : {};
 
   const totalBarangay = useMemo(
     () => visibleAccounts.filter((account) => account.role === 'barangay').length,
@@ -253,47 +268,81 @@ export default function EditAccount() {
         confirmPassword: ''
       }
     }));
+    setFieldErrors((prev) => ({
+      ...prev,
+      [selected._id]: {}
+    }));
+  };
+
+  const getAccountValidationErrors = (data = {}) => {
+    const nextErrors = {};
+
+    const usernameError = validateUsername(data.username);
+    if (usernameError) {
+      nextErrors.username = usernameError;
+    }
+
+    const phoneError = validatePhoneNumber(data.phoneNumber);
+    if (phoneError) {
+      nextErrors.phoneNumber = phoneError;
+    }
+
+    const hotlineError = validateHotline(data.hotline);
+    if (hotlineError) {
+      nextErrors.hotline = hotlineError;
+    }
+
+    const addressError = validateAddress(data.address);
+    if (addressError) {
+      nextErrors.address = addressError;
+    }
+
+    if (data.password || data.confirmPassword) {
+      const passwordError = validateStrongPassword(data.password);
+      if (passwordError) {
+        nextErrors.password = passwordError;
+      }
+
+      if (data.password !== data.confirmPassword) {
+        nextErrors.confirmPassword = 'Passwords do not match';
+      }
+    }
+
+    return nextErrors;
+  };
+
+  const handleRequestUpdateClick = (id) => {
+    const data = forms[id];
+    if (!data) return;
+
+    const nextErrors = getAccountValidationErrors(data);
+    setFieldErrors((prev) => ({
+      ...prev,
+      [id]: nextErrors
+    }));
+
+    if (Object.keys(nextErrors).length > 0) {
+      showNotification('Please fix the highlighted fields first.', 'error');
+      return;
+    }
+
+    setUpdateTargetId(id);
   };
 
   const requestAccountUpdate = async (id) => {
     const data = forms[id];
     if (!data) return;
 
-    const usernameError = validateUsername(data.username);
-    if (usernameError) {
-      showNotification(usernameError, 'error');
+    const nextErrors = getAccountValidationErrors(data);
+    setFieldErrors((prev) => ({
+      ...prev,
+      [id]: nextErrors
+    }));
+
+    if (Object.keys(nextErrors).length > 0) {
+      setUpdateTargetId(null);
+      showNotification('Please fix the highlighted fields first.', 'error');
       return;
-    }
-
-    const phoneError = validatePhoneNumber(data.phoneNumber);
-    if (phoneError) {
-      showNotification(phoneError, 'error');
-      return;
-    }
-
-    const hotlineError = validateHotline(data.hotline);
-    if (hotlineError) {
-      showNotification(hotlineError, 'error');
-      return;
-    }
-
-    const addressError = validateAddress(data.address);
-    if (addressError) {
-      showNotification(addressError, 'error');
-      return;
-    }
-
-    if (data.password) {
-      const passwordError = validateStrongPassword(data.password);
-      if (passwordError) {
-        showNotification(passwordError, 'error');
-        return;
-      }
-
-      if (data.password !== data.confirmPassword) {
-        showNotification('Passwords do not match', 'error');
-        return;
-      }
     }
 
     const original = accounts.find((account) => account._id === id);
@@ -306,6 +355,7 @@ export default function EditAccount() {
       data.address === original.address &&
       !data.password
     ) {
+      setUpdateTargetId(null);
       showNotification('No changes detected', 'info');
       return;
     }
@@ -333,6 +383,10 @@ export default function EditAccount() {
             'Update approval email sent. Changes will apply after the recipient confirms.',
           'success'
         );
+        setFieldErrors((prev) => ({
+          ...prev,
+          [id]: {}
+        }));
         setUpdateTargetId(null);
         await fetchAccounts();
       } else {
@@ -400,6 +454,11 @@ export default function EditAccount() {
           }
         ]
       : [];
+
+  const renderEditError = (field) =>
+    selectedErrors[field] ? (
+      <div className="ea-field-error">{selectedErrors[field]}</div>
+    ) : null;
 
   return (
     <div className="edit-account">
@@ -542,7 +601,7 @@ export default function EditAccount() {
                   </div>
 
                   <div className="ea-form-grid">
-                    <div className="ea-field">
+                    <div className={`ea-field ${selectedErrors.username ? 'has-error' : ''}`}>
                       <label>Username</label>
                       <input
                         value={selectedForm.username || ''}
@@ -554,6 +613,7 @@ export default function EditAccount() {
                           )
                         }
                       />
+                      {renderEditError('username')}
                     </div>
 
                     <div className="ea-field">
@@ -569,7 +629,7 @@ export default function EditAccount() {
                       </div>
                     </div>
 
-                    <div className="ea-field">
+                    <div className={`ea-field ${selectedErrors.phoneNumber ? 'has-error' : ''}`}>
                       <label>Phone Number</label>
                       <input
                         value={selectedForm.phoneNumber || ''}
@@ -581,9 +641,10 @@ export default function EditAccount() {
                           )
                         }
                       />
+                      {renderEditError('phoneNumber')}
                     </div>
 
-                    <div className="ea-field">
+                    <div className={`ea-field ${selectedErrors.hotline ? 'has-error' : ''}`}>
                       <label>Hotline</label>
                       <input
                         value={selectedForm.hotline || ''}
@@ -591,9 +652,10 @@ export default function EditAccount() {
                           handleChange(selected._id, 'hotline', event.target.value)
                         }
                       />
+                      {renderEditError('hotline')}
                     </div>
 
-                    <div className="ea-field ea-field-full">
+                    <div className={`ea-field ea-field-full ${selectedErrors.address ? 'has-error' : ''}`}>
                       <label>Address</label>
                       <input
                         value={selectedForm.address || ''}
@@ -601,6 +663,7 @@ export default function EditAccount() {
                           handleChange(selected._id, 'address', event.target.value)
                         }
                       />
+                      {renderEditError('address')}
                     </div>
                   </div>
                 </div>
@@ -611,7 +674,7 @@ export default function EditAccount() {
                   </div>
 
                   <div className="ea-form-grid">
-                    <div className="ea-field">
+                    <div className={`ea-field ${selectedErrors.password ? 'has-error' : ''}`}>
                       <label>New Password</label>
                       <input
                         type="password"
@@ -621,9 +684,10 @@ export default function EditAccount() {
                         }
                         placeholder="Leave blank to keep current password"
                       />
+                      {renderEditError('password')}
                     </div>
 
-                    <div className="ea-field">
+                    <div className={`ea-field ${selectedErrors.confirmPassword ? 'has-error' : ''}`}>
                       <label>Confirm Password</label>
                       <input
                         type="password"
@@ -637,6 +701,7 @@ export default function EditAccount() {
                         }
                         placeholder="Re-enter password"
                       />
+                      {renderEditError('confirmPassword')}
                     </div>
                   </div>
                 </div>
@@ -653,7 +718,7 @@ export default function EditAccount() {
 
                   <button
                     className="ea-btn ea-btn-primary"
-                    onClick={() => setUpdateTargetId(selected._id)}
+                    onClick={() => handleRequestUpdateClick(selected._id)}
                     disabled={savingId === selected._id}
                   >
                     {savingId === selected._id ? 'Sending Approval...' : 'Request Update Approval'}

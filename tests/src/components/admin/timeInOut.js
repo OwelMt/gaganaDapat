@@ -239,11 +239,7 @@ export default function TimeInOut() {
               </div>
             </div>
 
-            <div className="tio-toolbar" ref={toolbarRef}>
-              <span className="tio-toolbar-note">
-                Use this to verify who is currently online, when accounts signed in, and how long each session lasted.
-              </span>
-            </div>
+            <div className="tio-toolbar" ref={toolbarRef} aria-hidden="true" />
           </div>
 
           <div className="tio-filters">

@@ -607,7 +607,7 @@ export default function DonationValidationQueue() {
                                     : row?.sourceType === "internal"
                                     ? "LGU"
                                     : row?.sourceType === "government"
-                                    ? "Government"
+                                    ? "NGO"
                                     : row?.sourceType || "Donated"}
                                 </span>
                               </div>
@@ -666,7 +666,7 @@ export default function DonationValidationQueue() {
                           : displayedDonation.sourceType === "internal"
                           ? "LGU"
                           : displayedDonation.sourceType === "government"
-                          ? "Government"
+                          ? "NGO"
                           : formatStatusLabel(displayedDonation.sourceType)}
                       </strong>
                     </div>

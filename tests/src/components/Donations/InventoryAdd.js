@@ -126,7 +126,7 @@ const getProofAcceptValue = () =>
 
 const SOURCE_TYPE_LABELS = {
   external: "Donated",
-  government: "Government",
+  government: "NGO",
   internal: "LGU",
 };
 
@@ -2307,7 +2307,7 @@ const InventoryAdd = () => {
                           }`}
                         >
                           <option value="external">Donated</option>
-                          <option value="government">Government</option>
+                          <option value="government">NGO</option>
                           <option value="internal">LGU</option>
                         </select>
                         {formErrors.sourceType && (

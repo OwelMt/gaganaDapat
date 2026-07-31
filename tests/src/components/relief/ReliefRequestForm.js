@@ -430,6 +430,7 @@ export default function ReliefRequestForm() {
   const [distributionEditorCards, setDistributionEditorCards] = useState([]);
   const [distributionSubmitting, setDistributionSubmitting] = useState(false);
   const [distributionImporting, setDistributionImporting] = useState(false);
+  const [distributionTemplateDownloading, setDistributionTemplateDownloading] = useState(false);
   const [distributionPage, setDistributionPage] = useState(1);
   const [distributionConfirmed, setDistributionConfirmed] = useState(false);
   const [receiptProofFiles, setReceiptProofFiles] = useState([]);
@@ -2848,8 +2849,17 @@ export default function ReliefRequestForm() {
     );
   };
 
-  const handleDownloadDistributionTemplate = () => {
-    window.open(`${BASE_URL}/api/relief-distributions/template/download`, '_blank');
+  const handleDownloadDistributionTemplate = async () => {
+    try {
+      setDistributionTemplateDownloading(true);
+      clearFeedback();
+      await dafacWorkbookUtils.downloadDistributionTemplate({ baseUrl: BASE_URL });
+    } catch (err) {
+      console.error(err);
+      setErrorFeedback(err.message || 'Failed to download the DAFAC template.');
+    } finally {
+      setDistributionTemplateDownloading(false);
+    }
   };
 
   const handleSaveDistributionRecord = async (editorCard) => {
@@ -4350,8 +4360,9 @@ export default function ReliefRequestForm() {
                                 type="button"
                                 className="rrf-btn rrf-btn-secondary rrf-btn-small"
                                 onClick={handleDownloadDistributionTemplate}
+                                disabled={distributionTemplateDownloading}
                               >
-                                Download Template
+                                {distributionTemplateDownloading ? 'Downloading...' : 'Download Template'}
                               </button>
                               <button
                                 type="button"

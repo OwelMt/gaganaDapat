@@ -562,12 +562,31 @@
   transform: translateY(-1px);
 }
 
+.ea-field.has-error input {
+  border-color: rgba(220, 38, 38, 0.45);
+  background: #fffafa;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.08);
+}
+
+.ea-field.has-error input:focus {
+  border-color: rgba(220, 38, 38, 0.62);
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.12);
+}
+
 .ea-field-hint {
   margin-top: 7px;
   font-size: 12px;
   font-weight: 700;
   color: var(--ea-muted);
   line-height: 1.45;
+}
+
+.ea-field-error {
+  margin-top: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ea-danger);
+  line-height: 1.35;
 }
 
 .ea-actions {

@@ -71,6 +71,27 @@ const pageStyles = `
       );
   }
 
+  .vt-page.vt-force-light {
+    color-scheme: light;
+    color: var(--vt-text);
+    background:
+      radial-gradient(
+        circle at top right,
+        rgba(15, 90, 32, 0.08),
+        transparent 24%
+      ),
+      radial-gradient(
+        circle at top left,
+        rgba(34, 197, 94, 0.08),
+        transparent 28%
+      ),
+      linear-gradient(
+        180deg,
+        #f5faf6 0%,
+        #edf5ef 100%
+      );
+  }
+
   .vt-shell {
     width: min(1500px, 100%);
     margin: 0 auto;
@@ -1012,6 +1033,100 @@ const pageStyles = `
   border-color: rgba(248, 113, 113, 0.35);
   background: rgba(220, 38, 38, 0.14);
 }
+
+  :root[data-theme="dark"] .vt-page.vt-force-light {
+    color: var(--vt-text);
+    background:
+      radial-gradient(
+        circle at top right,
+        rgba(15, 90, 32, 0.08),
+        transparent 24%
+      ),
+      radial-gradient(
+        circle at top left,
+        rgba(34, 197, 94, 0.08),
+        transparent 28%
+      ),
+      linear-gradient(
+        180deg,
+        #f5faf6 0%,
+        #edf5ef 100%
+      );
+  }
+
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-header-card,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-content,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-stat-card,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-info-panel,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-info-card {
+    color: var(--vt-text);
+    border-color: var(--vt-border);
+    background:
+      linear-gradient(
+        180deg,
+        #ffffff 0%,
+        #f7fbf8 100%
+      );
+    box-shadow:
+      0 16px 36px rgba(20, 83, 45, 0.08);
+  }
+
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-title,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-toolbar h2,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-stat-card strong,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-kicker,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-toolbar-kicker,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-info-heading h2,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-info-card h3 {
+    color: var(--vt-dark-green);
+  }
+
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-description,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-stat-label,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-footer-note,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-info-heading p,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-info-card p {
+    color: var(--vt-soft-text);
+  }
+
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-status-pill.online,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-button-secondary {
+    color: #14532d;
+    border-color: var(--vt-border);
+    background: #ffffff;
+  }
+
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-info-icon {
+    color: var(--vt-green);
+    border-color: #d6e8db;
+    background: #eef7f1;
+  }
+
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-info-card.danger {
+    border-color: #efc9c9;
+    background:
+      linear-gradient(
+        180deg,
+        #ffffff 0%,
+        #fff4f4 100%
+      );
+  }
+
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-info-card.danger h3,
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-red-indicator {
+    color: #991b1b;
+  }
+
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-red-indicator {
+    border-color: #fecaca;
+    background: #fff1f2;
+  }
+
+  :root[data-theme="dark"] .vt-page.vt-force-light .vt-info-card.danger .vt-info-icon {
+    color: #b91c1c;
+    border-color: #fecaca;
+    background: #fee2e2;
+  }
 `;
 
 function sendMessageToReactNative(type, extraData = {}) {
@@ -1213,8 +1328,8 @@ function FloodVirtualTwin() {
       <main
         className={
           isEmbedded
-            ? "vt-page is-embedded"
-            : "vt-page"
+            ? "vt-page vt-force-light is-embedded"
+            : "vt-page vt-force-light"
         }
       >
         <div className="vt-shell">

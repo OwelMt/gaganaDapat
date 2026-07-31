@@ -668,12 +668,19 @@
 }
 
 .map-panel-head {
-  align-items: center;
+  align-items: flex-start;
+  min-height: 90px;
+  padding-bottom: 14px;
 }
 
 .map-panel-title-block {
   display: grid;
-  gap: 10px;
+  gap: 18px;
+}
+
+.map-panel-title-block h2 {
+  font-size: 24px;
+  line-height: 1.15;
 }
 
 .panel-head h2 {
@@ -799,6 +806,7 @@
   position: static;
   z-index: auto;
   min-width: 0;
+  margin-top: 8px;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -826,7 +834,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 5px;
 }
 
 .map-legend-item {
@@ -839,14 +847,20 @@
 }
 
 .map-legend-card-inline .map-legend-item {
-  min-height: 28px;
-  padding: 0 10px;
+  min-height: 22px;
+  padding: 0 8px;
   border-radius: 999px;
   border: 1px solid var(--ev-border);
   background: rgba(248, 252, 249, 0.92);
   box-shadow: 0 8px 18px rgba(15, 72, 34, 0.06);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 900;
+}
+
+.map-legend-card-inline .map-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-width: 1px;
 }
 
 .map-legend-dot {
@@ -2700,6 +2714,10 @@
   align-items: end;
 }
 
+.occupancy-control-row-auto {
+  grid-template-columns: 64px minmax(0, 1fr) 92px;
+}
+
 .occupancy-step-btn {
   height: 46px;
   border-radius: 14px;
@@ -2737,6 +2755,24 @@
   cursor: not-allowed;
 }
 
+.occupancy-auto-chip,
+.occupancy-auto-note {
+  height: 46px;
+  border-radius: 14px;
+  border: 1px solid rgba(20, 83, 45, 0.16);
+  background: #f2faf4;
+  color: var(--ev-green);
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 8px;
+}
+
 .occupancy-input-wrap {
   display: grid;
   gap: 6px;
@@ -2770,6 +2806,13 @@
 .occupancy-input-wrap input:focus {
   border-color: var(--ev-green-3);
   box-shadow: 0 0 0 4px rgba(31, 122, 65, 0.12);
+}
+
+.occupancy-input-wrap input:disabled {
+  background: #f6faf7;
+  color: var(--ev-text);
+  opacity: 1;
+  cursor: not-allowed;
 }
 
 .status-action-grid-readonly .status-action-btn {

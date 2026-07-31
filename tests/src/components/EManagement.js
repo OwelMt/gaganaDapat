@@ -1996,6 +1996,26 @@ const updatePlaceInLocalState = useCallback((updatedPlace) => {
   setSelectedId(updatedPlace._id);
 }, []);
 
+const getDerivedOccupiedBeds = useCallback(
+  (peopleValue) => {
+    const currentPeople = Math.max(0, Number(peopleValue || 0));
+    const bedCapacity = Number(selectedPlace?.bedCapacity || 0);
+    return bedCapacity > 0 ? Math.min(currentPeople, bedCapacity) : currentPeople;
+  },
+  [selectedPlace?.bedCapacity]
+);
+
+const getFamilyLimit = useCallback(
+  (peopleValue) => {
+    const currentPeople = Math.max(0, Number(peopleValue || 0));
+    const familyCapacity = Number(selectedPlace?.capacityFamily || 0);
+    return familyCapacity > 0
+      ? Math.min(familyCapacity, currentPeople)
+      : currentPeople;
+  },
+  [selectedPlace?.capacityFamily]
+);
+
 useEffect(() => {
   if (!selectedPlace?._id) {
     setOccupancyDraft({
@@ -2006,56 +2026,102 @@ useEffect(() => {
     return;
   }
 
+  const currentOccupants = Number(selectedPlace.currentOccupants || 0);
+  const familyLimit = getFamilyLimit(currentOccupants);
+  const currentFamilies = Math.min(
+    Number(selectedPlace.currentFamilies || 0),
+    familyLimit
+  );
+
   setOccupancyDraft({
-    currentOccupants: String(Number(selectedPlace.currentOccupants || 0)),
-    currentFamilies: String(Number(selectedPlace.currentFamilies || 0)),
-    occupiedBeds: String(Number(selectedPlace.occupiedBeds || 0)),
+    currentOccupants: String(currentOccupants),
+    currentFamilies: String(currentFamilies),
+    occupiedBeds: String(getDerivedOccupiedBeds(currentOccupants)),
   });
-}, [selectedPlace?._id, selectedPlace?.currentOccupants, selectedPlace?.currentFamilies, selectedPlace?.occupiedBeds]);
+}, [
+  selectedPlace?._id,
+  selectedPlace?.currentOccupants,
+  selectedPlace?.currentFamilies,
+  selectedPlace?.capacityFamily,
+  selectedPlace?.bedCapacity,
+  getDerivedOccupiedBeds,
+  getFamilyLimit,
+]);
 
 const handleOccupancyDraftChange = useCallback((field, value) => {
+  if (field === "occupiedBeds") return;
+
   const cleaned = String(value || "").replace(/[^\d]/g, "");
-  const maxByField = {
-    currentOccupants: Number(selectedPlace?.capacityIndividual || 0),
-    currentFamilies: Number(selectedPlace?.capacityFamily || 0),
-    occupiedBeds: Number(selectedPlace?.bedCapacity || 0),
-  };
-  const maxValue = maxByField[field] || 0;
   const nextNumber = Number(cleaned || 0);
-  const nextValue =
-    maxValue > 0 ? Math.min(nextNumber, maxValue) : nextNumber;
 
   setOccupancyDraft((prev) => ({
     ...prev,
-    [field]: cleaned === "" ? "" : String(nextValue),
+    ...(field === "currentOccupants"
+      ? (() => {
+          const maxIndividuals = Number(selectedPlace?.capacityIndividual || 0);
+          const nextPeople =
+            maxIndividuals > 0
+              ? Math.min(nextNumber, maxIndividuals)
+              : nextNumber;
+          const nextFamilyLimit = getFamilyLimit(nextPeople);
+          const nextFamilies = Math.min(
+            Number(prev.currentFamilies || 0),
+            nextFamilyLimit
+          );
+
+          return {
+            currentOccupants: cleaned === "" ? "" : String(nextPeople),
+            currentFamilies: String(nextFamilies),
+            occupiedBeds: String(getDerivedOccupiedBeds(nextPeople)),
+          };
+        })()
+      : (() => {
+          const familyLimit = getFamilyLimit(prev.currentOccupants);
+          const nextFamilies = Math.min(nextNumber, familyLimit);
+
+          return {
+            currentFamilies: cleaned === "" ? "" : String(nextFamilies),
+            occupiedBeds: String(getDerivedOccupiedBeds(prev.currentOccupants)),
+          };
+        })()),
   }));
-}, [selectedPlace]);
+}, [getDerivedOccupiedBeds, getFamilyLimit, selectedPlace?.capacityIndividual]);
 
 const handleOccupancyStep = useCallback(
   (field, delta) => {
-    if (!selectedPlace) return;
-
-    const maxByField = {
-      currentOccupants: Number(selectedPlace.capacityIndividual || 0),
-      currentFamilies: Number(selectedPlace.capacityFamily || 0),
-      occupiedBeds: Number(selectedPlace.bedCapacity || 0),
-    };
+    if (!selectedPlace || field === "occupiedBeds") return;
 
     setOccupancyDraft((prev) => {
       const currentValue = Number(prev[field] || 0);
-      const maxValue = maxByField[field] || 0;
+      const maxValue =
+        field === "currentOccupants"
+          ? Number(selectedPlace.capacityIndividual || 0)
+          : getFamilyLimit(prev.currentOccupants);
       let nextValue = currentValue + delta;
 
       if (nextValue < 0) nextValue = 0;
       if (maxValue > 0 && nextValue > maxValue) nextValue = maxValue;
 
+      if (field === "currentOccupants") {
+        const nextFamilyLimit = getFamilyLimit(nextValue);
+        return {
+          ...prev,
+          currentOccupants: String(nextValue),
+          currentFamilies: String(
+            Math.min(Number(prev.currentFamilies || 0), nextFamilyLimit)
+          ),
+          occupiedBeds: String(getDerivedOccupiedBeds(nextValue)),
+        };
+      }
+
       return {
         ...prev,
-        [field]: String(nextValue),
+        currentFamilies: String(nextValue),
+        occupiedBeds: String(getDerivedOccupiedBeds(prev.currentOccupants)),
       };
     });
   },
-  [selectedPlace]
+  [getDerivedOccupiedBeds, getFamilyLimit, selectedPlace]
 );
 
 const hasOccupancyChanges = useMemo(() => {
@@ -2074,23 +2140,30 @@ const hasOccupancyChanges = useMemo(() => {
 const handleResetOccupancyDraft = useCallback(() => {
   if (!selectedPlace) return;
 
+  const currentOccupants = Number(selectedPlace.currentOccupants || 0);
+  const currentFamilies = Math.min(
+    Number(selectedPlace.currentFamilies || 0),
+    getFamilyLimit(currentOccupants)
+  );
+
   setOccupancyDraft({
-    currentOccupants: String(Number(selectedPlace.currentOccupants || 0)),
-    currentFamilies: String(Number(selectedPlace.currentFamilies || 0)),
-    occupiedBeds: String(Number(selectedPlace.occupiedBeds || 0)),
+    currentOccupants: String(currentOccupants),
+    currentFamilies: String(currentFamilies),
+    occupiedBeds: String(getDerivedOccupiedBeds(currentOccupants)),
   });
-}, [selectedPlace]);
+}, [getDerivedOccupiedBeds, getFamilyLimit, selectedPlace]);
 
 const handleSaveOccupancy = useCallback(async ({ silent = false } = {}) => {
   if (!selectedPlace?._id || savingOccupancy) return;
 
   const nextOccupants = Number(occupancyDraft.currentOccupants || 0);
-  const nextFamilies = Number(occupancyDraft.currentFamilies || 0);
-  const nextBeds = Number(occupancyDraft.occupiedBeds || 0);
-
+  const familyLimit = getFamilyLimit(nextOccupants);
+  const nextFamilies = Math.min(
+    Number(occupancyDraft.currentFamilies || 0),
+    familyLimit
+  );
+  const nextBeds = getDerivedOccupiedBeds(nextOccupants);
   const maxIndividuals = Number(selectedPlace.capacityIndividual || 0);
-  const maxFamilies = Number(selectedPlace.capacityFamily || 0);
-  const maxBeds = Number(selectedPlace.bedCapacity || 0);
 
   if (nextOccupants < 0 || nextFamilies < 0 || nextBeds < 0) {
     pushNotification("Occupancy values cannot be negative.", "error");
@@ -2105,17 +2178,11 @@ const handleSaveOccupancy = useCallback(async ({ silent = false } = {}) => {
     return;
   }
 
-  if (maxFamilies > 0 && nextFamilies > maxFamilies) {
+  if (nextFamilies > familyLimit) {
     pushNotification(
-      `Families cannot exceed capacity of ${formatNumber(maxFamilies)}.`,
-      "error"
-    );
-    return;
-  }
-
-  if (maxBeds > 0 && nextBeds > maxBeds) {
-    pushNotification(
-      `Occupied beds cannot exceed bed capacity of ${formatNumber(maxBeds)}.`,
+      `Families cannot exceed current people count of ${formatNumber(
+        nextOccupants
+      )}.`,
       "error"
     );
     return;
@@ -2172,6 +2239,8 @@ const handleSaveOccupancy = useCallback(async ({ silent = false } = {}) => {
   buildEvacQueryParams,
   fetchHistory,
   fetchAnalytics,
+  getDerivedOccupiedBeds,
+  getFamilyLimit,
 ]);
 
 useEffect(() => {
@@ -3709,6 +3778,7 @@ useEffect(() => {
       occupancy.currentOccupants,
       occupancy.capacityIndividual
     );
+    const maxCurrentFamilies = getFamilyLimit(occupancyDraft.currentOccupants);
 
     return (
       <>
@@ -3798,7 +3868,7 @@ useEffect(() => {
                 id="currentFamiliesInput"
                 type="number"
                 min="0"
-                max={selectedPlace.capacityFamily || undefined}
+                max={maxCurrentFamilies || undefined}
                 value={occupancyDraft.currentFamilies}
                 onChange={(e) =>
                   handleOccupancyDraftChange("currentFamilies", e.target.value)
@@ -3811,9 +3881,9 @@ useEffect(() => {
               className="occupancy-step-btn add"
               onClick={() => handleOccupancyStep("currentFamilies", 1)}
               disabled={
-                Number(selectedPlace.capacityFamily || 0) > 0 &&
+                maxCurrentFamilies > 0 &&
                 Number(occupancyDraft.currentFamilies || 0) >=
-                  Number(selectedPlace.capacityFamily || 0)
+                  maxCurrentFamilies
               }
               title="Add one family"
             >
@@ -3821,15 +3891,14 @@ useEffect(() => {
             </button>
           </div>
 
-          <div className="occupancy-control-row">
+          <div className="occupancy-control-row occupancy-control-row-auto">
             <button
               type="button"
-              className="occupancy-step-btn"
-              onClick={() => handleOccupancyStep("occupiedBeds", -1)}
-              disabled={Number(occupancyDraft.occupiedBeds || 0) <= 0}
-              title="Remove one occupied bed"
+              className="occupancy-auto-chip"
+              disabled
+              title="Occupied beds are automatically based on current people"
             >
-              −
+              Auto
             </button>
 
             <div className="occupancy-input-wrap">
@@ -3840,24 +3909,18 @@ useEffect(() => {
                 min="0"
                 max={selectedPlace.bedCapacity || undefined}
                 value={occupancyDraft.occupiedBeds}
-                onChange={(e) =>
-                  handleOccupancyDraftChange("occupiedBeds", e.target.value)
-                }
+                readOnly
+                disabled
               />
             </div>
 
             <button
               type="button"
-              className="occupancy-step-btn add"
-              onClick={() => handleOccupancyStep("occupiedBeds", 1)}
-              disabled={
-                Number(selectedPlace.bedCapacity || 0) > 0 &&
-                Number(occupancyDraft.occupiedBeds || 0) >=
-                  Number(selectedPlace.bedCapacity || 0)
-              }
-              title="Add one occupied bed"
+              className="occupancy-auto-note"
+              disabled
+              title="Occupied beds are automatically based on current people"
             >
-              +
+              From people
             </button>
           </div>
         </div>
