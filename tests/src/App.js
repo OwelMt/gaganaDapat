@@ -247,7 +247,14 @@ const ROUTES = [
   { path: "/idk", element: <HomeGuidelines />, roles: ALL_AUTH },
   { path: "/update/:id", element: <UpdateGuideline />, roles: ALL_AUTH },
   { path: "/map", element: <EvacuationMap />, roles: ALL_AUTH },
-  { path: "/FloodVirtualTwin1", element: <FloodVirtualTwin1 /> },
+  {
+  path: "/virtual-twin-mobile",
+  element: (
+    <div style={{ padding: "50px" }}>
+      <h1>Virtual Twin route works</h1>
+    </div>
+  )
+},
   { path: "/yolo-water-monitor", element: <YoloWaterMonitor /> }
 ];
 
