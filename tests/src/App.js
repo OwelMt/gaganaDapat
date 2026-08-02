@@ -244,10 +244,10 @@ const ROUTES = [
   { path: "/accountant/notifications", element: <Notification />, roles: ACCOUNTANT_ONLY },
   { path: "/drrmo/digital-twin", element: <UnityDigitalTwin />, roles: ADMIN_DRRMO },
   { path: "/digital-twin-mobile", element: <UnityDigitalTwin1 /> },
-  { path: "/virtual-twin-mobile", element: <FloodVirtualTwin1 /> },
   { path: "/idk", element: <HomeGuidelines />, roles: ALL_AUTH },
   { path: "/update/:id", element: <UpdateGuideline />, roles: ALL_AUTH },
   { path: "/map", element: <EvacuationMap />, roles: ALL_AUTH },
+  { path: "/virtual-twin-mobile", element: <FloodVirtualTwin1 /> },
   { path: "/yolo-water-monitor", element: <YoloWaterMonitor /> }
 ];
 
