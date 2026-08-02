@@ -595,6 +595,30 @@
   box-shadow: 0 0 0 4px rgba(31, 122, 65, 0.12);
 }
 
+.field input.input-error,
+.field select.input-error,
+.field textarea.input-error {
+  border-color: rgba(220, 38, 38, 0.72);
+  background: rgba(254, 242, 242, 0.94);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.13);
+}
+
+.field input.input-error:focus,
+.field select.input-error:focus,
+.field textarea.input-error:focus {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.18);
+}
+
+.field-error {
+  display: block;
+  margin-top: 6px;
+  color: #dc2626;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 /* layout */
 .evac-main-layout {
   min-height: 0;
@@ -2196,7 +2220,8 @@
   display: grid;
   place-items: center;
   padding: 20px;
-  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .evac-modal-card {

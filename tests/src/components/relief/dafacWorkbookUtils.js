@@ -18,37 +18,6 @@ const readFileAsDataUrl = (file) =>
     reader.readAsDataURL(file);
   });
 
-const triggerBlobDownload = (blob, fileName) => {
-  const objectUrl = window.URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = objectUrl;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.URL.revokeObjectURL(objectUrl);
-};
-
-const parseFileName = (response, fallbackName) => {
-  const disposition = response.headers.get("content-disposition") || "";
-  const match = disposition.match(/filename="?([^"]+)"?/i);
-  return match?.[1] || fallbackName;
-};
-
-const downloadDistributionTemplate = async ({ baseUrl }) => {
-  const response = await fetch(`${baseUrl}/api/relief-distributions/template/download`, {
-    credentials: "include",
-  });
-
-  if (!response.ok) {
-    const body = await parseResponseBody(response);
-    throw new Error(body?.message || "Failed to download the DAFAC template.");
-  }
-
-  const blob = await response.blob();
-  triggerBlobDownload(blob, parseFileName(response, "relief-distribution-template.xlsx"));
-};
-
 const importDistributionWorkbook = async ({ baseUrl, reliefRequestId, file }) => {
   const workbookBase64 = await readFileAsDataUrl(file);
 
@@ -94,7 +63,6 @@ const downloadAccomplishedReportPdf = async ({ baseUrl, reliefRequestId }) => {
 
 module.exports = {
   downloadAccomplishedReportPdf,
-  downloadDistributionTemplate,
   importDistributionWorkbook,
   readFileAsDataUrl,
 };

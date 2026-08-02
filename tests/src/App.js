@@ -1,5 +1,4 @@
 import './App.css';
-import './components/css/OverlayFixes.css';
 import './components/css/sidebar.css'; // ← add this
 import './components/css/ThemeTokens.css';
 import { useEffect, useState } from "react";
@@ -36,6 +35,7 @@ import Announcement from './components/Announcement';
 import UnityDigitalTwin from './components/DigitalTwin/UnityDigitalTwin';
 import YoloWaterMonitor from './components/YoloWaterMonitor';
 import UnityDigitalTwin1 from './components/DigitalTwin/UnityDigitalTwin1';
+import FloodVirtualTwin1 from './components/FloodVirtualTwin1';
 
 import Inventory from './components/Donations/Inventory';
 import InventoryAdd from './components/Donations/InventoryAdd';
@@ -45,6 +45,7 @@ import {
   getHomePathForRole,
   normalizeRole,
 } from "./components/auth/roleAccessUtils";
+import './components/css/OverlayFixes.css';
 
 const BASE_URL = process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
 
@@ -243,6 +244,8 @@ const ROUTES = [
   { path: "/accountant/notifications", element: <Notification />, roles: ACCOUNTANT_ONLY },
   { path: "/drrmo/digital-twin", element: <UnityDigitalTwin />, roles: ADMIN_DRRMO },
   { path: "/digital-twin-mobile", element: <UnityDigitalTwin1 /> },
+  { path: "/virtual-twin-mobile", element: <FloodVirtualTwin1 /> },
+  { path: "/flood-virtual-twin-mobile", element: <FloodVirtualTwin1 /> },
   { path: "/idk", element: <HomeGuidelines />, roles: ALL_AUTH },
   { path: "/update/:id", element: <UpdateGuideline />, roles: ALL_AUTH },
   { path: "/map", element: <EvacuationMap />, roles: ALL_AUTH },

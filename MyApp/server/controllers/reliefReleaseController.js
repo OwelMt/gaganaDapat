@@ -202,8 +202,18 @@ const getRequestDemandProfile = (request = {}) => {
 const canRoleManageReleaseRequest = (role = "", request = {}) =>
   canManageReliefRequest(role, request);
 
+const isMonetaryOnlyReliefRequest = (request = {}) => {
+  const supportTypes = getSupportTypesFromRequest(request);
+
+  return (
+    hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY) &&
+    !hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS) &&
+    !hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE)
+  );
+};
+
 const getRequestOwnerRole = (request = {}) =>
-  canManageReliefRequest("admin", request) ? "admin" : "drrmo";
+  isMonetaryOnlyReliefRequest(request) ? "admin" : "drrmo";
 
 const getRequestOwnerLabel = (request = {}) =>
   getRequestOwnerRole(request) === "admin" ? "Admin" : "DRRMO";

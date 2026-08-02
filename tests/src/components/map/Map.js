@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import axios from "axios";
 import {
   MapContainer,
@@ -334,6 +334,10 @@ function getBarangayLabelFontSize(zoom = 13) {
   if (zoom >= 15) return 14;
   if (zoom >= 14) return 13;
   return 12;
+}
+
+function getBarangayLabelZoomThreshold(publicMode = false) {
+  return publicMode ? 13.4 : 14;
 }
 
 function buildBarangayPolygonStyle({
@@ -832,6 +836,7 @@ const Map = ({
   hazardLayers = null,
   showHazardOverlay = false,
   selectedBarangayName = "",
+  selectedBarangayNames = [],
   onSelectBarangay,
 }) => {
   const jaenBounds = useMemo(() => {
@@ -881,6 +886,16 @@ const Map = ({
   const [currentZoom, setCurrentZoom] = useState(publicMode ? JAEN_MIN_ZOOM : JAEN_INITIAL_ZOOM);
   const [placeName, setPlaceName] = useState("Jaen, Nueva Ecija");
   const [hoveredBarangayKey, setHoveredBarangayKey] = useState("");
+  const selectedBarangayKeySet = useMemo(() => {
+    const names =
+      Array.isArray(selectedBarangayNames) && selectedBarangayNames.length
+        ? selectedBarangayNames
+        : selectedBarangayName && safeLower(selectedBarangayName) !== "all"
+        ? [selectedBarangayName]
+        : [];
+
+    return new Set(names.map((name) => safeLower(name)).filter(Boolean));
+  }, [selectedBarangayName, selectedBarangayNames]);
   const renderedBarangayBounds = useMemo(() => {
     return [...barangayBounds].sort((a, b) => {
       const aLabel = getBarangayBoundsLabel(a);
@@ -914,6 +929,36 @@ const Map = ({
     return getBarangayGeoBounds(matchedBarangay);
   }, [renderedBarangayBounds, selectedBarangayName]);
 
+  const visibleBarangayBounds = useMemo(() => {
+    if (!publicMode || selectedBarangayKeySet.size === 0) {
+      return renderedBarangayBounds;
+    }
+
+    return renderedBarangayBounds.filter((entry, index) =>
+      selectedBarangayKeySet.has(safeLower(getBarangayBoundsLabel(entry, index)))
+    );
+  }, [publicMode, renderedBarangayBounds, selectedBarangayKeySet]);
+
+  const visiblePlaces = useMemo(() => {
+    if (!publicMode || selectedBarangayKeySet.size === 0) {
+      return places;
+    }
+
+    return places.filter((place) =>
+      selectedBarangayKeySet.has(safeLower(place?.barangayName || place?.barangay))
+    );
+  }, [places, publicMode, selectedBarangayKeySet]);
+
+  const handleBarangayBoundaryDoubleClick = useCallback(
+    (event, label) => {
+      if (event?.originalEvent) {
+        L.DomEvent.stop(event.originalEvent);
+      }
+      onSelectBarangay?.(label);
+    },
+    [onSelectBarangay]
+  );
+
   useEffect(() => {
     setPosition(initialCenter);
   }, [initialCenter]);
@@ -932,6 +977,7 @@ const Map = ({
       zoomDelta={0.5}
       maxBounds={effectiveBounds || jaenBounds || undefined}
       maxBoundsViscosity={1.0}
+      doubleClickZoom={false}
       style={{ height: "100%", width: "100%" }}
       whenCreated={(map) => {
         const timer = setTimeout(() => {
@@ -945,7 +991,7 @@ const Map = ({
     >
       <FitToJaenBounds bounds={jaenBounds} publicMode={publicMode} />
       <FitToSelectedBarangay
-        selectedBounds={selectedBarangayBounds}
+        selectedBounds={publicMode ? null : selectedBarangayBounds}
         fallbackBounds={jaenBounds}
         publicMode={publicMode}
       />
@@ -991,7 +1037,7 @@ const Map = ({
         </Marker>
       )}
 
-      {places.map((place) => {
+      {visiblePlaces.map((place) => {
         if (place?.latitude === undefined || place?.longitude === undefined) {
           return null;
         }
@@ -1010,7 +1056,7 @@ const Map = ({
         );
       })}
 
-      {renderedBarangayBounds.map((b, index) => {
+      {visibleBarangayBounds.map((b, index) => {
         const geoData = getBarangayBoundsData(b);
         const label = getBarangayBoundsLabel(b, index);
         const isOwnedBarangay =
@@ -1033,12 +1079,17 @@ const Map = ({
           .filter((polygon) => Array.isArray(polygon?.[0]) && polygon[0].length >= 3);
 
         const barangayKey = String(b?._id || label || index);
+        const isHovered = hoveredBarangayKey === barangayKey;
+        const showBarangayLabel =
+          isHovered ||
+          currentZoom >= getBarangayLabelZoomThreshold(publicMode) ||
+          (publicMode && selectedBarangayKeySet.has(safeLower(label)));
         const style = buildBarangayPolygonStyle({
           colorKey: label,
           index,
           isBarangayRole,
           isOwnedBarangay,
-          hovered: hoveredBarangayKey === barangayKey,
+          hovered: isHovered,
           showHazardOverlay,
         });
 
@@ -1048,29 +1099,31 @@ const Map = ({
             positions={polygon}
             pathOptions={style}
             eventHandlers={{
-              click: () => onSelectBarangay?.(label),
+              dblclick: (event) => handleBarangayBoundaryDoubleClick(event, label),
               mouseover: () => setHoveredBarangayKey(barangayKey),
               mouseout: () => setHoveredBarangayKey((current) =>
                 current === barangayKey ? "" : current
               ),
             }}
           >
-            <Tooltip
-              permanent
-              direction="center"
-              interactive={false}
-              className={`barangay-bound-label ${
-                showHazardOverlay ? "is-hazard-on" : ""
-              }`.trim()}
-              opacity={0.98}
-            >
-              <span
-                className="barangay-bound-label__text"
-                style={{ fontSize: `${getBarangayLabelFontSize(currentZoom)}px` }}
+            {showBarangayLabel ? (
+              <Tooltip
+                permanent
+                direction="center"
+                interactive={false}
+                className={`barangay-bound-label ${
+                  showHazardOverlay ? "is-hazard-on" : ""
+                }`.trim()}
+                opacity={0.98}
               >
-                {label}
-              </span>
-            </Tooltip>
+                <span
+                  className="barangay-bound-label__text"
+                  style={{ fontSize: `${getBarangayLabelFontSize(currentZoom)}px` }}
+                >
+                  {label}
+                </span>
+              </Tooltip>
+            ) : null}
           </Polygon>
         ));
       })}

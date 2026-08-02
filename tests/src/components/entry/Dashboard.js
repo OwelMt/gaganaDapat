@@ -351,6 +351,7 @@ export default function Dashboard() {
   const [mapError, setMapError] = useState("");
   const [selectedPublicPlaceId, setSelectedPublicPlaceId] = useState(null);
   const [publicBarangayFilter, setPublicBarangayFilter] = useState("all");
+  const [publicSelectedBarangays, setPublicSelectedBarangays] = useState([]);
   const [publicBarangayBounds, setPublicBarangayBounds] = useState([]);
   const [hazardLayers, setHazardLayers] = useState(null);
   const [hazardLoading, setHazardLoading] = useState(true);
@@ -430,12 +431,15 @@ export default function Dashboard() {
   }, [publicPlaces]);
 
   const filteredPublicPlaces = useMemo(() => {
-    if (publicBarangayFilter === "all") return publicPlaces;
+    if (!publicSelectedBarangays.length) return publicPlaces;
 
-    return publicPlaces.filter(
-      (item) => safeLower(item?.barangayName) === safeLower(publicBarangayFilter)
+    const selectedKeys = new Set(
+      publicSelectedBarangays.map((name) => safeLower(name))
     );
-  }, [publicPlaces, publicBarangayFilter]);
+    return publicPlaces.filter(
+      (item) => selectedKeys.has(safeLower(item?.barangayName))
+    );
+  }, [publicPlaces, publicSelectedBarangays]);
 
   const publicMapSummary = useMemo(() => {
     const source = filteredPublicPlaces;
@@ -471,10 +475,36 @@ export default function Dashboard() {
   const handlePublicBarangayFilterChange = (nextBarangay) => {
     setPublicBarangayFilter(nextBarangay);
     setSelectedPublicPlaceId(null);
+
+    if (nextBarangay === "all") {
+      setPublicSelectedBarangays([]);
+      return;
+    }
+
+    setPublicSelectedBarangays((current) => {
+      const exists = current.some(
+        (name) => safeLower(name) === safeLower(nextBarangay)
+      );
+
+      if (exists) {
+        const nextSelected = current.filter(
+          (name) => safeLower(name) !== safeLower(nextBarangay)
+        );
+        if (!nextSelected.length) {
+          setPublicBarangayFilter("all");
+        }
+        return nextSelected;
+      }
+
+      return [...current, nextBarangay];
+    });
   };
 
-  const focusedBarangayLabel =
-    publicBarangayFilter === "all" ? "All Barangays" : publicBarangayFilter;
+  const focusedBarangayLabel = !publicSelectedBarangays.length
+    ? "All Barangays"
+    : publicSelectedBarangays.length === 1
+    ? publicSelectedBarangays[0]
+    : `${publicSelectedBarangays.length} barangays selected`;
 
   const hazardSummary = useMemo(() => {
     return {
@@ -529,18 +559,23 @@ export default function Dashboard() {
   }, [incidentFeedMode, publicIncidents]);
 
   const filteredIncidentFeedList = useMemo(() => {
-    if (publicBarangayFilter === "all") return incidentFeedList;
+    if (!publicSelectedBarangays.length) return incidentFeedList;
 
-    const barangay = safeLower(publicBarangayFilter);
+    const selectedKeys = publicSelectedBarangays.map((name) => safeLower(name));
 
     return incidentFeedList.filter((item) => {
-      return (
-        safeLower(item.barangayName).includes(barangay) ||
-        safeLower(item.location).includes(barangay) ||
-        safeLower(item.address).includes(barangay)
+      const barangayName = safeLower(item.barangayName);
+      const location = safeLower(item.location);
+      const address = safeLower(item.address);
+
+      return selectedKeys.some(
+        (barangay) =>
+          barangayName.includes(barangay) ||
+          location.includes(barangay) ||
+          address.includes(barangay)
       );
     });
-  }, [incidentFeedList, publicBarangayFilter]);
+  }, [incidentFeedList, publicSelectedBarangays]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1960,6 +1995,16 @@ export default function Dashboard() {
                       </select>
                     </label>
 
+                    {publicSelectedBarangays.length ? (
+                      <button
+                        type="button"
+                        className="public-map-clear-selection"
+                        onClick={() => handlePublicBarangayFilterChange("all")}
+                      >
+                        Clear Barangays
+                      </button>
+                    ) : null}
+
                     <div className="public-map-mini-summary">
                       <span className="mini-status available">
                         {formatNumber(publicMapSummary.availableCount)} available
@@ -2001,11 +2046,8 @@ export default function Dashboard() {
                             onSelectPlace={(place) =>
                               setSelectedPublicPlaceId(place?._id || null)
                             }
-                            selectedBarangayName={
-                              publicBarangayFilter === "all"
-                                ? ""
-                                : publicBarangayFilter
-                            }
+                            selectedBarangayName=""
+                            selectedBarangayNames={publicSelectedBarangays}
                             onSelectBarangay={handlePublicBarangayFilterChange}
                             readOnly
                             publicMode

@@ -2253,6 +2253,30 @@
   box-shadow: 0 0 0 3px rgba(22, 101, 52, 0.1);
 }
 
+.public-map-clear-selection {
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 13px;
+  border: 1px solid #d7e6db;
+  background: #f7fbf8;
+  color: #17412b;
+  font-size: 0.84rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.public-map-clear-selection:hover {
+  transform: translateY(-1px);
+  background: #ffffff;
+  border-color: #b7d5c1;
+  box-shadow: 0 10px 18px rgba(16, 77, 41, 0.1);
+}
+
 .public-map-mini-summary {
   display: flex;
   align-items: center;

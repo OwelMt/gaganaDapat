@@ -596,31 +596,7 @@ const parseDistributionWorkbookBuffer = ({ buffer, xlsx } = {}) => {
   });
 };
 
-const buildDistributionTemplateWorkbook = ({ xlsx } = {}) => {
-  const resolvedXlsx = resolveXlsx(xlsx);
-  const workbook = resolvedXlsx.utils.book_new();
-  const familySheet = resolvedXlsx.utils.aoa_to_sheet([FAMILY_HEADERS]);
-  const memberSheet = resolvedXlsx.utils.aoa_to_sheet([MEMBER_HEADERS]);
-
-  resolvedXlsx.utils.book_append_sheet(workbook, familySheet, FAMILY_SHEET_NAME);
-  resolvedXlsx.utils.book_append_sheet(workbook, memberSheet, MEMBER_SHEET_NAME);
-
-  return workbook;
-};
-
-const buildDistributionTemplateWorkbookBuffer = ({ xlsx } = {}) => {
-  const resolvedXlsx = resolveXlsx(xlsx);
-  const workbook = buildDistributionTemplateWorkbook({ xlsx: resolvedXlsx });
-
-  return resolvedXlsx.write(workbook, {
-    bookType: "xlsx",
-    type: "buffer",
-  });
-};
-
 module.exports = {
   parseDistributionWorkbookRows,
   parseDistributionWorkbookBuffer,
-  buildDistributionTemplateWorkbook,
-  buildDistributionTemplateWorkbookBuffer,
 };

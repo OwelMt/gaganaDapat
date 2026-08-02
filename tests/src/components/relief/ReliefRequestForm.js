@@ -430,7 +430,6 @@ export default function ReliefRequestForm() {
   const [distributionEditorCards, setDistributionEditorCards] = useState([]);
   const [distributionSubmitting, setDistributionSubmitting] = useState(false);
   const [distributionImporting, setDistributionImporting] = useState(false);
-  const [distributionTemplateDownloading, setDistributionTemplateDownloading] = useState(false);
   const [distributionPage, setDistributionPage] = useState(1);
   const [distributionConfirmed, setDistributionConfirmed] = useState(false);
   const [receiptProofFiles, setReceiptProofFiles] = useState([]);
@@ -2849,19 +2848,6 @@ export default function ReliefRequestForm() {
     );
   };
 
-  const handleDownloadDistributionTemplate = async () => {
-    try {
-      setDistributionTemplateDownloading(true);
-      clearFeedback();
-      await dafacWorkbookUtils.downloadDistributionTemplate({ baseUrl: BASE_URL });
-    } catch (err) {
-      console.error(err);
-      setErrorFeedback(err.message || 'Failed to download the DAFAC template.');
-    } finally {
-      setDistributionTemplateDownloading(false);
-    }
-  };
-
   const handleSaveDistributionRecord = async (editorCard) => {
     if (!latestRequest?._id) return;
 
@@ -4356,14 +4342,6 @@ export default function ReliefRequestForm() {
                             </div>
 
                             <div className="rrf-inline-actions">
-                              <button
-                                type="button"
-                                className="rrf-btn rrf-btn-secondary rrf-btn-small"
-                                onClick={handleDownloadDistributionTemplate}
-                                disabled={distributionTemplateDownloading}
-                              >
-                                {distributionTemplateDownloading ? 'Downloading...' : 'Download Template'}
-                              </button>
                               <button
                                 type="button"
                                 className="rrf-btn rrf-btn-secondary rrf-btn-small"

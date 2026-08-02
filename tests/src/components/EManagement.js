@@ -370,6 +370,7 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
 
   const [barangayBounds, setBarangayBounds] = useState([]);
   const [formData, setFormData] = useState(initialFormState);
+  const [formErrors, setFormErrors] = useState({});
 
   const pushNotification = useCallback((message, type = "success") => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -1188,9 +1189,19 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     }));
   }, []);
 
+  const clearFormError = useCallback((name) => {
+    setFormErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  }, []);
+
   const handleTextFieldChange = useCallback(
     (e) => {
       const { name, value } = e.target;
+      clearFormError(name);
       if (name === "remarks") {
         updateFormField(name, sanitizeRemarksText(value, MAX_REMARKS_LENGTH));
         return;
@@ -1206,12 +1217,13 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
         sanitizeInputText(value, maxLengthMap[name] || MAX_LOCATION_LENGTH)
       );
     },
-    [updateFormField]
+    [clearFormError, updateFormField]
   );
 
   const handleNumericFieldChange = useCallback(
     (e) => {
       const { name, value } = e.target;
+      clearFormError(name);
       if (value === "") {
         updateFormField(name, "");
         return;
@@ -1224,7 +1236,7 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
 
       updateFormField(name, sanitizeDigitsOnly(value));
     },
-    [updateFormField]
+    [clearFormError, updateFormField]
   );
 
   const resolveBarangayForCoordinates = useCallback(
@@ -1275,6 +1287,8 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
   const handleLatitudeChange = useCallback(
     (e) => {
       const value = e.target.value.trim();
+      clearFormError("latitude");
+      clearFormError("longitude");
       if (value === "") {
         updateFormField("latitude", null);
         if (!showEditForm && !isBarangayRole) {
@@ -1295,12 +1309,14 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
         }
       }
     },
-    [updateFormField, formData.longitude, showEditForm, isBarangayRole, syncBarangayForCoordinates]
+    [clearFormError, updateFormField, formData.longitude, showEditForm, isBarangayRole, syncBarangayForCoordinates]
   );
 
   const handleLongitudeChange = useCallback(
     (e) => {
       const value = e.target.value.trim();
+      clearFormError("latitude");
+      clearFormError("longitude");
       if (value === "") {
         updateFormField("longitude", null);
         if (!showEditForm && !isBarangayRole) {
@@ -1321,11 +1337,12 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
         }
       }
     },
-    [updateFormField, formData.latitude, showEditForm, isBarangayRole, syncBarangayForCoordinates]
+    [clearFormError, updateFormField, formData.latitude, showEditForm, isBarangayRole, syncBarangayForCoordinates]
   );
 
   const resetForm = useCallback(() => {
     setFormData(initialFormState);
+    setFormErrors({});
     setBarangayLocked(false);
   }, []);
 
@@ -1568,86 +1585,57 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     const bedCapacity = Number(formData.bedCapacity || 0);
     const floorArea = Number(formData.floorArea || 0);
 
-    if (!cleanName) {
-      pushNotification("Evacuation area name is required.", "error");
-      return false;
-    }
+    const nextErrors = {};
 
-    if (!cleanLocation) {
-      pushNotification("Location is required.", "error");
-      return false;
-    }
-
+    if (!cleanName) nextErrors.name = "Evacuation area name is required.";
+    if (!cleanLocation) nextErrors.location = "Location is required.";
     if (!formData.barangayId && !sanitizeText(formData.barangayName)) {
-      pushNotification("Barangay is required.", "error");
-      return false;
+      nextErrors.barangay = "Barangay is required.";
     }
 
     if (formData.latitude === null || formData.longitude === null) {
-      pushNotification("Latitude and longitude are required.", "error");
-      return false;
-    }
+      nextErrors.latitude = "Latitude and longitude are required.";
+      nextErrors.longitude = "Latitude and longitude are required.";
+    } else {
+      if (Number(formData.latitude) < -90 || Number(formData.latitude) > 90) {
+        nextErrors.latitude = "Latitude must be between -90 and 90.";
+      }
 
-    if (Number(formData.latitude) < -90 || Number(formData.latitude) > 90) {
-      pushNotification("Latitude must be between -90 and 90.", "error");
-      return false;
-    }
-
-    if (Number(formData.longitude) < -180 || Number(formData.longitude) > 180) {
-      pushNotification("Longitude must be between -180 and 180.", "error");
-      return false;
+      if (Number(formData.longitude) < -180 || Number(formData.longitude) > 180) {
+        nextErrors.longitude = "Longitude must be between -180 and 180.";
+      }
     }
 
     if (
       formData.capacityIndividual !== "" &&
       (capacityIndividual <= 0 || capacityIndividual > MAX_CAPACITY_VALUE)
     ) {
-      pushNotification(
-        `Individual capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`,
-        "error"
-      );
-      return false;
+      nextErrors.capacityIndividual = `Individual capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`;
     }
 
     if (
       formData.capacityFamily !== "" &&
       (capacityFamily <= 0 || capacityFamily > MAX_CAPACITY_VALUE)
     ) {
-      pushNotification(
-        `Family capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`,
-        "error"
-      );
-      return false;
+      nextErrors.capacityFamily = `Family capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`;
     }
 
     if (
       formData.bedCapacity !== "" &&
       (bedCapacity <= 0 || bedCapacity > MAX_CAPACITY_VALUE)
     ) {
-      pushNotification(
-        `Bed capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`,
-        "error"
-      );
-      return false;
+      nextErrors.bedCapacity = `Bed capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`;
     }
 
     if (
       formData.floorArea !== "" &&
       (floorArea <= 0 || floorArea > MAX_FLOOR_AREA_VALUE)
     ) {
-      pushNotification(
-        `Floor area must be between 1 and ${formatNumber(MAX_FLOOR_AREA_VALUE)}.`,
-        "error"
-      );
-      return false;
+      nextErrors.floorArea = `Floor area must be between 1 and ${formatNumber(MAX_FLOOR_AREA_VALUE)}.`;
     }
 
     if (cleanRemarks.length > MAX_REMARKS_LENGTH) {
-      pushNotification(
-        `Remarks must be ${MAX_REMARKS_LENGTH} characters or less.`,
-        "error"
-      );
-      return false;
+      nextErrors.remarks = `Remarks must be ${MAX_REMARKS_LENGTH} characters or less.`;
     }
 
     if (isBarangayRole) {
@@ -1655,12 +1643,15 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       const ownBarangayName = ownBarangay?.name || localBarangayName;
 
       if (!sanitizeText(ownBarangayName)) {
-        pushNotification(
-          "Unable to determine the logged-in barangay. Please log in again.",
-          "error"
-        );
-        return false;
+        nextErrors.barangay = "Unable to determine the logged-in barangay. Please log in again.";
       }
+    }
+
+    const firstError = Object.values(nextErrors)[0];
+    setFormErrors(nextErrors);
+    if (firstError) {
+      pushNotification(firstError, "error");
+      return false;
     }
 
     return true;
@@ -2498,6 +2489,7 @@ useEffect(() => {
                   <span>Evacuation Area Name</span>
                   <input
                     ref={nameRef}
+                    className={formErrors.name ? "input-error" : ""}
                     type="text"
                     name="name"
                     value={formData.name}
@@ -2505,11 +2497,15 @@ useEffect(() => {
                     onChange={handleTextFieldChange}
                     placeholder="Enter evacuation area name"
                   />
+                  {formErrors.name && (
+                    <small className="field-error">{formErrors.name}</small>
+                  )}
                 </div>
 
                 <div className="field">
                   <span>Location</span>
                   <input
+                    className={formErrors.location ? "input-error" : ""}
                     type="text"
                     name="location"
                     value={formData.location}
@@ -2517,12 +2513,16 @@ useEffect(() => {
                     onChange={handleTextFieldChange}
                     placeholder="Street, sitio, purok, landmark"
                   />
+                  {formErrors.location && (
+                    <small className="field-error">{formErrors.location}</small>
+                  )}
                 </div>
 
                 <div className="field">
                   <span>Barangay</span>
                   {isBarangayRole ? (
                     <input
+                      className={formErrors.barangay ? "input-error" : ""}
                       type="text"
                       value={ownBarangay?.name || localBarangayName || ""}
                       disabled
@@ -2530,6 +2530,7 @@ useEffect(() => {
                   ) : !showEditForm && barangayLocked ? (
                     <>
                       <input
+                        className={formErrors.barangay ? "input-error" : ""}
                         type="text"
                         value={formData.barangayName || ""}
                         disabled
@@ -2540,8 +2541,10 @@ useEffect(() => {
                     </>
                   ) : (
                     <select
+                      className={formErrors.barangay ? "input-error" : ""}
                       value={formData.barangayId || ""}
                       onChange={(e) => {
+                        clearFormError("barangay");
                         const selected = barangays.find(
                           (item) => String(item._id) === String(e.target.value)
                         );
@@ -2561,29 +2564,40 @@ useEffect(() => {
                       ))}
                     </select>
                   )}
+                  {formErrors.barangay && (
+                    <small className="field-error">{formErrors.barangay}</small>
+                  )}
                 </div>
 
                 <div className="inline-field-row two">
                   <div className="field">
                     <span>Latitude</span>
                     <input
+                      className={formErrors.latitude ? "input-error" : ""}
                       type="number"
                       step="any"
                       value={formData.latitude ?? ""}
                       onChange={handleLatitudeChange}
                       placeholder="Latitude"
                     />
+                    {formErrors.latitude && (
+                      <small className="field-error">{formErrors.latitude}</small>
+                    )}
                   </div>
 
                   <div className="field">
                     <span>Longitude</span>
                     <input
+                      className={formErrors.longitude ? "input-error" : ""}
                       type="number"
                       step="any"
                       value={formData.longitude ?? ""}
                       onChange={handleLongitudeChange}
                       placeholder="Longitude"
                     />
+                    {formErrors.longitude && (
+                      <small className="field-error">{formErrors.longitude}</small>
+                    )}
                   </div>
                 </div>
               </section>
@@ -2595,6 +2609,7 @@ useEffect(() => {
                   <div className="field">
                     <span>Individual Capacity</span>
                     <input
+                      className={formErrors.capacityIndividual ? "input-error" : ""}
                       type="text"
                       name="capacityIndividual"
                       value={formData.capacityIndividual}
@@ -2603,11 +2618,17 @@ useEffect(() => {
                       onChange={handleNumericFieldChange}
                       placeholder="0"
                     />
+                    {formErrors.capacityIndividual && (
+                      <small className="field-error">
+                        {formErrors.capacityIndividual}
+                      </small>
+                    )}
                   </div>
 
                   <div className="field">
                     <span>Family Capacity</span>
                     <input
+                      className={formErrors.capacityFamily ? "input-error" : ""}
                       type="text"
                       name="capacityFamily"
                       value={formData.capacityFamily}
@@ -2616,11 +2637,17 @@ useEffect(() => {
                       onChange={handleNumericFieldChange}
                       placeholder="0"
                     />
+                    {formErrors.capacityFamily && (
+                      <small className="field-error">
+                        {formErrors.capacityFamily}
+                      </small>
+                    )}
                   </div>
 
                   <div className="field">
                     <span>Bed Capacity</span>
                     <input
+                      className={formErrors.bedCapacity ? "input-error" : ""}
                       type="text"
                       name="bedCapacity"
                       value={formData.bedCapacity}
@@ -2629,12 +2656,16 @@ useEffect(() => {
                       onChange={handleNumericFieldChange}
                       placeholder="0"
                     />
+                    {formErrors.bedCapacity && (
+                      <small className="field-error">{formErrors.bedCapacity}</small>
+                    )}
                   </div>
                 </div>
 
                 <div className="field">
                   <span>Floor Area</span>
                   <input
+                    className={formErrors.floorArea ? "input-error" : ""}
                     type="text"
                     name="floorArea"
                     value={formData.floorArea}
@@ -2643,11 +2674,15 @@ useEffect(() => {
                     onChange={handleNumericFieldChange}
                     placeholder="0"
                   />
+                  {formErrors.floorArea && (
+                    <small className="field-error">{formErrors.floorArea}</small>
+                  )}
                 </div>
 
                 <div className="field">
                   <span>Remarks</span>
                   <textarea
+                    className={formErrors.remarks ? "input-error" : ""}
                     name="remarks"
                     rows={5}
                     value={formData.remarks}
@@ -2655,6 +2690,9 @@ useEffect(() => {
                     onChange={handleTextFieldChange}
                     placeholder="Add notes, accessibility concerns, or suitability remarks"
                   />
+                  {formErrors.remarks && (
+                    <small className="field-error">{formErrors.remarks}</small>
+                  )}
                 </div>
               </section>
 

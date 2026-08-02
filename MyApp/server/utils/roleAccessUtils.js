@@ -102,7 +102,11 @@ const canManageReliefRequest = (role, requestOrSupportTypes) => {
   const normalizedRole = normalizeRole(role);
   const supportTypes = getNormalizedSupportTypes(requestOrSupportTypes);
 
-  if (normalizedRole === ROLE_ADMIN || normalizedRole === ROLE_ACCOUNTANT) {
+  if (normalizedRole === ROLE_ADMIN) {
+    return true;
+  }
+
+  if (normalizedRole === ROLE_ACCOUNTANT) {
     return isMonetaryOnlySupportTypes(supportTypes);
   }
 

@@ -1071,6 +1071,8 @@ const drawPdfSectionTitle = (doc, title) => {
   doc.font("Helvetica").fontSize(10);
 };
 
+const SIMPLE_TABLE_COLUMN_GAP = 4;
+
 const drawSimpleTableHeader = (doc, columns) => {
   ensurePdfPageSpace(doc, 30);
   const startX = doc.page.margins.left;
@@ -1084,7 +1086,7 @@ const drawSimpleTableHeader = (doc, columns) => {
       width: col.width,
       align: col.align || "left",
     });
-    x += col.width;
+    x += col.width + SIMPLE_TABLE_COLUMN_GAP;
   });
 
   doc
@@ -1109,7 +1111,7 @@ const drawSimpleTableRow = (doc, columns, row, rowHeight = 24) => {
       width: col.width,
       align: col.align || "left",
     });
-    x += col.width;
+    x += col.width + SIMPLE_TABLE_COLUMN_GAP;
   });
 
   doc
@@ -2454,7 +2456,7 @@ const exportInventoryPdf = async (req, res) => {
     const doc = new PDFDocument({
       size: "A4",
       layout: "landscape",
-      margin: 30,
+      margin: 24,
       bufferPages: true,
     });
 
@@ -2495,20 +2497,20 @@ const exportInventoryPdf = async (req, res) => {
     drawPdfSectionTitle(doc, "Inventory Items");
 
     const columns = [
-      { label: "Name", key: "name", width: 100 },
-      { label: "Type", key: "type", width: 45 },
-      { label: "Category", key: "category", width: 60 },
-      { label: "Qty", key: "quantity", width: 35, align: "right" },
-      { label: "Unit", key: "unit", width: 35 },
-      { label: "Condition", key: "condition", width: 45 },
-      { label: "Usage", key: "usageDuration", width: 55 },
-      { label: "Amount", key: "amount", width: 70, align: "right" },
-      { label: "Reference No.", key: "referenceNumber", width: 65 },
-      { label: "Expiry", key: "expirationDate", width: 65 },
-      { label: "Expiry Status", key: "expiryStatus", width: 55 },
-      { label: "Source", key: "sourceType", width: 45 },
-      { label: "Source Name", key: "sourceName", width: 65 },
-      { label: "Added By", key: "addedBy", width: 55 },
+      { label: "Name", key: "name", width: 85 },
+      { label: "Type", key: "type", width: 44 },
+      { label: "Category", key: "category", width: 55 },
+      { label: "Qty", key: "quantity", width: 28, align: "right" },
+      { label: "Unit", key: "unit", width: 32 },
+      { label: "Condition", key: "condition", width: 42 },
+      { label: "Usage", key: "usageDuration", width: 45 },
+      { label: "Amount", key: "amount", width: 75, align: "right" },
+      { label: "Reference No.", key: "referenceNumber", width: 80 },
+      { label: "Expiry", key: "expirationDate", width: 60 },
+      { label: "Expiry Status", key: "expiryStatus", width: 50 },
+      { label: "Source", key: "sourceType", width: 44 },
+      { label: "Source Name", key: "sourceName", width: 58 },
+      { label: "Added By", key: "addedBy", width: 40 },
     ];
 
     if (!items.length) {
