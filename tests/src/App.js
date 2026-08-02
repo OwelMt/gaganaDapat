@@ -36,7 +36,6 @@ import Announcement from './components/Announcement';
 import UnityDigitalTwin from './components/DigitalTwin/UnityDigitalTwin';
 import YoloWaterMonitor from './components/YoloWaterMonitor';
 import UnityDigitalTwin1 from './components/DigitalTwin/UnityDigitalTwin1';
-import FloodVirtualTwin1 from './components/FloodVirtualTwin1';
 
 import Inventory from './components/Donations/Inventory';
 import InventoryAdd from './components/Donations/InventoryAdd';
@@ -247,14 +246,6 @@ const ROUTES = [
   { path: "/idk", element: <HomeGuidelines />, roles: ALL_AUTH },
   { path: "/update/:id", element: <UpdateGuideline />, roles: ALL_AUTH },
   { path: "/map", element: <EvacuationMap />, roles: ALL_AUTH },
-  {
-  path: "/virtual-twin-mobile",
-  element: (
-    <div style={{ padding: "50px" }}>
-      <h1>Virtual Twin route works</h1>
-    </div>
-  )
-},
   { path: "/yolo-water-monitor", element: <YoloWaterMonitor /> }
 ];
 
