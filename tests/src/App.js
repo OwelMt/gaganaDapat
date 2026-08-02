@@ -36,6 +36,7 @@ import Announcement from './components/Announcement';
 import UnityDigitalTwin from './components/DigitalTwin/UnityDigitalTwin';
 import YoloWaterMonitor from './components/YoloWaterMonitor';
 import UnityDigitalTwin1 from './components/DigitalTwin/UnityDigitalTwin1';
+import FloodVirtualTwin1 from './components/FloodVirtualTwin1';
 
 import Inventory from './components/Donations/Inventory';
 import InventoryAdd from './components/Donations/InventoryAdd';
@@ -243,6 +244,7 @@ const ROUTES = [
   { path: "/accountant/notifications", element: <Notification />, roles: ACCOUNTANT_ONLY },
   { path: "/drrmo/digital-twin", element: <UnityDigitalTwin />, roles: ADMIN_DRRMO },
   { path: "/digital-twin-mobile", element: <UnityDigitalTwin1 /> },
+  { path: "/virtual-twin-mobile", element: <FloodVirtualTwin1 /> },
   { path: "/idk", element: <HomeGuidelines />, roles: ALL_AUTH },
   { path: "/update/:id", element: <UpdateGuideline />, roles: ALL_AUTH },
   { path: "/map", element: <EvacuationMap />, roles: ALL_AUTH },
