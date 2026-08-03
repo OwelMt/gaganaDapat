@@ -29,10 +29,7 @@ const {
   getSupportTypesFromRequest,
   hasSupportType,
 } = require("../utils/reliefSupportTypes");
-const {
-  canManageReliefRequest,
-  normalizeRole,
-} = require("../utils/roleAccessUtils");
+const { normalizeRole } = require("../utils/roleAccessUtils");
 
 const RELIEF_PROOF_UPLOAD_DIR = path.join(__dirname, "..", "uploads", "proofs");
 
@@ -199,8 +196,23 @@ const getRequestDemandProfile = (request = {}) => {
   };
 };
 
-const canRoleManageReleaseRequest = (role = "", request = {}) =>
-  canManageReliefRequest(role, request);
+const canRoleManageReleaseRequest = (role = "", request = {}) => {
+  const normalizedRole = normalizeRole(role);
+  const supportTypes = getSupportTypesFromRequest(request);
+
+  if (normalizedRole === "admin" || normalizedRole === "accountant") {
+    return hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY);
+  }
+
+  if (normalizedRole === "drrmo") {
+    return (
+      hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS) ||
+      hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE)
+    );
+  }
+
+  return false;
+};
 
 const isMonetaryOnlyReliefRequest = (request = {}) => {
   const supportTypes = getSupportTypesFromRequest(request);
@@ -919,7 +931,7 @@ const createReliefRelease = async (req, res) => {
       return res.status(403).json({
         message:
           sessionRole === "admin" || sessionRole === "accountant"
-            ? `${sessionRole === "accountant" ? "Accountant" : "Admin"} can only release standalone monetary requests.`
+            ? `${sessionRole === "accountant" ? "Accountant" : "Admin"} can only release requests with monetary assistance.`
             : "DRRMO can only release food pack or appliance requests.",
       });
     }
