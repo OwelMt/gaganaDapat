@@ -918,8 +918,8 @@ const createReliefRelease = async (req, res) => {
       await session.abortTransaction();
       return res.status(403).json({
         message:
-          sessionRole === "admin"
-            ? "Admin can only release standalone monetary requests."
+          sessionRole === "admin" || sessionRole === "accountant"
+            ? `${sessionRole === "accountant" ? "Accountant" : "Admin"} can only release standalone monetary requests.`
             : "DRRMO can only release food pack or appliance requests.",
       });
     }
@@ -995,10 +995,13 @@ const createReliefRelease = async (req, res) => {
       });
     }
 
-    if (sessionRole === "admin" && (isReleasingFoodPacks || isReleasingAppliances)) {
+    if (
+      (sessionRole === "admin" || sessionRole === "accountant") &&
+      (isReleasingFoodPacks || isReleasingAppliances)
+    ) {
       await session.abortTransaction();
       return res.status(400).json({
-        message: "Admin release planning only supports monetary assistance.",
+        message: `${sessionRole === "accountant" ? "Accountant" : "Admin"} release planning only supports monetary assistance.`,
       });
     }
 

@@ -1294,7 +1294,7 @@ export default function Inventory() {
   const roleRelevantApprovedRequests = useMemo(() => {
     return approvedRequests.filter((request) => {
       const supportTypes = getRequestSupportTypes(request);
-      if (isAdmin) {
+      if (isAdmin || isAccountant) {
         return (
           hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY) &&
           getRemainingMonetaryAmount(request) > 0
@@ -1315,6 +1315,7 @@ export default function Inventory() {
     });
   }, [
     approvedRequests,
+    isAccountant,
     isAdmin,
     isDrrmo,
     getRequestSupportTypes,

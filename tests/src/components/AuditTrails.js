@@ -162,8 +162,23 @@ export default function AuditTrails() {
     }
   }, [navigate, role]);
 
+  const buildAuditQueryParams = (limit = "500") => {
+    const params = new URLSearchParams();
+    params.set("limit", limit);
+    if (selectedModule !== "all") params.set("module", selectedModule);
+    if (selectedActorRole !== "all") params.set("actorRole", selectedActorRole);
+    if (search.trim()) params.set("search", search.trim());
+    if (selectedDays !== "all") params.set("days", selectedDays);
+    return params;
+  };
+
   const exportAuditPdf = () => {
-    window.print();
+    const params = buildAuditQueryParams("500");
+    window.open(
+      `${BASE_URL}/api/audit/export-pdf?${params.toString()}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
   };
 
   const fetchAuditTrail = async ({ background = false } = {}) => {
@@ -175,12 +190,7 @@ export default function AuditTrails() {
       }
       setError("");
 
-      const params = new URLSearchParams();
-      params.set("limit", "250");
-      if (selectedModule !== "all") params.set("module", selectedModule);
-      if (selectedActorRole !== "all") params.set("actorRole", selectedActorRole);
-      if (search.trim()) params.set("search", search.trim());
-      if (selectedDays !== "all") params.set("days", selectedDays);
+      const params = buildAuditQueryParams("250");
 
       const res = await fetch(`${BASE_URL}/api/audit?${params.toString()}`, {
         method: "GET",

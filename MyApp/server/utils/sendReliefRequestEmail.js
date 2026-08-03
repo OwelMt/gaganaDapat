@@ -74,9 +74,13 @@ function drawLabelValue(doc, label, value, x, y, labelWidth = 120, valueWidth = 
 }
 
 function drawTableHeader(doc, y) {
-  const startX = 40;
+  const startX = doc.page.margins?.left || 40;
+  const contentWidth =
+    doc.page.width -
+    (doc.page.margins?.left || 40) -
+    (doc.page.margins?.right || 40);
 
-  const columns = [
+  const baseColumns = [
     { key: "no", label: "No.", width: 28, align: "center" },
     { key: "evacuationCenterName", label: "Evacuation Center", width: 145, align: "left" },
     { key: "households", label: "Households", width: 55, align: "center" },
@@ -89,6 +93,18 @@ function drawTableHeader(doc, y) {
     { key: "senior", label: "Senior", width: 44, align: "center" },
     { key: "requestedFoodPacks", label: "Food Packs", width: 60, align: "center" },
   ];
+  const baseTotalWidth = baseColumns.reduce((sum, col) => sum + col.width, 0);
+  const scale = Math.min(1, contentWidth / baseTotalWidth);
+  const columns = baseColumns.map((col, index) => ({
+    ...col,
+    width:
+      index === baseColumns.length - 1
+        ? contentWidth -
+          baseColumns
+            .slice(0, -1)
+            .reduce((sum, item) => sum + Math.floor(item.width * scale), 0)
+        : Math.floor(col.width * scale),
+  }));
 
   let x = startX;
   columns.forEach((col) => {
@@ -246,6 +262,7 @@ function generateReliefRequestPdf(request) {
 
       const doc = new PDFDocument({
         size: "A4",
+        layout: "landscape",
         margin: 40,
       });
 
