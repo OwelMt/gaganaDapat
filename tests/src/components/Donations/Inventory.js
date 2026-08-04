@@ -25,6 +25,7 @@ import {
   SUPPORT_TYPE_APPLIANCE,
   SUPPORT_TYPE_FOODPACKS,
   SUPPORT_TYPE_MONETARY,
+  getRequestedMonetaryAmountFromRequest,
   getSupportTypesFromRequest,
   getSupportTypeLabel as getReliefSupportTypeLabel,
   hasSupportType,
@@ -346,7 +347,7 @@ export default function Inventory() {
   );
 
   const getRequestedMonetaryAmount = useCallback(
-    (request) => Number(request?.totals?.requestedMonetaryAmount || 0),
+    (request) => getRequestedMonetaryAmountFromRequest(request),
     []
   );
 

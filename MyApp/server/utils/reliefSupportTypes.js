@@ -92,6 +92,29 @@ const toNumber = (value) => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
+const getRequestedMonetaryAmountFromRequest = (request = {}) => {
+  const totals = request?.totals || {};
+  const candidates = [
+    totals.requestedMonetaryAmount,
+    request?.requestedMonetaryAmount,
+    request?.monetaryAmount,
+    request?.requestedMonetary,
+    request?.requestedAmount,
+    request?.amountRequested,
+    request?.cashAmount,
+    request?.financialAmount,
+    request?.moneyAmount,
+    request?.amount,
+  ];
+
+  for (const candidate of candidates) {
+    const amount = toNumber(candidate);
+    if (amount > 0) return amount;
+  }
+
+  return 0;
+};
+
 const getSupportTypesFromRequest = (request = {}) => {
   const normalized = normalizeSupportTypes(request.supportTypes, request.requestType);
   const inferred = new Set(normalized);
@@ -104,7 +127,7 @@ const getSupportTypesFromRequest = (request = {}) => {
   const requestedFoodPacks =
     toNumber(totals.requestedFoodPacks) ||
     rows.reduce((sum, row) => sum + toNumber(row?.requestedFoodPacks), 0);
-  const requestedMonetaryAmount = toNumber(totals.requestedMonetaryAmount);
+  const requestedMonetaryAmount = getRequestedMonetaryAmountFromRequest(request);
   const requestedApplianceQuantity =
     toNumber(totals.requestedApplianceQuantity) ||
     requestedAppliances.reduce(
@@ -150,5 +173,6 @@ module.exports = {
   normalizeRequestType,
   hasSupportType,
   getSupportTypesFromRequest,
+  getRequestedMonetaryAmountFromRequest,
   getSupportTypeLabel,
 };

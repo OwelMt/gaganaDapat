@@ -27,6 +27,7 @@ const {
   normalizeSupportTypes,
   deriveLegacyRequestType,
   getSupportTypesFromRequest,
+  getRequestedMonetaryAmountFromRequest,
   hasSupportType,
 } = require("../utils/reliefSupportTypes");
 const { normalizeRole } = require("../utils/roleAccessUtils");
@@ -175,7 +176,7 @@ const getRequestDemandProfile = (request = {}) => {
       ? toNumber(totals.requestedFoodPacks)
       : 0,
     requestedMonetaryAmount: requiresMonetaryFulfillment({ supportTypes, requestType })
-      ? toNumber(totals.requestedMonetaryAmount)
+      ? getRequestedMonetaryAmountFromRequest(request)
       : 0,
     requestedAppliances: Array.isArray(request.requestedAppliances)
       ? request.requestedAppliances
@@ -834,9 +835,7 @@ const getApprovedRequestsForRelease = async (req, res) => {
         totals: {
           ...(request.totals?.toObject?.() || request.totals || {}),
           requestedFoodPacks: toNumber(request?.totals?.requestedFoodPacks),
-          requestedMonetaryAmount: toNumber(
-            request?.totals?.requestedMonetaryAmount
-          ),
+          requestedMonetaryAmount: getRequestedMonetaryAmountFromRequest(request),
           requestedApplianceQuantity:
             Array.isArray(request?.requestedAppliances) &&
             request.requestedAppliances.length > 0
