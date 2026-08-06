@@ -242,6 +242,28 @@ const normalizeCell = (value) => {
   return String(value);
 };
 
+const fitPdfTableColumns = (doc, columns = []) => {
+  const printableWidth = getPageWidth(doc);
+  const totalWidth = columns.reduce((sum, col) => sum + Number(col.width || 0), 0);
+
+  if (!totalWidth || totalWidth <= printableWidth) {
+    return columns;
+  }
+
+  const scale = printableWidth / totalWidth;
+  let usedWidth = 0;
+
+  return columns.map((col, index) => {
+    const width =
+      index === columns.length - 1
+        ? Math.max(24, printableWidth - usedWidth)
+        : Math.max(24, Math.floor(Number(col.width || 0) * scale));
+
+    usedWidth += width;
+    return { ...col, width };
+  });
+};
+
 const drawPdfTable = (doc, columns = [], rows = [], options = {}) => {
   if (!Array.isArray(columns) || !columns.length) return;
 
@@ -257,6 +279,8 @@ const drawPdfTable = (doc, columns = [], rows = [], options = {}) => {
     return;
   }
 
+  const fittedColumns = fitPdfTableColumns(doc, columns);
+
   const drawHeader = () => {
     ensurePdfPageSpace(doc, headerHeight + rowHeight);
 
@@ -266,10 +290,13 @@ const drawPdfTable = (doc, columns = [], rows = [], options = {}) => {
 
     doc.font("Helvetica-Bold").fontSize(fontSize).fillColor(PDF_THEME.tableHeaderText);
 
-    columns.forEach((col) => {
+    fittedColumns.forEach((col) => {
       doc.text(col.label, x, startY, {
         width: col.width,
         align: col.align || "left",
+        height: headerHeight - 4,
+        ellipsis: true,
+        lineBreak: false,
       });
       x += col.width;
     });
@@ -302,13 +329,15 @@ const drawPdfTable = (doc, columns = [], rows = [], options = {}) => {
     const startY = doc.y;
     let x = startX;
 
-    columns.forEach((col) => {
+    fittedColumns.forEach((col) => {
       const rawValue = row?.[col.key];
       const finalValue = typeof col.format === "function" ? col.format(rawValue, row) : rawValue;
 
       doc.text(normalizeCell(finalValue), x, startY, {
         width: col.width,
         align: col.align || "left",
+        height: rowHeight - 6,
+        ellipsis: true,
       });
       x += col.width;
     });

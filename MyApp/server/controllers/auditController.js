@@ -223,7 +223,7 @@ const exportAuditLogsPdf = async (req, res) => {
 
     const doc = createPdfDocument({
       layout: "landscape",
-      margin: 32,
+      margin: 24,
     });
 
     const filename = `system-audit-trail-${Date.now()}.pdf`;

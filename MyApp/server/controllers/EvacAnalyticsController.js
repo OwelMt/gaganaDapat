@@ -1012,11 +1012,16 @@ const drawPdfCleanTable = (doc, title, rows = [], columns = [], options = {}) =>
   const rowHeight = options.rowHeight || 28;
   const headerHeight = 24;
   const tableWidth = columns.reduce((sum, col) => sum + col.width, 0);
-  const extraWidth = width - tableWidth;
-  const finalColumns = columns.map((col, index) => ({
-    ...col,
-    width: index === columns.length - 1 ? col.width + extraWidth : col.width,
-  }));
+  const finalColumns =
+    tableWidth > width
+      ? columns.map((col) => ({
+          ...col,
+          width: Math.max(col.minWidth || 48, Math.floor(col.width * (width / tableWidth))),
+        }))
+      : columns.map((col, index) => ({
+          ...col,
+          width: index === columns.length - 1 ? col.width + (width - tableWidth) : col.width,
+        }));
 
   ensurePdfPageSpace(doc, headerHeight + rowHeight + 18);
 
@@ -1033,6 +1038,8 @@ const drawPdfCleanTable = (doc, title, rows = [], columns = [], options = {}) =>
       .text(col.label, cx + 8, y + 8, {
         width: col.width - 16,
         align: col.align || "left",
+        height: headerHeight - 10,
+        ellipsis: true,
         lineBreak: false,
       });
 
@@ -1062,6 +1069,7 @@ const drawPdfCleanTable = (doc, title, rows = [], columns = [], options = {}) =>
           width: col.width - 16,
           align: col.align || "left",
           height: rowHeight - 10,
+          ellipsis: true,
           lineBreak: false,
         });
 

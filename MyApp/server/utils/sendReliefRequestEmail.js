@@ -128,6 +128,9 @@ function drawTableHeader(doc, y) {
     doc.text(col.label, col.x + 2, y + 7, {
       width: col.width - 4,
       align: col.align,
+      height: rowHeight - 8,
+      ellipsis: true,
+      lineBreak: false,
     });
   });
 
@@ -166,6 +169,7 @@ function drawTableRow(doc, row, index, y, tableMeta) {
     doc.text(values[col.key], col.x + 2, y + 7, {
       width: col.width - 4,
       align: col.align,
+      height: rowHeight - 8,
       ellipsis: true,
     });
   });

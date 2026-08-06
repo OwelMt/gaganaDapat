@@ -1071,20 +1071,52 @@ const drawPdfSectionTitle = (doc, title) => {
   doc.font("Helvetica").fontSize(10);
 };
 
-const SIMPLE_TABLE_COLUMN_GAP = 4;
+const SIMPLE_TABLE_COLUMN_GAP = 8;
+
+const getSimpleTableColumns = (doc, columns) => {
+  const printableWidth =
+    doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const totalGap = Math.max(0, columns.length - 1) * SIMPLE_TABLE_COLUMN_GAP;
+  const availableColumnWidth = printableWidth - totalGap;
+  const requestedColumnWidth = columns.reduce(
+    (sum, col) => sum + Number(col.width || 0),
+    0
+  );
+
+  if (!requestedColumnWidth || requestedColumnWidth <= availableColumnWidth) {
+    return columns;
+  }
+
+  const scale = availableColumnWidth / requestedColumnWidth;
+  let usedWidth = 0;
+
+  return columns.map((col, index) => {
+    const width =
+      index === columns.length - 1
+        ? Math.max(24, availableColumnWidth - usedWidth)
+        : Math.max(24, Math.floor(Number(col.width || 0) * scale));
+
+    usedWidth += width;
+    return { ...col, width };
+  });
+};
 
 const drawSimpleTableHeader = (doc, columns) => {
   ensurePdfPageSpace(doc, 30);
+  const fittedColumns = getSimpleTableColumns(doc, columns);
   const startX = doc.page.margins.left;
   const startY = doc.y;
 
   doc.font("Helvetica-Bold").fontSize(8);
   let x = startX;
 
-  columns.forEach((col) => {
+  fittedColumns.forEach((col) => {
     doc.text(col.label, x, startY, {
       width: col.width,
       align: col.align || "left",
+      height: 14,
+      ellipsis: true,
+      lineBreak: false,
     });
     x += col.width + SIMPLE_TABLE_COLUMN_GAP;
   });
@@ -1096,6 +1128,8 @@ const drawSimpleTableHeader = (doc, columns) => {
 
   doc.y = startY + 18;
   doc.font("Helvetica").fontSize(8);
+
+  return fittedColumns;
 };
 
 const drawSimpleTableRow = (doc, columns, row, rowHeight = 24) => {
@@ -1110,6 +1144,8 @@ const drawSimpleTableRow = (doc, columns, row, rowHeight = 24) => {
     doc.text(String(value), x, startY, {
       width: col.width,
       align: col.align || "left",
+      height: rowHeight - 6,
+      ellipsis: true,
     });
     x += col.width + SIMPLE_TABLE_COLUMN_GAP;
   });
@@ -1588,10 +1624,10 @@ const drawAnalyticsSnapshotPdf = (doc, snapshot, reportType) => {
       { label: "Quantity", key: "quantity", width: 100, align: "right" },
     ];
 
-    drawSimpleTableHeader(doc, columns);
+    const tableColumns = drawSimpleTableHeader(doc, columns);
 
     categoryRows.forEach((row) => {
-      drawSimpleTableRow(doc, columns, row, 24);
+      drawSimpleTableRow(doc, tableColumns, row, 24);
     });
   }
 
@@ -2516,14 +2552,19 @@ const exportInventoryPdf = async (req, res) => {
     if (!items.length) {
       doc.font("Helvetica").fontSize(10).text("No inventory items available for this report.");
     } else {
-      drawSimpleTableHeader(doc, columns);
+      let tableColumns = drawSimpleTableHeader(doc, columns);
 
       items.forEach((item) => {
         const amountText = item.type === "monetary" ? formatPeso(item.amount) : "-";
 
+        if (doc.y + 38 > doc.page.height - doc.page.margins.bottom) {
+          doc.addPage();
+          tableColumns = drawSimpleTableHeader(doc, columns);
+        }
+
         drawSimpleTableRow(
           doc,
-          columns,
+          tableColumns,
           {
             name: normalizeString(item.name) || "-",
             type: formatTypeLabel(item.type),

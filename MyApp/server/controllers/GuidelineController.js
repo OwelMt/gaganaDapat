@@ -524,18 +524,44 @@ const drawPdfSectionTitle = (doc, title) => {
   doc.font("Helvetica").fontSize(10);
 };
 
+const getPdfPageWidth = (doc) =>
+  doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+const fitSimpleTableColumns = (doc, columns) => {
+  const availableWidth = getPdfPageWidth(doc);
+  const totalWidth = columns.reduce((sum, col) => sum + col.width, 0);
+
+  if (totalWidth <= availableWidth) {
+    const extraWidth = availableWidth - totalWidth;
+    return columns.map((col, index) => ({
+      ...col,
+      width: index === columns.length - 1 ? col.width + extraWidth : col.width,
+    }));
+  }
+
+  const scale = availableWidth / totalWidth;
+  return columns.map((col) => ({
+    ...col,
+    width: Math.max(col.minWidth || 42, Math.floor(col.width * scale)),
+  }));
+};
+
 const drawSimpleTableHeader = (doc, columns) => {
   ensurePdfPageSpace(doc, 30);
+  const fittedColumns = fitSimpleTableColumns(doc, columns);
   const startX = doc.page.margins.left;
   const startY = doc.y;
 
   doc.font("Helvetica-Bold").fontSize(8);
   let x = startX;
 
-  columns.forEach((col) => {
+  fittedColumns.forEach((col) => {
     doc.text(col.label, x, startY, {
       width: col.width,
       align: col.align || "left",
+      height: 12,
+      ellipsis: true,
+      lineBreak: false,
     });
     x += col.width;
   });
@@ -546,6 +572,7 @@ const drawSimpleTableHeader = (doc, columns) => {
 
   doc.y = startY + 18;
   doc.font("Helvetica").fontSize(8);
+  return fittedColumns;
 };
 
 const drawSimpleTableRow = (doc, columns, row, rowHeight = 24) => {
@@ -560,6 +587,9 @@ const drawSimpleTableRow = (doc, columns, row, rowHeight = 24) => {
     doc.text(String(value), x, startY, {
       width: col.width,
       align: col.align || "left",
+      height: rowHeight - 8,
+      ellipsis: true,
+      lineBreak: false,
     });
     x += col.width;
   });
@@ -1091,12 +1121,12 @@ const exportPublishedGuidelinesPdf = async (req, res) => {
     if (!sorted.length) {
       doc.font("Helvetica").fontSize(10).text("No published guidelines available.");
     } else {
-      drawSimpleTableHeader(doc, columns);
+      let tableColumns = drawSimpleTableHeader(doc, columns);
 
       sorted.forEach((item) => {
         drawSimpleTableRow(
           doc,
-          columns,
+          tableColumns,
           {
             title: normalizeString(item.title) || "-",
             category: formatLabel(item.category),
