@@ -45,6 +45,8 @@ const barangayRoutes = require("./routes/barangayRoutes");
 const drrmoRoutes = require("./routes/drrmoRoutes");
 const reliefTrackingRoutes = require("./routes/reliefTrackingRoutes");
 const auditRoutes = require("./routes/auditRoutes");
+const { exportAuditLogsPdf } = require("./controllers/auditController");
+const { requireLogin, requireAdmin } = require("./middleware/adminMiddleware");
 const guidelineRoutes = require("./routes/GuidelineRoutes");
 const announcementRoutes = require("./routes/AnnouncementRoutes");
 const connectionRoutes = require("./routes/connectionRoutes");
@@ -403,6 +405,8 @@ app.use("/api/drrmo", drrmoRoutes);
 
 app.use("/api/relief-tracking", reliefTrackingRoutes);
 
+app.get("/api/audit/export-pdf", requireLogin, requireAdmin, exportAuditLogsPdf);
+app.get("/api/audit-trail/export-pdf", requireLogin, requireAdmin, exportAuditLogsPdf);
 app.use("/api/audit", auditRoutes);
 
 app.use("/connection", connectionRoutes);
