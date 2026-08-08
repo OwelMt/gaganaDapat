@@ -180,6 +180,8 @@ export default function Inventory() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [editingItemId, setEditingItemId] = useState("");
   const [editingItemLocks, setEditingItemLocks] = useState({});
+  const [editingItemOriginalName, setEditingItemOriginalName] = useState("");
+  const [editingItemOriginalType, setEditingItemOriginalType] = useState("");
   const [itemEditModalOpen, setItemEditModalOpen] = useState(false);
   const [itemEditSubmitting, setItemEditSubmitting] = useState(false);
 
@@ -245,6 +247,9 @@ export default function Inventory() {
   const minExpirationDate = useMemo(() => getTodayInputDate(), []);
   const itemEditLocks = editingItemLocks || {};
   const isItemClassificationLocked = Boolean(itemEditLocks.classificationLocked);
+  const isItemNameLocked = ["goods", "appliance"].includes(
+    String(editingItemOriginalType || itemForm.type || "").trim().toLowerCase()
+  );
 
   const normalize = useCallback((val) => (val || "").toString().trim().toLowerCase(), []);
 
@@ -1365,7 +1370,9 @@ export default function Inventory() {
   const selectedRequestPendingFood =
     isDrrmo && selectedRequestNeedsFood && selectedRemainingFoodPacks > 0;
   const selectedRequestPendingMonetary =
-    isAdmin && selectedRequestNeedsMonetary && selectedRemainingMonetaryAmount > 0;
+    (isAdmin || isAccountant) &&
+    selectedRequestNeedsMonetary &&
+    selectedRemainingMonetaryAmount > 0;
   const selectedRequestPendingAppliance =
     isDrrmo &&
     selectedRequestNeedsAppliance &&
@@ -2007,6 +2014,8 @@ useEffect(() => {
 
     setEditingItemId(item?._id || "");
     setEditingItemLocks(item?.editLocks || {});
+    setEditingItemOriginalName(item?.name || "");
+    setEditingItemOriginalType(itemType);
     setItemFormErrors({});
     setItemForm({
       type: itemType,
@@ -2060,6 +2069,8 @@ useEffect(() => {
     setItemEditModalOpen(false);
     setEditingItemId("");
     setEditingItemLocks({});
+    setEditingItemOriginalName("");
+    setEditingItemOriginalType("");
     setItemFormErrors({});
     setItemForm({
       type: "goods",
@@ -2206,6 +2217,10 @@ useEffect(() => {
       return;
     }
 
+    if (isItemNameLocked && name === "name") {
+      return;
+    }
+
     if (name === "quantity" || name === "amount") {
       if (value === "") {
         setItemForm((prev) => ({ ...prev, [name]: "" }));
@@ -2296,9 +2311,12 @@ useEffect(() => {
       setItemEditSubmitting(true);
 
       const formData = new FormData();
+      const itemNameForSave = isItemNameLocked
+        ? editingItemOriginalName || itemForm.name
+        : itemForm.name;
 
       formData.append("type", itemForm.type);
-      formData.append("name", itemForm.name.trim());
+      formData.append("name", itemNameForSave.trim());
       formData.append("description", itemForm.description.trim());
       formData.append("sourceType", itemForm.sourceType);
       formData.append("sourceName", itemForm.sourceName.trim());
@@ -3139,14 +3157,22 @@ useEffect(() => {
                           </button>
                         </div>
 
-                        {isItemClassificationLocked ? (
+                        {isItemClassificationLocked || isItemNameLocked ? (
                           <div className="inventory-edit-lock-banner">
-                            Type, category, unit, and provider are locked because this item has already been used in a relief release.
+                            {isItemClassificationLocked && isItemNameLocked
+                              ? "Name, type, category, unit, and provider are locked because this item has already been used in a relief release."
+                              : isItemClassificationLocked
+                              ? "Type, category, unit, and provider are locked because this item has already been used in a relief release."
+                              : "Name is locked for goods and appliance records to keep merged inventory groups consistent."}
                           </div>
                         ) : null}
 
                         <div className="inventory-modal-grid">
-                      <div className="release-selection-field">
+                      <div
+                        className={`release-selection-field ${
+                          isItemNameLocked ? "release-selection-field-disabled" : ""
+                        }`}
+                      >
                         <label>Name</label>
                         <input
                           type="text"
@@ -3155,6 +3181,12 @@ useEffect(() => {
                           maxLength={MAX_NAME_LENGTH}
                           value={itemForm.name}
                           onChange={handleItemFormChange}
+                          disabled={isItemNameLocked}
+                          title={
+                            isItemNameLocked
+                              ? "Name is locked for goods and appliance records."
+                              : undefined
+                          }
                         />
                         {itemFormErrors.name ? (
                           <span className="error-text">{itemFormErrors.name}</span>
