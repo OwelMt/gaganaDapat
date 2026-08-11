@@ -7,16 +7,19 @@ export function getTodayInputDate(baseDate = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+function toStartOfDay(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
 export function getInventoryExpiryStatus(expirationDate, baseDate = new Date()) {
   if (!expirationDate) return "none";
 
-  const today = new Date(baseDate);
-  today.setHours(0, 0, 0, 0);
-
-  const expiry = new Date(expirationDate);
-  if (Number.isNaN(expiry.getTime())) return "none";
-
-  expiry.setHours(0, 0, 0, 0);
+  const today = toStartOfDay(baseDate);
+  const expiry = toStartOfDay(expirationDate);
+  if (!today || !expiry) return "none";
 
   const diffDays = Math.ceil(
     (expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
@@ -30,15 +33,15 @@ export function getInventoryExpiryStatus(expirationDate, baseDate = new Date()) 
 export function validateFutureOrTodayInventoryDate(value, baseDate = new Date()) {
   if (!value) return "";
 
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = toStartOfDay(value);
+  if (!parsed) {
     return "Expiration date is invalid.";
   }
 
-  const today = new Date(baseDate);
-  today.setHours(0, 0, 0, 0);
-
-  parsed.setHours(0, 0, 0, 0);
+  const today = toStartOfDay(baseDate);
+  if (!today) {
+    return "Expiration date is invalid.";
+  }
 
   if (parsed < today) {
     return "Expiration date cannot be in the past.";

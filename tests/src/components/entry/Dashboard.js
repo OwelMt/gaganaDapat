@@ -11,6 +11,7 @@ import {
   FaEyeSlash,
   FaFacebookF,
   FaMapMarkedAlt,
+  FaSearch,
   FaPhoneAlt,
   FaSave,
   FaShieldAlt,
@@ -29,6 +30,8 @@ import hero1 from "../../assets/images/hero1.jpg";
 import hero2 from "../../assets/images/hero2.jpg";
 import hero3 from "../../assets/images/hero3.jpg";
 import EvacMap from "../map/Map";
+import PublicDigitalTwinPanel from "./PublicDigitalTwinPanel";
+import FloodVirtualTwin from "./FloodVirtualTwin";
 import { API_BASE_URL } from "../../config/api";
 
 const BASE_URL = API_BASE_URL;
@@ -131,6 +134,11 @@ const NAV_ITEMS = [
   { id: "footer-info", label: "Contacts" },
 ];
 
+const TWIN_NAV_ITEMS = [
+  { id: "digital-twin", label: "Digital Twin" },
+  { id: "virtual-twin", label: "Virtual Twin" },
+];
+
 function safeJsonParse(value, fallback) {
   try {
     return JSON.parse(value);
@@ -145,6 +153,15 @@ function safeLower(value) {
 
 function formatNumber(value) {
   return new Intl.NumberFormat().format(Number(value || 0));
+}
+
+function countGeoJsonFeatures(geojson) {
+  if (!geojson) return 0;
+  if (geojson.type === "FeatureCollection") {
+    return Array.isArray(geojson.features) ? geojson.features.length : 0;
+  }
+  if (geojson.type === "Feature") return 1;
+  return 0;
 }
 
 function formatDateTime(value) {
@@ -246,7 +263,7 @@ function sanitizeSearchInput(value) {
   return String(value || "")
     .replace(/[<>]/g, "")
     .replace(/\s+/g, " ")
-    .trim()
+    .trimStart()
     .slice(0, 100);
 }
 
@@ -265,7 +282,7 @@ function getSeverityTone(level) {
   return "neutral";
 }
 
-function PublicMapLegend() {
+function PublicMapLegend({ showHazardOverlay = false }) {
   return (
     <div className="public-map-legend" aria-label="Map legend">
       <div className="public-map-legend-title">Map Legend</div>
@@ -285,6 +302,25 @@ function PublicMapLegend() {
           <span className="public-map-dot full" />
           <span>Full</span>
         </div>
+
+        {showHazardOverlay ? (
+          <>
+            <div className="public-map-legend-item">
+              <span className="public-map-swatch susceptible" />
+              <span>Susceptible</span>
+            </div>
+
+            <div className="public-map-legend-item">
+              <span className="public-map-swatch medium" />
+              <span>Medium</span>
+            </div>
+
+            <div className="public-map-legend-item">
+              <span className="public-map-swatch safe" />
+              <span>Safe</span>
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
   );
@@ -315,11 +351,17 @@ export default function Dashboard() {
   const [mapError, setMapError] = useState("");
   const [selectedPublicPlaceId, setSelectedPublicPlaceId] = useState(null);
   const [publicBarangayFilter, setPublicBarangayFilter] = useState("all");
+  const [publicSelectedBarangays, setPublicSelectedBarangays] = useState([]);
   const [publicBarangayBounds, setPublicBarangayBounds] = useState([]);
+  const [hazardLayers, setHazardLayers] = useState(null);
+  const [hazardLoading, setHazardLoading] = useState(true);
+  const [hazardError, setHazardError] = useState("");
+  const [showHazardOverlay, setShowHazardOverlay] = useState(false);
 
   const [publicIncidents, setPublicIncidents] = useState([]);
   const [incidentsLoading, setIncidentsLoading] = useState(true);
   const [incidentsError, setIncidentsError] = useState("");
+  const [activeTwinView, setActiveTwinView] = useState("");
 
   const observerRef = useRef(null);
   const heroImageInputRef = useRef(null);
@@ -328,6 +370,7 @@ export default function Dashboard() {
   const isPrivilegedUser = useMemo(() => {
     return ["drrmo", "admin"].includes(safeLower(userRole));
   }, [userRole]);
+  const isTwinViewActive = Boolean(activeTwinView);
 
   const canEdit = isPrivilegedUser && !isVisitorMode;
   const isInlineEditing = canEdit && isEditorOpen;
@@ -388,12 +431,15 @@ export default function Dashboard() {
   }, [publicPlaces]);
 
   const filteredPublicPlaces = useMemo(() => {
-    if (publicBarangayFilter === "all") return publicPlaces;
+    if (!publicSelectedBarangays.length) return publicPlaces;
 
-    return publicPlaces.filter(
-      (item) => safeLower(item?.barangayName) === safeLower(publicBarangayFilter)
+    const selectedKeys = new Set(
+      publicSelectedBarangays.map((name) => safeLower(name))
     );
-  }, [publicPlaces, publicBarangayFilter]);
+    return publicPlaces.filter(
+      (item) => selectedKeys.has(safeLower(item?.barangayName))
+    );
+  }, [publicPlaces, publicSelectedBarangays]);
 
   const publicMapSummary = useMemo(() => {
     const source = filteredPublicPlaces;
@@ -426,8 +472,47 @@ export default function Dashboard() {
     );
   }, [filteredPublicPlaces, selectedPublicPlaceId]);
 
-  const focusedBarangayLabel =
-    publicBarangayFilter === "all" ? "All Barangays" : publicBarangayFilter;
+  const handlePublicBarangayFilterChange = (nextBarangay) => {
+    setPublicBarangayFilter(nextBarangay);
+    setSelectedPublicPlaceId(null);
+
+    if (nextBarangay === "all") {
+      setPublicSelectedBarangays([]);
+      return;
+    }
+
+    setPublicSelectedBarangays((current) => {
+      const exists = current.some(
+        (name) => safeLower(name) === safeLower(nextBarangay)
+      );
+
+      if (exists) {
+        const nextSelected = current.filter(
+          (name) => safeLower(name) !== safeLower(nextBarangay)
+        );
+        if (!nextSelected.length) {
+          setPublicBarangayFilter("all");
+        }
+        return nextSelected;
+      }
+
+      return [...current, nextBarangay];
+    });
+  };
+
+  const focusedBarangayLabel = !publicSelectedBarangays.length
+    ? "All Barangays"
+    : publicSelectedBarangays.length === 1
+    ? publicSelectedBarangays[0]
+    : `${publicSelectedBarangays.length} barangays selected`;
+
+  const hazardSummary = useMemo(() => {
+    return {
+      safe: countGeoJsonFeatures(hazardLayers?.safe),
+      medium: countGeoJsonFeatures(hazardLayers?.medium),
+      susceptible: countGeoJsonFeatures(hazardLayers?.susceptible),
+    };
+  }, [hazardLayers]);
 
   const incidentSummary = useMemo(() => {
     const total = publicIncidents.length;
@@ -474,18 +559,23 @@ export default function Dashboard() {
   }, [incidentFeedMode, publicIncidents]);
 
   const filteredIncidentFeedList = useMemo(() => {
-    if (publicBarangayFilter === "all") return incidentFeedList;
+    if (!publicSelectedBarangays.length) return incidentFeedList;
 
-    const barangay = safeLower(publicBarangayFilter);
+    const selectedKeys = publicSelectedBarangays.map((name) => safeLower(name));
 
     return incidentFeedList.filter((item) => {
-      return (
-        safeLower(item.barangayName).includes(barangay) ||
-        safeLower(item.location).includes(barangay) ||
-        safeLower(item.address).includes(barangay)
+      const barangayName = safeLower(item.barangayName);
+      const location = safeLower(item.location);
+      const address = safeLower(item.address);
+
+      return selectedKeys.some(
+        (barangay) =>
+          barangayName.includes(barangay) ||
+          location.includes(barangay) ||
+          address.includes(barangay)
       );
     });
-  }, [incidentFeedList, publicBarangayFilter]);
+  }, [incidentFeedList, publicSelectedBarangays]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -530,6 +620,12 @@ export default function Dashboard() {
   }, [filteredPublicPlaces, selectedPublicPlaceId]);
 
   useEffect(() => {
+    if (isTwinViewActive) {
+      observerRef.current?.disconnect();
+      setActiveSection(activeTwinView);
+      return undefined;
+    }
+
     const sectionIds = NAV_ITEMS.map((item) => item.id);
     const elements = sectionIds
       .map((id) => document.getElementById(id))
@@ -559,6 +655,8 @@ export default function Dashboard() {
 
     return () => observerRef.current?.disconnect();
   }, [
+    activeTwinView,
+    isTwinViewActive,
     filteredPublicPlaces.length,
     filteredIncidentFeedList,
     weatherLoading,
@@ -578,8 +676,22 @@ export default function Dashboard() {
   const scrollToUpdates = () => scrollToId("updates");
   const scrollToPreparedness = () => scrollToId("preparedness");
   const scrollToFooter = () => scrollToId("footer-info");
+  const openTwinView = (viewId) => {
+    setActiveTwinView(viewId);
+    setActiveSection(viewId);
+    setIsEditorOpen(false);
+  };
 
   function handleNavClick(id) {
+    if (id === "digital-twin" || id === "virtual-twin") {
+      openTwinView(id);
+      return;
+    }
+
+    if (isTwinViewActive) {
+      setActiveTwinView("");
+    }
+
     setActiveSection(id);
     scrollToId(id);
   }
@@ -587,7 +699,7 @@ export default function Dashboard() {
   function handleSearchSubmit(e) {
     e.preventDefault();
 
-    const value = sanitizeSearchInput(searchText).toLowerCase();
+    const value = sanitizeSearchInput(searchText).trim().toLowerCase();
 
     if (!value) return;
 
@@ -811,6 +923,34 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchHazardLayers = useCallback(async () => {
+    setHazardLoading(true);
+    setHazardError("");
+
+    try {
+      const res = await fetch(`${BASE_URL}/api/hazard-layers`, {
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to load hazard layers.");
+      }
+
+      const data = await res.json();
+      setHazardLayers({
+        safe: data?.safe || null,
+        medium: data?.medium || null,
+        susceptible: data?.susceptible || null,
+      });
+    } catch (err) {
+      console.error("fetchHazardLayers error:", err);
+      setHazardError("Hazard layer is unavailable right now.");
+      setHazardLayers(null);
+    } finally {
+      setHazardLoading(false);
+    }
+  }, []);
+
   async function fetchPublicIncidents() {
     setIncidentsLoading(true);
     setIncidentsError("");
@@ -843,8 +983,9 @@ export default function Dashboard() {
     fetchWeather();
     fetchPublicPlaces();
     fetchPublicBarangayBounds();
+    fetchHazardLayers();
     fetchPublicIncidents();
-  }, [fetchPublicBarangayBounds, fetchPublicPlaces]);
+  }, [fetchHazardLayers, fetchPublicBarangayBounds, fetchPublicPlaces]);
 
   function updateDraft(path, value) {
     setDraftContent((prev) => {
@@ -1182,88 +1323,110 @@ export default function Dashboard() {
 
             <div className="header-right">
               <form className="header-search-wrap" onSubmit={handleSearchSubmit}>
-                <input
-                  type="text"
-                  className="header-search"
-                  placeholder="Search weather, hazard, incident, barangay, contacts..."
-                  value={searchText}
-                  onChange={(e) =>
-                    setSearchText(sanitizeSearchInput(e.target.value))
-                  }
-                />
+                <div className="header-search-shell">
+                  <FaSearch className="header-search-icon" aria-hidden="true" />
+                  <input
+                    type="text"
+                    className="header-search"
+                    placeholder="Search weather, hazard, incident, barangay, contacts..."
+                    value={searchText}
+                    onChange={(e) =>
+                      setSearchText(sanitizeSearchInput(e.target.value))
+                    }
+                  />
+                </div>
               </form>
 
-              {isPrivilegedUser && (
-                <div className="mode-toggle-wrap">
+              <div className="header-public-actions">
+                {isPrivilegedUser && (
+                  <div className="mode-toggle-wrap">
+                    <button
+                      type="button"
+                      className={`mode-toggle-btn ${
+                        !isVisitorMode ? "active" : ""
+                      }`}
+                      onClick={() => setIsVisitorMode(false)}
+                    >
+                      <FaEdit />
+                      <span>Editor Mode</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`mode-toggle-btn ${
+                        isVisitorMode ? "active" : ""
+                      }`}
+                      onClick={() => {
+                        setIsVisitorMode(true);
+                        setIsEditorOpen(false);
+                      }}
+                    >
+                      <FaEye />
+                      <span>Visitor Mode</span>
+                    </button>
+                  </div>
+                )}
+
+                {isPrivilegedUser && (
                   <button
+                    className="editor-toggle-btn"
+                    onClick={goBackToModules}
                     type="button"
-                    className={`mode-toggle-btn ${
-                      !isVisitorMode ? "active" : ""
-                    }`}
-                    onClick={() => setIsVisitorMode(false)}
+                  >
+                    <span>Back</span>
+                  </button>
+                )}
+
+                {canEdit && !isInlineEditing && (
+                  <button
+                    className="editor-toggle-btn"
+                    onClick={startInlineEditing}
+                    type="button"
                   >
                     <FaEdit />
-                    <span>Editor Mode</span>
+                    <span>Edit Landing</span>
                   </button>
+                )}
 
+                {canEdit && isInlineEditing && (
                   <button
+                    className="editor-toggle-btn"
+                    onClick={closeInlineEditing}
                     type="button"
-                    className={`mode-toggle-btn ${
-                      isVisitorMode ? "active" : ""
-                    }`}
-                    onClick={() => {
-                      setIsVisitorMode(true);
-                      setIsEditorOpen(false);
-                    }}
+                    disabled={isSaving}
                   >
-                    <FaEye />
-                    <span>Visitor Mode</span>
+                    <FaTimes />
+                    <span>Close Editor</span>
                   </button>
-                </div>
-              )}
-
-              {isPrivilegedUser && (
-                <button
-                  className="editor-toggle-btn"
-                  onClick={goBackToModules}
-                  type="button"
-                >
-                  <span>Back</span>
-                </button>
-              )}
-
-              {canEdit && !isInlineEditing && (
-                <button
-                  className="editor-toggle-btn"
-                  onClick={startInlineEditing}
-                  type="button"
-                >
-                  <FaEdit />
-                  <span>Edit Landing</span>
-                </button>
-              )}
-
-              {canEdit && isInlineEditing && (
-                <button
-                  className="editor-toggle-btn"
-                  onClick={closeInlineEditing}
-                  type="button"
-                  disabled={isSaving}
-                >
-                  <FaTimes />
-                  <span>Close Editor</span>
-                </button>
-              )}
+                )}
+              </div>
             </div>
           </div>
 
           <div className="dashboard-nav-shell">
-            <nav className="nav-links" aria-label="Primary navigation">
-              {NAV_ITEMS.map((item) => (
+            <div className="dashboard-nav-scroll">
+              <nav className="nav-links" aria-label="Primary navigation">
+                {NAV_ITEMS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`nav-link-btn ${
+                      activeSection === item.id ? "active" : ""
+                    }`}
+                    onClick={() => handleNavClick(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
+            </div>
+
+            <div className="header-twin-links" aria-label="Twin views">
+              {TWIN_NAV_ITEMS.map((item) => (
                 <button
                   key={item.id}
                   type="button"
-                  className={`nav-link-btn ${
+                  className={`nav-link-btn twin-link-btn ${
                     activeSection === item.id ? "active" : ""
                   }`}
                   onClick={() => handleNavClick(item.id)}
@@ -1271,11 +1434,23 @@ export default function Dashboard() {
                   {item.label}
                 </button>
               ))}
-            </nav>
+            </div>
           </div>
         </header>
 
-                {isPrivilegedUser && (
+        {isTwinViewActive ? (
+          <section className="landing-twin-shell" id={activeTwinView}>
+            <div className="landing-wide-shell">
+              {activeTwinView === "digital-twin" ? (
+                <PublicDigitalTwinPanel />
+              ) : (
+                <FloodVirtualTwin />
+              )}
+            </div>
+          </section>
+        ) : (
+          <>
+        {isPrivilegedUser && (
           <section className="mode-preview-bar">
             <div className="mode-preview-left">
               {isVisitorMode ? <FaEye /> : <FaEyeSlash />}
@@ -1439,60 +1614,6 @@ export default function Dashboard() {
                     </>
                   )}
 
-                  <div className="landing-hero-actions">
-                    <button
-                      type="button"
-                      className="hero-btn primary"
-                      onClick={scrollToWeather}
-                    >
-                      {isInlineEditing ? (
-                        <input
-                          className="landing-inline-input cta-inline-input"
-                          type="text"
-                          value={draftContent.hero.primaryCtaLabel}
-                          maxLength={24}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) =>
-                            updateDraft("hero.primaryCtaLabel", e.target.value)
-                          }
-                          placeholder="Primary button"
-                        />
-                      ) : (
-                        pageContent.hero.primaryCtaLabel || "View Weather"
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      className="hero-btn secondary"
-                      onClick={scrollToMap}
-                    >
-                      View Evacuation Map
-                    </button>
-
-                    <button
-                      type="button"
-                      className="hero-btn ghost"
-                      onClick={scrollToFooter}
-                    >
-                      {isInlineEditing ? (
-                        <input
-                          className="landing-inline-input cta-inline-input"
-                          type="text"
-                          value={draftContent.hero.secondaryCtaLabel}
-                          maxLength={24}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) =>
-                            updateDraft("hero.secondaryCtaLabel", e.target.value)
-                          }
-                          placeholder="Secondary button"
-                        />
-                      ) : (
-                        pageContent.hero.secondaryCtaLabel || "Emergency Contacts"
-                      )}
-                    </button>
-                  </div>
-
                   {isInlineEditing && (
                     <div className="landing-hero-image-manager">
                       <div className="landing-hero-image-manager-head">
@@ -1594,31 +1715,6 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  <div className="hero-highlights">
-                    <div className="hero-highlight-card">
-                      <FaCloudSun />
-                      <div>
-                        <strong>Live Weather Outlook</strong>
-                        <span>Quick rain, wind, and temperature view for Jaen.</span>
-                      </div>
-                    </div>
-
-                    <div className="hero-highlight-card">
-                      <FaMap />
-                      <div>
-                        <strong>Barangay-Based Public Map</strong>
-                        <span>Focus the page on a specific barangay when needed.</span>
-                      </div>
-                    </div>
-
-                    <div className="hero-highlight-card">
-                      <FaBell />
-                      <div>
-                        <strong>Official Advisories</strong>
-                        <span>Updates, preparedness, contacts, and public guidance.</span>
-                      </div>
-                    </div>
-                  </div>
                 </div>
 
                 <div className="landing-hero-side">
@@ -1710,15 +1806,43 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="hero-slide-indicators" aria-hidden="true">
-                {activeHeroImages.map((_, index) => (
-                  <span
-                    key={`hero-dot-${index}`}
-                    className={`hero-slide-dot ${
-                      currentHero === index ? "active" : ""
-                    }`}
-                  />
-                ))}
+              <div className="hero-lower-dock">
+                <div className="hero-highlights">
+                  <div className="hero-highlight-card">
+                    <FaCloudSun />
+                    <div>
+                      <strong>Live Weather Outlook</strong>
+                      <span>Quick rain, wind, and temperature view for Jaen.</span>
+                    </div>
+                  </div>
+
+                  <div className="hero-highlight-card">
+                    <FaMap />
+                    <div>
+                      <strong>Barangay-Based Public Map</strong>
+                      <span>Focus the page on a specific barangay when needed.</span>
+                    </div>
+                  </div>
+
+                  <div className="hero-highlight-card">
+                    <FaBell />
+                    <div>
+                      <strong>Official Advisories</strong>
+                      <span>Updates, preparedness, contacts, and public guidance.</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="hero-slide-indicators" aria-hidden="true">
+                  {activeHeroImages.map((_, index) => (
+                    <span
+                      key={`hero-dot-${index}`}
+                      className={`hero-slide-dot ${
+                        currentHero === index ? "active" : ""
+                      }`}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -1852,10 +1976,6 @@ export default function Dashboard() {
                     <div>
                       <span className="section-kicker">Evacuation Areas</span>
                       <h2>Public Evacuation Map</h2>
-                      <p>
-                        View public evacuation areas and capacity status by
-                        barangay.
-                      </p>
                     </div>
                   </div>
 
@@ -1864,7 +1984,9 @@ export default function Dashboard() {
                       <span>Barangay</span>
                       <select
                         value={publicBarangayFilter}
-                        onChange={(e) => setPublicBarangayFilter(e.target.value)}
+                        onChange={(e) =>
+                          handlePublicBarangayFilterChange(e.target.value)
+                        }
                       >
                         <option value="all">All Barangays</option>
                         {publicBarangayOptions.map((item) => (
@@ -1874,6 +1996,16 @@ export default function Dashboard() {
                         ))}
                       </select>
                     </label>
+
+                    {publicSelectedBarangays.length ? (
+                      <button
+                        type="button"
+                        className="public-map-clear-selection"
+                        onClick={() => handlePublicBarangayFilterChange("all")}
+                      >
+                        Clear Barangays
+                      </button>
+                    ) : null}
 
                     <div className="public-map-mini-summary">
                       <span className="mini-status available">
@@ -1886,6 +2018,19 @@ export default function Dashboard() {
                         {formatNumber(publicMapSummary.fullCount)} full
                       </span>
                     </div>
+
+                    <button
+                      type="button"
+                      className={`public-hazard-toggle ${
+                        showHazardOverlay ? "on" : "off"
+                      }`}
+                      onClick={() =>
+                        setShowHazardOverlay((current) => !current)
+                      }
+                      disabled={hazardLoading || Boolean(hazardError)}
+                    >
+                      {showHazardOverlay ? "Hide Hazard Layer" : "Show Hazard Layer"}
+                    </button>
                   </div>
 
                   {mapLoading ? (
@@ -1900,13 +2045,22 @@ export default function Dashboard() {
                             places={filteredPublicPlaces}
                             barangayBounds={publicBarangayBounds}
                             selectedPlaceId={selectedPublicPlaceId}
-                            onSelectPlace={setSelectedPublicPlaceId}
+                            onSelectPlace={(place) =>
+                              setSelectedPublicPlaceId(place?._id || null)
+                            }
+                            selectedBarangayName=""
+                            selectedBarangayNames={publicSelectedBarangays}
+                            onSelectBarangay={handlePublicBarangayFilterChange}
                             readOnly
                             publicMode
+                            hazardLayers={hazardLayers}
+                            showHazardOverlay={showHazardOverlay}
                           />
 
                           <div className="public-map-overlay legend-overlay">
-                            <PublicMapLegend />
+                            <PublicMapLegend
+                              showHazardOverlay={showHazardOverlay}
+                            />
                           </div>
 
                           <div className="public-map-overlay place-overlay">
@@ -1949,10 +2103,6 @@ export default function Dashboard() {
                   <div className="landing-section-head">
                     <span className="section-kicker">Hazard Focus</span>
                     <h2>Hazard Monitoring</h2>
-                    <p>
-                      Barangay-focused hazard information can be shown here for
-                      public viewing.
-                    </p>
                   </div>
 
                   <div className="focus-info-grid">
@@ -1977,22 +2127,45 @@ export default function Dashboard() {
                       <label>Full</label>
                       <strong>{formatNumber(publicMapSummary.fullCount)}</strong>
                     </div>
+
+                    <div className="focus-info-item">
+                      <label>Hazard Overlay</label>
+                      <strong>
+                        {hazardLoading
+                          ? "Loading"
+                          : hazardError
+                          ? "Unavailable"
+                          : showHazardOverlay
+                          ? "Visible"
+                          : "Hidden"}
+                      </strong>
+                    </div>
+
+                    <div className="focus-info-item">
+                      <label>Susceptible Zones</label>
+                      <strong>{formatNumber(hazardSummary.susceptible)}</strong>
+                    </div>
+
+                    <div className="focus-info-item">
+                      <label>Medium Zones</label>
+                      <strong>{formatNumber(hazardSummary.medium)}</strong>
+                    </div>
+
+                    <div className="focus-info-item">
+                      <label>Safe Zones</label>
+                      <strong>{formatNumber(hazardSummary.safe)}</strong>
+                    </div>
                   </div>
 
-                  <p className="landing-empty-copy">
-                    Connect your real hazard layer here later for flood, storm
-                    surge, or other public risk overlays.
-                  </p>
+                  {hazardError ? (
+                    <p className="landing-empty-copy">{hazardError}</p>
+                  ) : null}
                 </section>
 
                 <section className="landing-side-card focus-card" id="incident-focus">
                   <div className="landing-section-head">
                     <span className="section-kicker">Incident Focus</span>
                     <h2>Incident Reports</h2>
-                    <p>
-                      Public incident information now includes resolved report
-                      summaries from the incident module.
-                    </p>
                   </div>
 
                   {incidentsLoading ? (
@@ -2603,6 +2776,8 @@ export default function Dashboard() {
             </div>
           </footer>
         </main>
+          </>
+        )}
       </div>
     </div>
   );

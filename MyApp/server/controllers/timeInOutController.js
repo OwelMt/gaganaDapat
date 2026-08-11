@@ -1,5 +1,24 @@
 const TimeLog = require('../models/TimeLog');
 
+const getRoleFilter = (role) => {
+  const normalized = String(role || '').trim().toLowerCase();
+
+  if (!normalized) return null;
+  if (normalized === 'brgy' || normalized === 'barangay') return ['barangay', 'brgy'];
+  if (normalized === 'accountant' || normalized === 'accounting') return ['accountant', 'accounting'];
+  if (normalized === 'drrmo') return ['drrmo'];
+  if (normalized === 'admin') return ['admin'];
+
+  return [normalized];
+};
+
+const isBarangayRole = (role) => {
+  const normalized = String(role || '').trim().toLowerCase();
+  return normalized === 'brgy' || normalized === 'barangay';
+};
+
+const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const getAllTimeLogs = async (req, res) => {
   try {
 
@@ -7,13 +26,34 @@ const getAllTimeLogs = async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const { role, date, page = 1, limit = 10 } = req.query;
+    const { role, date, search, page = 1, limit = 10 } = req.query;
 
     let filter = {};
+    const andConditions = [];
 
     // 🔎 Filter by role
-    if (role) {
-      filter.role = role;
+    const roleValues = getRoleFilter(role);
+    if (roleValues) {
+      if (isBarangayRole(role)) {
+        andConditions.push({
+          $or: [{ role: { $in: roleValues } }, { userModel: 'Barangay' }]
+        });
+      } else {
+        andConditions.push({ role: { $in: roleValues } });
+      }
+    }
+
+    const searchTerm = String(search || '').trim();
+    if (searchTerm) {
+      const searchRegex = new RegExp(escapeRegex(searchTerm), 'i');
+      andConditions.push({
+        $or: [
+          { username: searchRegex },
+          { role: searchRegex },
+          { barangay: searchRegex },
+          { userModel: searchRegex }
+        ]
+      });
     }
 
     // 🔎 Filter by date
@@ -27,6 +67,10 @@ const getAllTimeLogs = async (req, res) => {
       filter.timeIn = { $gte: start, $lte: end };
     }
 
+    if (andConditions.length > 0) {
+      filter.$and = andConditions;
+    }
+
     const skip = (page - 1) * limit;
 
     const logs = await TimeLog.find(filter)
@@ -38,6 +82,7 @@ const getAllTimeLogs = async (req, res) => {
 
     res.json({
       logs,
+      totalCount: total,
       totalPages: Math.ceil(total / limit),
       currentPage: parseInt(page)
     });

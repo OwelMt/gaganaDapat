@@ -43,8 +43,9 @@ body,
 }
 
 .register-shell {
-  max-width: 1280px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -451,7 +452,7 @@ select.premium-input {
 
 @media (max-width: 520px) {
   .register-page {
-    padding: 12px;
+    padding: 12px 12px 24px;
   }
 
   .register-shell {
@@ -474,6 +475,10 @@ select.premium-input {
 
   .submit-btn {
     min-height: 54px;
+  }
+
+  .form-actions {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
   }
 }
 

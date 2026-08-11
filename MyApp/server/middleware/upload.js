@@ -72,7 +72,7 @@ const localGuidelineStorage = multer.diskStorage({
 // ✅ File filters
 // =======================
 const proofFileFilter = (req, file, cb) => {
-  const allowedExt = /\.(jpeg|jpg|png|pdf)$/i;
+  const allowedExt = /\.(jpeg|jpg|png|webp|pdf|doc|docx)$/i;
 
   const originalname = String(file.originalname || "").toLowerCase();
 
@@ -82,7 +82,10 @@ const proofFileFilter = (req, file, cb) => {
 
   const isAllowedMime =
     mimetype.startsWith("image/") ||
-    mimetype === "application/pdf";
+    mimetype === "application/pdf" ||
+    mimetype === "application/msword" ||
+    mimetype ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
   if (isAllowedExt || isAllowedMime) {
     return cb(null, true);
@@ -166,7 +169,7 @@ const uploadAnnouncement = multer({
 // ✅ Proof uploader
 // =======================
 const uploadProof = multer({
-  storage: proofStorage,
+  storage: multer.memoryStorage(),
 
   limits: {
     fileSize: 15 * 1024 * 1024,

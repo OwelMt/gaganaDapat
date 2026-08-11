@@ -637,7 +637,7 @@ export default function DonationAnalytics() {
         value: safeNumber(breakdown.external?.totalDonations ?? sourceStats.external),
       },
       {
-        label: "Government",
+        label: "NGO",
         key: "government",
         color: "#0f766e",
         value: safeNumber(breakdown.government?.totalDonations ?? sourceStats.government),

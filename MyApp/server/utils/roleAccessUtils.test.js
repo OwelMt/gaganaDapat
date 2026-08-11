@@ -43,3 +43,15 @@ test("accountant can manage only monetary-only relief requests", () => {
   assert.equal(canManageReliefRequest("accountant", mixedSupport), false);
   assert.equal(getReviewerLabel("accountant"), "Accountant");
 });
+
+test("admin can manage every relief request support type", () => {
+  assert.equal(canManageReliefRequest("admin", ["monetary"]), true);
+  assert.equal(canManageReliefRequest("admin", ["foodpacks"]), true);
+  assert.equal(canManageReliefRequest("admin", ["appliance"]), true);
+  assert.equal(canManageReliefRequest("admin", ["monetary", "foodpacks"]), true);
+  assert.equal(
+    canManageReliefRequest("admin", ["monetary", "foodpacks", "appliance"]),
+    true
+  );
+  assert.equal(getReviewerLabel("admin"), "Admin");
+});

@@ -43,6 +43,10 @@ function getUserEmail(user) {
   return String(user?.email || "").trim().toLowerCase();
 }
 
+function getNormalizedUserPhone(user) {
+  return normalizePhilippinePhoneNumber(getUserPhone(user));
+}
+
 function maskPhone(value) {
   const digits = String(value || "").replace(/\D/g, "");
   if (!digits) return "";
@@ -369,6 +373,7 @@ async function createDeliveryLog({
 async function dispatchSms({ user, context, summary }) {
   const userId = getUserId(user);
   const phone = getUserPhone(user);
+  const normalizedPhone = getNormalizedUserPhone(user);
   const dedupeKey = buildDedupeKey("sms", { ...context, userId });
 
   if (await NotificationDeliveryLog.exists({ dedupeKey })) {
@@ -382,7 +387,7 @@ async function dispatchSms({ user, context, summary }) {
     buildSmsMessage(context),
     Number.isFinite(maxLength) && maxLength > 0 ? maxLength : 150
   );
-  const result = await sendUniSms({ to: phone, message: finalMessage });
+  const result = await sendUniSms({ to: normalizedPhone || phone, message: finalMessage });
   const status = result.ok ? "sent" : result.skipped ? "skipped" : "failed";
 
   await createDeliveryLog({
@@ -392,7 +397,7 @@ async function dispatchSms({ user, context, summary }) {
     channel: "sms",
     provider: result.provider || process.env.SMS_PROVIDER || "unisms",
     status,
-    phone: normalizePhilippinePhoneNumber(phone),
+    phone: normalizedPhone,
     message: finalMessage,
     dedupeKey,
     errorMessage: result.errorMessage || result.reason || "",
@@ -467,6 +472,12 @@ async function dispatchMultiChannelNotification({
   clusterLandmark = "",
 }) {
   const recipients = Array.isArray(users) ? users.filter(Boolean) : [];
+  const smsRecipients = sendSms
+    ? recipients.filter((user) => Boolean(getNormalizedUserPhone(user)))
+    : [];
+  const emailRecipients = sendEmail
+    ? recipients.filter((user) => Boolean(getUserEmail(user)))
+    : [];
   const summary = {
     users: recipients.length,
     sms: { sent: 0, failed: 0, skipped: 0 },
@@ -495,7 +506,8 @@ async function dispatchMultiChannelNotification({
   if (sendSms) {
     console.log("[sms recipients resolved]", {
       totalUsers: recipients.length,
-      validPhoneCount: recipients.filter((u) => Boolean(normalizePhilippinePhoneNumber(getUserPhone(u)))).length,
+      validPhoneCount: smsRecipients.length,
+      invalidPhoneCount: Math.max(0, recipients.length - smsRecipients.length),
       samplePhones: recipients.slice(0, 5).map((u) => maskPhone(getUserPhone(u))),
     });
   }
@@ -526,11 +538,11 @@ async function dispatchMultiChannelNotification({
 
   for (const user of recipients) {
     try {
-      if (sendSms) {
+      if (sendSms && smsRecipients.includes(user)) {
         await dispatchSms({ user, context, summary });
       }
 
-      if (sendEmail) {
+      if (sendEmail && emailRecipients.includes(user)) {
         await dispatchEmail({ user, context, summary });
       }
     } catch (err) {

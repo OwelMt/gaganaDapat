@@ -1984,17 +1984,6 @@ const registerIncident = async (req, res) => {
       });
     }
 
-    let verification = null;
-
-    if (req.file && buffer) {
-      if (buffer) {
-        verification = await verifyIncidentImage(
-          buffer,
-          req.body.type
-        );
-      }
-    }
-
     const uploadedFiles = Array.isArray(req.files)
       ? req.files
       : req.files
@@ -2002,6 +1991,22 @@ const registerIncident = async (req, res) => {
       : req.file
       ? [req.file]
       : [];
+
+    const primaryIncidentFile = uploadedFiles[0] || req.file || null;
+    const verificationBuffer = primaryIncidentFile?.buffer
+      ? Buffer.isBuffer(primaryIncidentFile.buffer)
+        ? primaryIncidentFile.buffer
+        : Buffer.from(primaryIncidentFile.buffer)
+      : buffer;
+
+    let verification = null;
+
+    if (primaryIncidentFile && verificationBuffer) {
+      verification = await verifyIncidentImage(
+        verificationBuffer,
+        req.body.type
+      );
+    }
 
     const imageItems = await Promise.all(
       uploadedFiles.map(uploadIncidentFile)
@@ -2112,6 +2117,12 @@ const registerIncident = async (req, res) => {
       forceApproved: incident.forceApproved,
       approvedByMDRRMO:
         incident.approvedByMDRRMO,
+    });
+
+    await notifyIncidentEvent({
+      req,
+      incident,
+      eventType: "created",
     });
 
     console.log("Incident registered:", incident);

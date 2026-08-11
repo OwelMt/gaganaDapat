@@ -12,6 +12,7 @@ const normalizeRole = (value) => {
 
   if (role === "drrmo") return "drrmo";
   if (role === "admin") return "admin";
+  if (role === "accountant") return "accountant";
   if (role === "barangay") return "barangay";
   if (role === "all") return "all";
 

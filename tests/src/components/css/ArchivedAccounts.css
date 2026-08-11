@@ -37,8 +37,9 @@ body,
 }
 
 .archived-shell {
-  max-width: 1280px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -486,7 +487,7 @@ body,
 
 @media (max-width: 520px) {
   .archived-page {
-    padding: 12px;
+    padding: 12px 12px 24px;
   }
 
   .archived-shell {

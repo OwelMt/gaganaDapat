@@ -33,8 +33,9 @@ body,
 }
 
 .admin-logs-shell {
-  max-width: 1380px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -564,7 +565,7 @@ body,
 
 @media (max-width: 520px) {
   .admin-logs-page {
-    padding: 12px;
+    padding: 12px 12px 24px;
   }
 
   .admin-logs-shell {

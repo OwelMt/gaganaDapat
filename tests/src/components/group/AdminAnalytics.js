@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { FaFilePdf } from "react-icons/fa6";
+import {
+  FaBed,
+  FaBoxes,
+  FaChartPie,
+  FaClipboardList,
+  FaExclamationTriangle,
+  FaFilePdf,
+  FaHandHoldingHeart,
+} from "react-icons/fa";
 
 import DashboardShell from "../layout/DashboardShell";
 
@@ -18,6 +26,15 @@ import {
 } from "../auth/roleAccessUtils";
 
 const BASE_URL = process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
+
+const TAB_ICONS = {
+  overview: FaChartPie,
+  inventory: FaBoxes,
+  donations: FaHandHoldingHeart,
+  relief: FaClipboardList,
+  incidents: FaExclamationTriangle,
+  evacuation: FaBed,
+};
 
 export default function AdminAnalytics() {
   const role = normalizeRole(localStorage.getItem("role"));
@@ -112,7 +129,9 @@ export default function AdminAnalytics() {
 
             <section className="analytics-tabs-shell">
               <div className="analytics-tabs">
-                {tabs.map((tab) => (
+                {tabs.map((tab) => {
+                  const Icon = TAB_ICONS[tab.key] || FaChartPie;
+                  return (
                   <button
                     key={tab.key}
                     type="button"
@@ -120,10 +139,16 @@ export default function AdminAnalytics() {
                       activeTab === tab.key ? "is-active" : ""
                     }`}
                     onClick={() => setActiveTab(tab.key)}
+                    aria-label={tab.label}
+                    title={tab.label}
                   >
+                    <span className="analytics-tab-icon" aria-hidden="true">
+                      <Icon />
+                    </span>
                     <span className="analytics-tab-title">{tab.label}</span>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </section>
 

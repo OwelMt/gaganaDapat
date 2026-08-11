@@ -34,6 +34,8 @@ import {
   FaUser,
   FaUserFriends,
 } from "react-icons/fa";
+import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
+import { point as turfPoint } from "@turf/helpers";
 
 import DashboardShell from "./layout/DashboardShell";
 import EvacMap from "./map/Map";
@@ -44,10 +46,10 @@ const BASE_URL = API_BASE_URL;
 
 const TOAST_LIMIT = 3;
 const TOAST_DURATION = 10000;
-const MAX_SEARCH_LENGTH = 120;
-const MAX_EVAC_NAME_LENGTH = 80;
-const MAX_LOCATION_LENGTH = 120;
-const MAX_REMARKS_LENGTH = 400;
+const MAX_SEARCH_LENGTH = 80;
+const MAX_EVAC_NAME_LENGTH = 60;
+const MAX_LOCATION_LENGTH = 90;
+const MAX_REMARKS_LENGTH = 280;
 const MAX_CAPACITY_VALUE = 1000000;
 const MAX_FLOOR_AREA_VALUE = 1000000;
 
@@ -75,15 +77,29 @@ const initialFormState = {
 
 const sanitizeText = (value) => String(value ?? "").trim();
 const safeLower = (value) => String(value ?? "").toLowerCase().trim();
-const sanitizeInputText = (value, maxLength) =>
+const trimLongTokens = (value, maxTokenLength = 28) =>
   String(value ?? "")
-    .replace(/[^\w\s.,()/#&-]/g, "")
+    .split(/(\s+)/)
+    .map((token) => (/\s+/.test(token) ? token : token.slice(0, maxTokenLength)))
+    .join("");
+const clampRepeatedPunctuation = (value) =>
+  String(value ?? "").replace(/([!?.,:;'"#&/%()+$-])\1{2,}/g, "$1$1");
+const sanitizeInputText = (value, maxLength) =>
+  clampRepeatedPunctuation(
+    trimLongTokens(String(value ?? "").normalize("NFKC"), 24)
+  )
+    .replace(/[^A-Za-z0-9\s.,()/#&-]/g, "")
     .replace(/\s+/g, " ")
+    .trimStart()
     .slice(0, maxLength);
 const sanitizeRemarksText = (value, maxLength) =>
-  String(value ?? "")
-    .replace(/[^\w\s.,()/#&:;!?'"%-]/g, "")
-    .replace(/\s+/g, " ")
+  clampRepeatedPunctuation(
+    trimLongTokens(String(value ?? "").normalize("NFKC").replace(/\r/g, ""), 42)
+  )
+    .replace(/[^A-Za-z0-9\s.,()/#&:;!?'"%+$\-\n]/g, "")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/[ ]*\n[ ]*/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .slice(0, maxLength);
 const sanitizeDigitsOnly = (value, maxLength = 7) =>
   String(value ?? "")
@@ -109,7 +125,15 @@ const numberOrZero = (value) => {
   return Number.isNaN(num) ? 0 : num;
 };
 
-const LIMITED_OCCUPANCY_PERCENT = 75;
+const deriveCapacityStatusFromOccupancy = (currentOccupants, capacityIndividual) => {
+  const current = Number(currentOccupants || 0);
+  const capacity = Number(capacityIndividual || 0);
+  if (capacity > 0 && current >= capacity) return "full";
+  if (capacity > 0 && Math.round((current / capacity) * 100) >= 75) {
+    return "limited";
+  }
+  return "available";
+};
 
 const normalizeBarangayKey = (value) =>
   safeLower(value).replace(/\s+/g, " ").trim();
@@ -129,6 +153,69 @@ const getBoundsBarangayName = (entry) =>
       entry?.features?.[0]?.properties?.adm4_en ||
       entry?.features?.[0]?.properties?.barangay
   );
+
+const getBoundsGeoJSON = (entry) => {
+  if (!entry) return null;
+
+  if (entry.type === "FeatureCollection") {
+    const polygonFeatures = (entry.features || []).filter((feature) => {
+      const type = feature?.geometry?.type;
+      return type === "Polygon" || type === "MultiPolygon";
+    });
+
+    if (!polygonFeatures.length) return null;
+
+    return {
+      type: "FeatureCollection",
+      features: polygonFeatures,
+    };
+  }
+
+  if (entry.type === "Feature") return entry;
+
+  if (Array.isArray(entry.features)) {
+    return {
+      type: "FeatureCollection",
+      features: entry.features,
+    };
+  }
+
+  if (entry.geometry) {
+    return {
+      type: "Feature",
+      properties: entry.properties || {},
+      geometry: entry.geometry,
+    };
+  }
+
+  return null;
+};
+
+const isPointInsideBounds = (lat, lng, geojson) => {
+  if (lat === null || lng === null || Number.isNaN(Number(lat)) || Number.isNaN(Number(lng))) {
+    return false;
+  }
+
+  if (!geojson) return false;
+
+  try {
+    const clicked = turfPoint([Number(lng), Number(lat)]);
+
+    if (geojson.type === "FeatureCollection") {
+      return geojson.features.some((feature) =>
+        booleanPointInPolygon(clicked, feature)
+      );
+    }
+
+    if (geojson.type === "Feature") {
+      return booleanPointInPolygon(clicked, geojson);
+    }
+  } catch (error) {
+    console.error("Barangay bounds match failed:", error);
+  }
+
+  return false;
+};
 
 const getStoredRole = () => localStorage.getItem("role") || "";
 const getStoredUserId = () => localStorage.getItem("userId") || "";
@@ -195,16 +282,19 @@ function SummaryCard({ tone, icon, label, value, sub, urgent = false }) {
       <div>
         <div className="summary-label">{label}</div>
         <div className="summary-value">{value}</div>
-        <div className="summary-sub">{sub}</div>
+        {sub ? <div className="summary-sub">{sub}</div> : null}
       </div>
     </div>
   );
 }
 
-function MapLegend() {
+function MapLegend({ inline = false }) {
   return (
-    <div className="map-legend-card" aria-label="Map legend">
-      <div className="map-legend-title">Map Legend</div>
+    <div
+      className={`map-legend-card ${inline ? "map-legend-card-inline" : ""}`}
+      aria-label="Map legend"
+    >
+      {!inline && <div className="map-legend-title">Map Legend</div>}
       <div className="map-legend-items">
         <div className="map-legend-item">
           <span className="map-legend-dot available" />
@@ -231,7 +321,9 @@ export default function EManagement() {
   const navigate = useNavigate();
   const location = useLocation();
   const nameRef = useRef(null);
+  const evacPageTopRef = useRef(null);
   const notificationTimersRef = useRef({});
+  const occupancyAutoSaveTimerRef = useRef(null);
 
   const [places, setPlaces] = useState([]);
   const [allPlaces, setAllPlaces] = useState([]);
@@ -270,11 +362,15 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [barangayLocked, setBarangayLocked] = useState(false);
   const [bulkPublicAction, setBulkPublicAction] = useState(null);
   const [pickMode, setPickMode] = useState(false);
+  const [markerLabelsVisible, setMarkerLabelsVisible] = useState(true);
 
   const [barangayBounds, setBarangayBounds] = useState([]);
   const [formData, setFormData] = useState(initialFormState);
+  const [formErrors, setFormErrors] = useState({});
 
   const pushNotification = useCallback((message, type = "success") => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -608,13 +704,14 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
         if (showAddForm) setShowAddForm(false);
         if (showEditForm) setShowEditForm(false);
         if (showArchiveConfirm) setShowArchiveConfirm(false);
+        if (showDeleteConfirm) setShowDeleteConfirm(false);
         if (pickMode) setPickMode(false);
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [showAddForm, showEditForm, showArchiveConfirm, pickMode]);
+  }, [showAddForm, showEditForm, showArchiveConfirm, showDeleteConfirm, pickMode]);
 
   useEffect(() => {
     document.body.style.cursor = pickMode ? "crosshair" : "default";
@@ -1082,9 +1179,19 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     }));
   }, []);
 
+  const clearFormError = useCallback((name) => {
+    setFormErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  }, []);
+
   const handleTextFieldChange = useCallback(
     (e) => {
       const { name, value } = e.target;
+      clearFormError(name);
       if (name === "remarks") {
         updateFormField(name, sanitizeRemarksText(value, MAX_REMARKS_LENGTH));
         return;
@@ -1100,12 +1207,13 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
         sanitizeInputText(value, maxLengthMap[name] || MAX_LOCATION_LENGTH)
       );
     },
-    [updateFormField]
+    [clearFormError, updateFormField]
   );
 
   const handleNumericFieldChange = useCallback(
     (e) => {
       const { name, value } = e.target;
+      clearFormError(name);
       if (value === "") {
         updateFormField(name, "");
         return;
@@ -1118,37 +1226,114 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
 
       updateFormField(name, sanitizeDigitsOnly(value));
     },
-    [updateFormField]
+    [clearFormError, updateFormField]
+  );
+
+  const resolveBarangayForCoordinates = useCallback(
+    (lat, lng) => {
+      const matchedBounds = barangayBounds.find((entry) =>
+        isPointInsideBounds(lat, lng, getBoundsGeoJSON(entry))
+      );
+
+      if (!matchedBounds) return null;
+
+      const matchedName = getBoundsBarangayName(matchedBounds);
+      const matchedBarangay =
+        barangays.find(
+          (item) =>
+            normalizeBarangayKey(item.name) === normalizeBarangayKey(matchedName)
+        ) || null;
+
+      return {
+        barangayId:
+          matchedBarangay?._id ||
+          matchedBounds?._id ||
+          matchedBounds?.barangayId ||
+          "",
+        barangayName: matchedBarangay?.name || matchedName || "",
+      };
+    },
+    [barangayBounds, barangays]
+  );
+
+  const syncBarangayForCoordinates = useCallback(
+    (lat, lng) => {
+      if (showEditForm || isBarangayRole) return null;
+
+      const matchedBarangay = resolveBarangayForCoordinates(lat, lng);
+      setBarangayLocked(Boolean(matchedBarangay?.barangayName));
+
+      setFormData((prev) => ({
+        ...prev,
+        barangayId: matchedBarangay?.barangayId || "",
+        barangayName: matchedBarangay?.barangayName || "",
+      }));
+
+      return matchedBarangay;
+    },
+    [showEditForm, isBarangayRole, resolveBarangayForCoordinates]
   );
 
   const handleLatitudeChange = useCallback(
     (e) => {
       const value = e.target.value.trim();
+      clearFormError("latitude");
+      clearFormError("longitude");
       if (value === "") {
         updateFormField("latitude", null);
+        if (!showEditForm && !isBarangayRole) {
+          setBarangayLocked(false);
+          setFormData((prev) => ({
+            ...prev,
+            barangayId: "",
+            barangayName: "",
+          }));
+        }
         return;
       }
       const num = Number(value);
-      if (!Number.isNaN(num)) updateFormField("latitude", num);
+      if (!Number.isNaN(num)) {
+        updateFormField("latitude", num);
+        if (formData.longitude !== null && formData.longitude !== "") {
+          syncBarangayForCoordinates(num, Number(formData.longitude));
+        }
+      }
     },
-    [updateFormField]
+    [clearFormError, updateFormField, formData.longitude, showEditForm, isBarangayRole, syncBarangayForCoordinates]
   );
 
   const handleLongitudeChange = useCallback(
     (e) => {
       const value = e.target.value.trim();
+      clearFormError("latitude");
+      clearFormError("longitude");
       if (value === "") {
         updateFormField("longitude", null);
+        if (!showEditForm && !isBarangayRole) {
+          setBarangayLocked(false);
+          setFormData((prev) => ({
+            ...prev,
+            barangayId: "",
+            barangayName: "",
+          }));
+        }
         return;
       }
       const num = Number(value);
-      if (!Number.isNaN(num)) updateFormField("longitude", num);
+      if (!Number.isNaN(num)) {
+        updateFormField("longitude", num);
+        if (formData.latitude !== null && formData.latitude !== "") {
+          syncBarangayForCoordinates(Number(formData.latitude), num);
+        }
+      }
     },
-    [updateFormField]
+    [clearFormError, updateFormField, formData.latitude, showEditForm, isBarangayRole, syncBarangayForCoordinates]
   );
 
   const resetForm = useCallback(() => {
     setFormData(initialFormState);
+    setFormErrors({});
+    setBarangayLocked(false);
   }, []);
 
   const cancelPickMode = useCallback(() => {
@@ -1203,6 +1388,7 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     }
 
     setFormData(baseForm);
+    setBarangayLocked(false);
     setShowAddForm(false);
     setShowEditForm(false);
     setPickMode(true);
@@ -1255,6 +1441,7 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     });
 
     setShowAddForm(false);
+    setBarangayLocked(false);
     setShowEditForm(true);
   }, [selectedPlace]);
 
@@ -1262,6 +1449,8 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     let locationLabel = "";
     let lat = null;
     let lng = null;
+    let barangayId = "";
+    let barangayName = "";
 
     if (args.length === 1 && args[0]?.latlng) {
       lat = args[0].latlng.lat;
@@ -1273,6 +1462,8 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       lng = Number(args[0]?.lng);
       locationLabel =
         args[0]?.label || args[0]?.location || args[0]?.locationLabel || "";
+      barangayId = String(args[0]?.barangayId || "");
+      barangayName = sanitizeText(args[0]?.barangayName || "");
     } else if (args.length >= 3) {
       locationLabel = args[0];
       lat = Number(args[1]);
@@ -1286,6 +1477,8 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       locationLabel: sanitizeText(locationLabel),
       lat,
       lng,
+      barangayId,
+      barangayName,
     };
   };
 
@@ -1308,7 +1501,13 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
 
   const handleMapSelectLocation = useCallback(
     (...args) => {
-      const { locationLabel, lat, lng } = normalizeMapArgs(...args);
+      const {
+        locationLabel,
+        lat,
+        lng,
+        barangayId: providedBarangayId,
+        barangayName: providedBarangayName,
+      } = normalizeMapArgs(...args);
 
       if (
         lat === null ||
@@ -1320,22 +1519,35 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       }
 
       if (pickMode) {
+        const matchedBarangay =
+          (providedBarangayName || providedBarangayId) ?
+            {
+              barangayId: providedBarangayId,
+              barangayName: providedBarangayName,
+            }
+          : resolveBarangayForCoordinates(lat, lng);
+
         setFormData((prev) => ({
           ...prev,
           location: locationLabel || prev.location,
           latitude: lat,
           longitude: lng,
+          barangayId: matchedBarangay?.barangayId || "",
+          barangayName: matchedBarangay?.barangayName || "",
         }));
+        setBarangayLocked(Boolean(matchedBarangay?.barangayName));
         setPickMode(false);
         setShowAddForm(true);
         flyTo(lat, lng, 18);
         pushNotification(
-          "Location selected. Complete the form and save the area.",
-          "success"
+          matchedBarangay?.barangayName
+            ? `Location selected. Barangay locked to ${matchedBarangay.barangayName}.`
+            : "Location selected. Please choose the barangay before saving.",
+          matchedBarangay?.barangayName ? "success" : "info"
         );
       }
     },
-    [pickMode, flyTo, pushNotification]
+    [pickMode, flyTo, pushNotification, resolveBarangayForCoordinates]
   );
 
   useEffect(() => {
@@ -1363,86 +1575,57 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     const bedCapacity = Number(formData.bedCapacity || 0);
     const floorArea = Number(formData.floorArea || 0);
 
-    if (!cleanName) {
-      pushNotification("Evacuation area name is required.", "error");
-      return false;
-    }
+    const nextErrors = {};
 
-    if (!cleanLocation) {
-      pushNotification("Location is required.", "error");
-      return false;
-    }
-
+    if (!cleanName) nextErrors.name = "Evacuation area name is required.";
+    if (!cleanLocation) nextErrors.location = "Location is required.";
     if (!formData.barangayId && !sanitizeText(formData.barangayName)) {
-      pushNotification("Barangay is required.", "error");
-      return false;
+      nextErrors.barangay = "Barangay is required.";
     }
 
     if (formData.latitude === null || formData.longitude === null) {
-      pushNotification("Latitude and longitude are required.", "error");
-      return false;
-    }
+      nextErrors.latitude = "Latitude and longitude are required.";
+      nextErrors.longitude = "Latitude and longitude are required.";
+    } else {
+      if (Number(formData.latitude) < -90 || Number(formData.latitude) > 90) {
+        nextErrors.latitude = "Latitude must be between -90 and 90.";
+      }
 
-    if (Number(formData.latitude) < -90 || Number(formData.latitude) > 90) {
-      pushNotification("Latitude must be between -90 and 90.", "error");
-      return false;
-    }
-
-    if (Number(formData.longitude) < -180 || Number(formData.longitude) > 180) {
-      pushNotification("Longitude must be between -180 and 180.", "error");
-      return false;
+      if (Number(formData.longitude) < -180 || Number(formData.longitude) > 180) {
+        nextErrors.longitude = "Longitude must be between -180 and 180.";
+      }
     }
 
     if (
       formData.capacityIndividual !== "" &&
       (capacityIndividual <= 0 || capacityIndividual > MAX_CAPACITY_VALUE)
     ) {
-      pushNotification(
-        `Individual capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`,
-        "error"
-      );
-      return false;
+      nextErrors.capacityIndividual = `Individual capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`;
     }
 
     if (
       formData.capacityFamily !== "" &&
       (capacityFamily <= 0 || capacityFamily > MAX_CAPACITY_VALUE)
     ) {
-      pushNotification(
-        `Family capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`,
-        "error"
-      );
-      return false;
+      nextErrors.capacityFamily = `Family capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`;
     }
 
     if (
       formData.bedCapacity !== "" &&
       (bedCapacity <= 0 || bedCapacity > MAX_CAPACITY_VALUE)
     ) {
-      pushNotification(
-        `Bed capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`,
-        "error"
-      );
-      return false;
+      nextErrors.bedCapacity = `Bed capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`;
     }
 
     if (
       formData.floorArea !== "" &&
       (floorArea <= 0 || floorArea > MAX_FLOOR_AREA_VALUE)
     ) {
-      pushNotification(
-        `Floor area must be between 1 and ${formatNumber(MAX_FLOOR_AREA_VALUE)}.`,
-        "error"
-      );
-      return false;
+      nextErrors.floorArea = `Floor area must be between 1 and ${formatNumber(MAX_FLOOR_AREA_VALUE)}.`;
     }
 
     if (cleanRemarks.length > MAX_REMARKS_LENGTH) {
-      pushNotification(
-        `Remarks must be ${MAX_REMARKS_LENGTH} characters or less.`,
-        "error"
-      );
-      return false;
+      nextErrors.remarks = `Remarks must be ${MAX_REMARKS_LENGTH} characters or less.`;
     }
 
     if (isBarangayRole) {
@@ -1450,12 +1633,15 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       const ownBarangayName = ownBarangay?.name || localBarangayName;
 
       if (!sanitizeText(ownBarangayName)) {
-        pushNotification(
-          "Unable to determine the logged-in barangay. Please log in again.",
-          "error"
-        );
-        return false;
+        nextErrors.barangay = "Unable to determine the logged-in barangay. Please log in again.";
       }
+    }
+
+    const firstError = Object.values(nextErrors)[0];
+    setFormErrors(nextErrors);
+    if (firstError) {
+      pushNotification(firstError, "error");
+      return false;
     }
 
     return true;
@@ -1678,6 +1864,38 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
     }
   }, [selectedPlace, refreshDataAfterMutation, pushNotification]);
 
+  const handlePermanentDeletePlace = useCallback(async () => {
+    if (!selectedPlace?._id) {
+      pushNotification("No evacuation area selected.", "error");
+      return;
+    }
+
+    setLoadingSave(true);
+    try {
+      await axios.delete(`${BASE_URL}/evacs/${selectedPlace._id}/permanent`, {
+        withCredentials: true,
+      });
+
+      setShowDeleteConfirm(false);
+      setSelectedId(null);
+      setPanelView("areas");
+      await refreshDataAfterMutation();
+      pushNotification(
+        "Archived evacuation area deleted successfully.",
+        "success"
+      );
+    } catch (error) {
+      console.error("Permanent delete evac area error:", error);
+      pushNotification(
+        error?.response?.data?.message ||
+          "Failed to delete archived evacuation area.",
+        "error"
+      );
+    } finally {
+      setLoadingSave(false);
+    }
+  }, [selectedPlace, refreshDataAfterMutation, pushNotification]);
+
   const getOccupancyNumbers = useCallback((place) => {
   const currentOccupants = Number(place?.currentOccupants || 0);
   const capacityIndividual = Number(place?.capacityIndividual || 0);
@@ -1759,6 +1977,26 @@ const updatePlaceInLocalState = useCallback((updatedPlace) => {
   setSelectedId(updatedPlace._id);
 }, []);
 
+const getDerivedOccupiedBeds = useCallback(
+  (peopleValue) => {
+    const currentPeople = Math.max(0, Number(peopleValue || 0));
+    const bedCapacity = Number(selectedPlace?.bedCapacity || 0);
+    return bedCapacity > 0 ? Math.min(currentPeople, bedCapacity) : currentPeople;
+  },
+  [selectedPlace?.bedCapacity]
+);
+
+const getFamilyLimit = useCallback(
+  (peopleValue) => {
+    const currentPeople = Math.max(0, Number(peopleValue || 0));
+    const familyCapacity = Number(selectedPlace?.capacityFamily || 0);
+    return familyCapacity > 0
+      ? Math.min(familyCapacity, currentPeople)
+      : currentPeople;
+  },
+  [selectedPlace?.capacityFamily]
+);
+
 useEffect(() => {
   if (!selectedPlace?._id) {
     setOccupancyDraft({
@@ -1769,47 +2007,102 @@ useEffect(() => {
     return;
   }
 
+  const currentOccupants = Number(selectedPlace.currentOccupants || 0);
+  const familyLimit = getFamilyLimit(currentOccupants);
+  const currentFamilies = Math.min(
+    Number(selectedPlace.currentFamilies || 0),
+    familyLimit
+  );
+
   setOccupancyDraft({
-    currentOccupants: String(Number(selectedPlace.currentOccupants || 0)),
-    currentFamilies: String(Number(selectedPlace.currentFamilies || 0)),
-    occupiedBeds: String(Number(selectedPlace.occupiedBeds || 0)),
+    currentOccupants: String(currentOccupants),
+    currentFamilies: String(currentFamilies),
+    occupiedBeds: String(getDerivedOccupiedBeds(currentOccupants)),
   });
-}, [selectedPlace?._id, selectedPlace?.currentOccupants, selectedPlace?.currentFamilies, selectedPlace?.occupiedBeds]);
+}, [
+  selectedPlace?._id,
+  selectedPlace?.currentOccupants,
+  selectedPlace?.currentFamilies,
+  selectedPlace?.capacityFamily,
+  selectedPlace?.bedCapacity,
+  getDerivedOccupiedBeds,
+  getFamilyLimit,
+]);
 
 const handleOccupancyDraftChange = useCallback((field, value) => {
+  if (field === "occupiedBeds") return;
+
   const cleaned = String(value || "").replace(/[^\d]/g, "");
+  const nextNumber = Number(cleaned || 0);
 
   setOccupancyDraft((prev) => ({
     ...prev,
-    [field]: cleaned,
+    ...(field === "currentOccupants"
+      ? (() => {
+          const maxIndividuals = Number(selectedPlace?.capacityIndividual || 0);
+          const nextPeople =
+            maxIndividuals > 0
+              ? Math.min(nextNumber, maxIndividuals)
+              : nextNumber;
+          const nextFamilyLimit = getFamilyLimit(nextPeople);
+          const nextFamilies = Math.min(
+            Number(prev.currentFamilies || 0),
+            nextFamilyLimit
+          );
+
+          return {
+            currentOccupants: cleaned === "" ? "" : String(nextPeople),
+            currentFamilies: String(nextFamilies),
+            occupiedBeds: String(getDerivedOccupiedBeds(nextPeople)),
+          };
+        })()
+      : (() => {
+          const familyLimit = getFamilyLimit(prev.currentOccupants);
+          const nextFamilies = Math.min(nextNumber, familyLimit);
+
+          return {
+            currentFamilies: cleaned === "" ? "" : String(nextFamilies),
+            occupiedBeds: String(getDerivedOccupiedBeds(prev.currentOccupants)),
+          };
+        })()),
   }));
-}, []);
+}, [getDerivedOccupiedBeds, getFamilyLimit, selectedPlace?.capacityIndividual]);
 
 const handleOccupancyStep = useCallback(
   (field, delta) => {
-    if (!selectedPlace) return;
-
-    const maxByField = {
-      currentOccupants: Number(selectedPlace.capacityIndividual || 0),
-      currentFamilies: Number(selectedPlace.capacityFamily || 0),
-      occupiedBeds: Number(selectedPlace.bedCapacity || 0),
-    };
+    if (!selectedPlace || field === "occupiedBeds") return;
 
     setOccupancyDraft((prev) => {
       const currentValue = Number(prev[field] || 0);
-      const maxValue = maxByField[field] || 0;
+      const maxValue =
+        field === "currentOccupants"
+          ? Number(selectedPlace.capacityIndividual || 0)
+          : getFamilyLimit(prev.currentOccupants);
       let nextValue = currentValue + delta;
 
       if (nextValue < 0) nextValue = 0;
       if (maxValue > 0 && nextValue > maxValue) nextValue = maxValue;
 
+      if (field === "currentOccupants") {
+        const nextFamilyLimit = getFamilyLimit(nextValue);
+        return {
+          ...prev,
+          currentOccupants: String(nextValue),
+          currentFamilies: String(
+            Math.min(Number(prev.currentFamilies || 0), nextFamilyLimit)
+          ),
+          occupiedBeds: String(getDerivedOccupiedBeds(nextValue)),
+        };
+      }
+
       return {
         ...prev,
-        [field]: String(nextValue),
+        currentFamilies: String(nextValue),
+        occupiedBeds: String(getDerivedOccupiedBeds(prev.currentOccupants)),
       };
     });
   },
-  [selectedPlace]
+  [getDerivedOccupiedBeds, getFamilyLimit, selectedPlace]
 );
 
 const hasOccupancyChanges = useMemo(() => {
@@ -1828,23 +2121,30 @@ const hasOccupancyChanges = useMemo(() => {
 const handleResetOccupancyDraft = useCallback(() => {
   if (!selectedPlace) return;
 
-  setOccupancyDraft({
-    currentOccupants: String(Number(selectedPlace.currentOccupants || 0)),
-    currentFamilies: String(Number(selectedPlace.currentFamilies || 0)),
-    occupiedBeds: String(Number(selectedPlace.occupiedBeds || 0)),
-  });
-}, [selectedPlace]);
+  const currentOccupants = Number(selectedPlace.currentOccupants || 0);
+  const currentFamilies = Math.min(
+    Number(selectedPlace.currentFamilies || 0),
+    getFamilyLimit(currentOccupants)
+  );
 
-const handleSaveOccupancy = useCallback(async () => {
+  setOccupancyDraft({
+    currentOccupants: String(currentOccupants),
+    currentFamilies: String(currentFamilies),
+    occupiedBeds: String(getDerivedOccupiedBeds(currentOccupants)),
+  });
+}, [getDerivedOccupiedBeds, getFamilyLimit, selectedPlace]);
+
+const handleSaveOccupancy = useCallback(async ({ silent = false } = {}) => {
   if (!selectedPlace?._id || savingOccupancy) return;
 
   const nextOccupants = Number(occupancyDraft.currentOccupants || 0);
-  const nextFamilies = Number(occupancyDraft.currentFamilies || 0);
-  const nextBeds = Number(occupancyDraft.occupiedBeds || 0);
-
+  const familyLimit = getFamilyLimit(nextOccupants);
+  const nextFamilies = Math.min(
+    Number(occupancyDraft.currentFamilies || 0),
+    familyLimit
+  );
+  const nextBeds = getDerivedOccupiedBeds(nextOccupants);
   const maxIndividuals = Number(selectedPlace.capacityIndividual || 0);
-  const maxFamilies = Number(selectedPlace.capacityFamily || 0);
-  const maxBeds = Number(selectedPlace.bedCapacity || 0);
 
   if (nextOccupants < 0 || nextFamilies < 0 || nextBeds < 0) {
     pushNotification("Occupancy values cannot be negative.", "error");
@@ -1859,17 +2159,11 @@ const handleSaveOccupancy = useCallback(async () => {
     return;
   }
 
-  if (maxFamilies > 0 && nextFamilies > maxFamilies) {
+  if (nextFamilies > familyLimit) {
     pushNotification(
-      `Families cannot exceed capacity of ${formatNumber(maxFamilies)}.`,
-      "error"
-    );
-    return;
-  }
-
-  if (maxBeds > 0 && nextBeds > maxBeds) {
-    pushNotification(
-      `Occupied beds cannot exceed bed capacity of ${formatNumber(maxBeds)}.`,
+      `Families cannot exceed current people count of ${formatNumber(
+        nextOccupants
+      )}.`,
       "error"
     );
     return;
@@ -1900,12 +2194,14 @@ const handleSaveOccupancy = useCallback(async () => {
     const params = buildEvacQueryParams();
     await Promise.all([fetchHistory(params), fetchAnalytics(params)]);
 
-    pushNotification(
-      `Occupancy saved: ${formatNumber(
-        updatedPlace.currentOccupants || 0
-      )}/${formatNumber(updatedPlace.capacityIndividual || 0)} people.`,
-      "success"
-    );
+    if (!silent) {
+      pushNotification(
+        `Occupancy saved: ${formatNumber(
+          updatedPlace.currentOccupants || 0
+        )}/${formatNumber(updatedPlace.capacityIndividual || 0)} people.`,
+        "success"
+      );
+    }
   } catch (error) {
     console.error("Save occupancy error:", error);
     pushNotification(
@@ -1924,7 +2220,29 @@ const handleSaveOccupancy = useCallback(async () => {
   buildEvacQueryParams,
   fetchHistory,
   fetchAnalytics,
+  getDerivedOccupiedBeds,
+  getFamilyLimit,
 ]);
+
+useEffect(() => {
+  if (!selectedPlace?._id || !hasOccupancyChanges || savingOccupancy) {
+    return undefined;
+  }
+
+  if (occupancyAutoSaveTimerRef.current) {
+    clearTimeout(occupancyAutoSaveTimerRef.current);
+  }
+
+  occupancyAutoSaveTimerRef.current = setTimeout(() => {
+    handleSaveOccupancy({ silent: true });
+  }, 700);
+
+  return () => {
+    if (occupancyAutoSaveTimerRef.current) {
+      clearTimeout(occupancyAutoSaveTimerRef.current);
+    }
+  };
+}, [selectedPlace?._id, hasOccupancyChanges, savingOccupancy, handleSaveOccupancy]);
 
   const handleStatusChange = useCallback(
     async (nextStatus) => {
@@ -2161,6 +2479,7 @@ const handleSaveOccupancy = useCallback(async () => {
                   <span>Evacuation Area Name</span>
                   <input
                     ref={nameRef}
+                    className={formErrors.name ? "input-error" : ""}
                     type="text"
                     name="name"
                     value={formData.name}
@@ -2168,11 +2487,15 @@ const handleSaveOccupancy = useCallback(async () => {
                     onChange={handleTextFieldChange}
                     placeholder="Enter evacuation area name"
                   />
+                  {formErrors.name && (
+                    <small className="field-error">{formErrors.name}</small>
+                  )}
                 </div>
 
                 <div className="field">
                   <span>Location</span>
                   <input
+                    className={formErrors.location ? "input-error" : ""}
                     type="text"
                     name="location"
                     value={formData.location}
@@ -2180,20 +2503,38 @@ const handleSaveOccupancy = useCallback(async () => {
                     onChange={handleTextFieldChange}
                     placeholder="Street, sitio, purok, landmark"
                   />
+                  {formErrors.location && (
+                    <small className="field-error">{formErrors.location}</small>
+                  )}
                 </div>
 
                 <div className="field">
                   <span>Barangay</span>
                   {isBarangayRole ? (
                     <input
+                      className={formErrors.barangay ? "input-error" : ""}
                       type="text"
                       value={ownBarangay?.name || localBarangayName || ""}
                       disabled
                     />
+                  ) : !showEditForm && barangayLocked ? (
+                    <>
+                      <input
+                        className={formErrors.barangay ? "input-error" : ""}
+                        type="text"
+                        value={formData.barangayName || ""}
+                        disabled
+                      />
+                      <small className="field-note">
+                        Locked from the map location you selected.
+                      </small>
+                    </>
                   ) : (
                     <select
+                      className={formErrors.barangay ? "input-error" : ""}
                       value={formData.barangayId || ""}
                       onChange={(e) => {
+                        clearFormError("barangay");
                         const selected = barangays.find(
                           (item) => String(item._id) === String(e.target.value)
                         );
@@ -2213,29 +2554,40 @@ const handleSaveOccupancy = useCallback(async () => {
                       ))}
                     </select>
                   )}
+                  {formErrors.barangay && (
+                    <small className="field-error">{formErrors.barangay}</small>
+                  )}
                 </div>
 
                 <div className="inline-field-row two">
                   <div className="field">
                     <span>Latitude</span>
                     <input
+                      className={formErrors.latitude ? "input-error" : ""}
                       type="number"
                       step="any"
                       value={formData.latitude ?? ""}
                       onChange={handleLatitudeChange}
                       placeholder="Latitude"
                     />
+                    {formErrors.latitude && (
+                      <small className="field-error">{formErrors.latitude}</small>
+                    )}
                   </div>
 
                   <div className="field">
                     <span>Longitude</span>
                     <input
+                      className={formErrors.longitude ? "input-error" : ""}
                       type="number"
                       step="any"
                       value={formData.longitude ?? ""}
                       onChange={handleLongitudeChange}
                       placeholder="Longitude"
                     />
+                    {formErrors.longitude && (
+                      <small className="field-error">{formErrors.longitude}</small>
+                    )}
                   </div>
                 </div>
               </section>
@@ -2247,6 +2599,7 @@ const handleSaveOccupancy = useCallback(async () => {
                   <div className="field">
                     <span>Individual Capacity</span>
                     <input
+                      className={formErrors.capacityIndividual ? "input-error" : ""}
                       type="text"
                       name="capacityIndividual"
                       value={formData.capacityIndividual}
@@ -2255,11 +2608,17 @@ const handleSaveOccupancy = useCallback(async () => {
                       onChange={handleNumericFieldChange}
                       placeholder="0"
                     />
+                    {formErrors.capacityIndividual && (
+                      <small className="field-error">
+                        {formErrors.capacityIndividual}
+                      </small>
+                    )}
                   </div>
 
                   <div className="field">
                     <span>Family Capacity</span>
                     <input
+                      className={formErrors.capacityFamily ? "input-error" : ""}
                       type="text"
                       name="capacityFamily"
                       value={formData.capacityFamily}
@@ -2268,11 +2627,17 @@ const handleSaveOccupancy = useCallback(async () => {
                       onChange={handleNumericFieldChange}
                       placeholder="0"
                     />
+                    {formErrors.capacityFamily && (
+                      <small className="field-error">
+                        {formErrors.capacityFamily}
+                      </small>
+                    )}
                   </div>
 
                   <div className="field">
                     <span>Bed Capacity</span>
                     <input
+                      className={formErrors.bedCapacity ? "input-error" : ""}
                       type="text"
                       name="bedCapacity"
                       value={formData.bedCapacity}
@@ -2281,12 +2646,16 @@ const handleSaveOccupancy = useCallback(async () => {
                       onChange={handleNumericFieldChange}
                       placeholder="0"
                     />
+                    {formErrors.bedCapacity && (
+                      <small className="field-error">{formErrors.bedCapacity}</small>
+                    )}
                   </div>
                 </div>
 
                 <div className="field">
                   <span>Floor Area</span>
                   <input
+                    className={formErrors.floorArea ? "input-error" : ""}
                     type="text"
                     name="floorArea"
                     value={formData.floorArea}
@@ -2295,11 +2664,15 @@ const handleSaveOccupancy = useCallback(async () => {
                     onChange={handleNumericFieldChange}
                     placeholder="0"
                   />
+                  {formErrors.floorArea && (
+                    <small className="field-error">{formErrors.floorArea}</small>
+                  )}
                 </div>
 
                 <div className="field">
                   <span>Remarks</span>
                   <textarea
+                    className={formErrors.remarks ? "input-error" : ""}
                     name="remarks"
                     rows={5}
                     value={formData.remarks}
@@ -2307,6 +2680,9 @@ const handleSaveOccupancy = useCallback(async () => {
                     onChange={handleTextFieldChange}
                     placeholder="Add notes, accessibility concerns, or suitability remarks"
                   />
+                  {formErrors.remarks && (
+                    <small className="field-error">{formErrors.remarks}</small>
+                  )}
                 </div>
               </section>
 
@@ -2492,6 +2868,67 @@ const handleSaveOccupancy = useCallback(async () => {
     );
   };
 
+  const renderDeleteConfirm = () => {
+    if (!showDeleteConfirm || !selectedPlace) return null;
+
+    return createPortal(
+      <div
+        className="evac-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Delete archived evacuation area"
+        onClick={() => setShowDeleteConfirm(false)}
+      >
+        <div
+          className="evac-modal-card confirm-card"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="evac-modal-header">
+            <div>
+              <h3>Delete Archived Area</h3>
+              <p>
+                This will permanently delete <strong>{selectedPlace.name}</strong>.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="evac-modal-close"
+              onClick={() => setShowDeleteConfirm(false)}
+              aria-label="Close delete confirmation"
+            >
+              <FaTimes />
+            </button>
+          </div>
+
+          <div className="confirm-copy">
+            This action cannot be undone and will remove the archived evacuation
+            area from the system.
+          </div>
+
+          <div className="evac-modal-actions">
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => setShowDeleteConfirm(false)}
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              className="danger-btn"
+              onClick={handlePermanentDeletePlace}
+              disabled={loadingSave}
+            >
+              {loadingSave ? "Deleting..." : "Delete Area"}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+  };
+
   const renderBulkPublicConfirm = () => {
     if (!bulkPublicAction) return null;
 
@@ -2573,6 +3010,7 @@ const handleSaveOccupancy = useCallback(async () => {
   return (
     <DashboardShell>
       <div
+        ref={evacPageTopRef}
         className={`evac-dashboard-page ${
           isBarangayRole ? "barangay-mode-page" : ""
         }`}
@@ -2654,13 +3092,7 @@ const handleSaveOccupancy = useCallback(async () => {
             icon={<FaBuilding />}
             label="Evacuation Areas"
             value={formatNumber(effectiveAnalytics.totalPlaces)}
-            sub={
-              isBarangayRole
-                ? "Areas under your barangay"
-                : barangayFilter === "all"
-                ? "Across all barangays"
-                : `Within ${barangayFilter}`
-            }
+            sub=""
           />
 
           <SummaryCard
@@ -2668,7 +3100,7 @@ const handleSaveOccupancy = useCallback(async () => {
             icon={<FaCheckCircle />}
             label="Available"
             value={formatNumber(effectiveAnalytics.availableCount)}
-            sub="Ready for use"
+            sub=""
           />
 
           <SummaryCard
@@ -2676,7 +3108,7 @@ const handleSaveOccupancy = useCallback(async () => {
             icon={<FaExclamationTriangle />}
             label="Limited"
             value={formatNumber(effectiveAnalytics.limitedCount)}
-            sub="Needs monitoring"
+            sub=""
             urgent={effectiveAnalytics.limitedCount > 0}
           />
 
@@ -2685,7 +3117,7 @@ const handleSaveOccupancy = useCallback(async () => {
             icon={<FaTimesCircle />}
             label="Full"
             value={formatNumber(effectiveAnalytics.fullCount)}
-            sub={getCapacityPressureLabel(effectiveAnalytics)}
+            sub=""
             urgent={effectiveAnalytics.fullCount > 0}
           />
 
@@ -2694,7 +3126,7 @@ const handleSaveOccupancy = useCallback(async () => {
             icon={<FaArchive />}
             label="Archived"
             value={formatNumber(effectiveAnalytics.archivedCount || 0)}
-            sub="Not shown in active view"
+            sub=""
           />
 
           <SummaryCard
@@ -2702,7 +3134,7 @@ const handleSaveOccupancy = useCallback(async () => {
             icon={<FaUser />}
             label="Individual Capacity"
             value={formatNumber(effectiveAnalytics.totalIndividualCapacity)}
-            sub="People supported"
+            sub=""
           />
         </section>
 
@@ -2784,10 +3216,28 @@ const handleSaveOccupancy = useCallback(async () => {
         >
           {!isBarangayRole && (
             <aside className="evac-left-panel">
-              <div className="panel-head">
-                <div>
-                  <h2>Barangay Overview</h2>
-                  <p>Review distribution by barangay and status.</p>
+              <div className="panel-head barangay-overview-head">
+                <h2>Barangay Overview</h2>
+                <div
+                  className="barangay-overview-legend"
+                  aria-label="Barangay overview legend"
+                >
+                  <span className="overview-legend-item">
+                    <span className="overview-legend-dot available" />
+                    Available
+                  </span>
+                  <span className="overview-legend-item">
+                    <span className="overview-legend-dot limited" />
+                    Limited
+                  </span>
+                  <span className="overview-legend-item">
+                    <span className="overview-legend-dot full" />
+                    Full
+                  </span>
+                  <span className="overview-legend-item">
+                    <span className="overview-legend-dot archived" />
+                    Archived
+                  </span>
                 </div>
               </div>
 
@@ -2890,29 +3340,49 @@ const handleSaveOccupancy = useCallback(async () => {
           )}
 
           <section className="evac-map-panel">
-            <div className="panel-head compact">
-              <div>
-                  <h2>Evacuation Map</h2>
-                <p>
-                  {pickMode
-                    ? "Pick a location on the map or cancel pick mode."
-                    : selectedPlace
-                    ? "Selected evacuation area is highlighted on the map."
-                    : "Browse and select an evacuation area."}
-                </p>
-              </div>
+            <div className="panel-head compact map-panel-head">
+              <div className="map-panel-title-block">
+                <h2>Evacuation Map</h2>
+                <div className="map-panel-controls-row">
+                  <MapLegend inline />
 
-              <div className="map-panel-actions">
-                {canAddArea && pickMode && (
-                  <button
-                    type="button"
-                    className="danger-btn"
-                    onClick={cancelPickMode}
-                  >
-                    <FaTimes aria-hidden="true" />
-                    Cancel Pick
-                  </button>
-                )}
+                  <div className="map-panel-actions">
+                    <button
+                      type="button"
+                      className={`ghost-btn map-control-btn ${
+                        markerLabelsVisible ? "is-active" : ""
+                      }`}
+                      onClick={() => setMarkerLabelsVisible((current) => !current)}
+                      title={
+                        markerLabelsVisible
+                          ? "Nameplates are always visible. Click to switch to hover-only."
+                          : "Nameplates appear on hover. Click to always show them."
+                      }
+                    >
+                      {markerLabelsVisible ? (
+                        <FaEye aria-hidden="true" />
+                      ) : (
+                        <FaEyeSlash aria-hidden="true" />
+                      )}
+                      <span className="map-control-btn-label-full">
+                        {markerLabelsVisible ? "Nameplates On" : "Hover Labels"}
+                      </span>
+                      <span className="map-control-btn-label-short">
+                        {markerLabelsVisible ? "Labels On" : "Labels"}
+                      </span>
+                    </button>
+                    {canAddArea && pickMode && (
+                      <button
+                        type="button"
+                        className="danger-btn"
+                        onClick={cancelPickMode}
+                      >
+                        <FaTimes aria-hidden="true" />
+                        Cancel Pick
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -2950,9 +3420,8 @@ const handleSaveOccupancy = useCallback(async () => {
                 selectedBarangayName={selectedBarangayName}
                 barangayBounds={barangayBounds}
                 matchedBarangayBounds={matchedBarangayBounds}
+                markerLabelsVisible={markerLabelsVisible}
               />
-
-              <MapLegend />
 
               {canAddArea && !pickMode && (
                 <button
@@ -2965,9 +3434,6 @@ const handleSaveOccupancy = useCallback(async () => {
                   </div>
                   <div className="map-add-place-content">
                     <div className="map-add-place-title">Add Evacuation Area</div>
-                    <div className="map-add-place-sub">
-                      Start by pinning the location on the map.
-                    </div>
                   </div>
                 </button>
               )}
@@ -2989,74 +3455,76 @@ const handleSaveOccupancy = useCallback(async () => {
               mobileTaskPanelOpen ? "mobile-open" : "mobile-collapsed"
             }`}
           >
-            <button
-              type="button"
-              className="mobile-task-panel-toggle"
-              onClick={() => setMobileTaskPanelOpen((open) => !open)}
-              aria-expanded={mobileTaskPanelOpen}
-              aria-controls="evac-task-panel-content"
-            >
-              <span>
-                {mobileTaskPanelOpen ? "Hide task panel" : "Show task panel"}
-              </span>
-              {mobileTaskPanelOpen ? (
-                <FaChevronDown aria-hidden="true" />
-              ) : (
-                <FaChevronUp aria-hidden="true" />
-              )}
-            </button>
-            <div className="side-panel-tabs">
-  <button
-    type="button"
-    className={`tab-btn ${panelView === "areas" && placeView === "active" ? "active" : ""}`}
-    onClick={() => {
-      setPlaceView("active");
-      setPanelView("areas");
-      setMobileTaskPanelOpen(true);
-    }}
-  >
-    <FaListUl aria-hidden="true" />
-    Areas
-  </button>
-  <button
-    type="button"
-    className={`tab-btn ${panelView === "areas" && placeView === "archived" ? "active" : ""}`}
-    onClick={() => {
-      setPlaceView("archived");
-      setPanelView("areas");
-      setMobileTaskPanelOpen(true);
-    }}
-  >
-    <FaArchive aria-hidden="true" />
-    Archived
-  </button>
-  <button
-    type="button"
-    className={`tab-btn ${panelView === "details" ? "active" : ""}`}
-    onClick={() => {
-      setPlaceView("active");
-      setPanelView("details");
-      setMobileTaskPanelOpen(true);
-    }}
-    disabled={!selectedPlace}
-  >
-    <FaClipboardList aria-hidden="true" />
-    Details
-  </button>
-  <button
-    type="button"
-    className={`tab-btn ${panelView === "history" ? "active" : ""}`}
-    onClick={() => {
-      setPlaceView("active");
-      setPanelView("history");
-      setMobileTaskPanelOpen(true);
-    }}
-    disabled={!selectedPlace}
-  >
-    <FaHistory aria-hidden="true" />
-    History
-  </button>
-</div>
+            <div className="mobile-task-panel-head">
+              <button
+                type="button"
+                className="mobile-task-panel-toggle"
+                onClick={() => setMobileTaskPanelOpen((open) => !open)}
+                aria-expanded={mobileTaskPanelOpen}
+                aria-controls="evac-task-panel-content"
+              >
+                <span>
+                  {mobileTaskPanelOpen ? "Hide task panel" : "Show task panel"}
+                </span>
+                {mobileTaskPanelOpen ? (
+                  <FaChevronDown aria-hidden="true" />
+                ) : (
+                  <FaChevronUp aria-hidden="true" />
+                )}
+              </button>
+              <div className="side-panel-tabs">
+                <button
+                  type="button"
+                  className={`tab-btn ${panelView === "areas" && placeView === "active" ? "active" : ""}`}
+                  onClick={() => {
+                    setPlaceView("active");
+                    setPanelView("areas");
+                    setMobileTaskPanelOpen(true);
+                  }}
+                >
+                  <FaListUl aria-hidden="true" />
+                  Areas
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${panelView === "areas" && placeView === "archived" ? "active" : ""}`}
+                  onClick={() => {
+                    setPlaceView("archived");
+                    setPanelView("areas");
+                    setMobileTaskPanelOpen(true);
+                  }}
+                >
+                  <FaArchive aria-hidden="true" />
+                  Archived
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${panelView === "details" ? "active" : ""}`}
+                  onClick={() => {
+                    setPlaceView("active");
+                    setPanelView("details");
+                    setMobileTaskPanelOpen(true);
+                  }}
+                  disabled={!selectedPlace}
+                >
+                  <FaClipboardList aria-hidden="true" />
+                  Details
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${panelView === "history" ? "active" : ""}`}
+                  onClick={() => {
+                    setPlaceView("active");
+                    setPanelView("history");
+                    setMobileTaskPanelOpen(true);
+                  }}
+                  disabled={!selectedPlace}
+                >
+                  <FaHistory aria-hidden="true" />
+                  History
+                </button>
+              </div>
+            </div>
 
             <div className="side-panel-body" id="evac-task-panel-content">
               {panelView === "areas" ? (
@@ -3241,7 +3709,16 @@ const handleSaveOccupancy = useCallback(async () => {
 
                   <div className="details-kpi-grid occupancy-aware">
   {(() => {
-    const occupancy = getOccupancyNumbers(selectedPlace);
+    const occupancy = getOccupancyNumbers({
+      ...selectedPlace,
+      currentOccupants: Number(occupancyDraft.currentOccupants || 0),
+      currentFamilies: Number(occupancyDraft.currentFamilies || 0),
+      occupiedBeds: Number(occupancyDraft.occupiedBeds || 0),
+    });
+    const draftCapacityStatus = deriveCapacityStatusFromOccupancy(
+      occupancy.currentOccupants,
+      occupancy.capacityIndividual
+    );
 
     return (
       <>
@@ -3257,7 +3734,7 @@ const handleSaveOccupancy = useCallback(async () => {
           <div className="occupancy-mini-progress">
             <div
               className={`occupancy-mini-fill ${getStatusClass(
-                selectedPlace.capacityStatus
+                draftCapacityStatus
               )}`}
               style={{ width: `${occupancy.individualDisplayPercent}%` }}
             />
@@ -3326,7 +3803,17 @@ const handleSaveOccupancy = useCallback(async () => {
 
                   <div className="ops-card occupancy-control-card">
   {(() => {
-    const occupancy = getOccupancyNumbers(selectedPlace);
+    const occupancy = getOccupancyNumbers({
+      ...selectedPlace,
+      currentOccupants: Number(occupancyDraft.currentOccupants || 0),
+      currentFamilies: Number(occupancyDraft.currentFamilies || 0),
+      occupiedBeds: Number(occupancyDraft.occupiedBeds || 0),
+    });
+    const draftCapacityStatus = deriveCapacityStatusFromOccupancy(
+      occupancy.currentOccupants,
+      occupancy.capacityIndividual
+    );
+    const maxCurrentFamilies = getFamilyLimit(occupancyDraft.currentOccupants);
 
     return (
       <>
@@ -3352,7 +3839,7 @@ const handleSaveOccupancy = useCallback(async () => {
         <div className="occupancy-progress-track">
           <div
             className={`occupancy-progress-fill ${getStatusClass(
-              selectedPlace.capacityStatus
+              draftCapacityStatus
             )}`}
             style={{ width: `${occupancy.individualDisplayPercent}%` }}
           />
@@ -3416,7 +3903,7 @@ const handleSaveOccupancy = useCallback(async () => {
                 id="currentFamiliesInput"
                 type="number"
                 min="0"
-                max={selectedPlace.capacityFamily || undefined}
+                max={maxCurrentFamilies || undefined}
                 value={occupancyDraft.currentFamilies}
                 onChange={(e) =>
                   handleOccupancyDraftChange("currentFamilies", e.target.value)
@@ -3429,9 +3916,9 @@ const handleSaveOccupancy = useCallback(async () => {
               className="occupancy-step-btn add"
               onClick={() => handleOccupancyStep("currentFamilies", 1)}
               disabled={
-                Number(selectedPlace.capacityFamily || 0) > 0 &&
+                maxCurrentFamilies > 0 &&
                 Number(occupancyDraft.currentFamilies || 0) >=
-                  Number(selectedPlace.capacityFamily || 0)
+                  maxCurrentFamilies
               }
               title="Add one family"
             >
@@ -3439,15 +3926,14 @@ const handleSaveOccupancy = useCallback(async () => {
             </button>
           </div>
 
-          <div className="occupancy-control-row">
+          <div className="occupancy-control-row occupancy-control-row-auto">
             <button
               type="button"
-              className="occupancy-step-btn"
-              onClick={() => handleOccupancyStep("occupiedBeds", -1)}
-              disabled={Number(occupancyDraft.occupiedBeds || 0) <= 0}
-              title="Remove one occupied bed"
+              className="occupancy-auto-chip"
+              disabled
+              title="Occupied beds are automatically based on current people"
             >
-              −
+              Auto
             </button>
 
             <div className="occupancy-input-wrap">
@@ -3458,24 +3944,18 @@ const handleSaveOccupancy = useCallback(async () => {
                 min="0"
                 max={selectedPlace.bedCapacity || undefined}
                 value={occupancyDraft.occupiedBeds}
-                onChange={(e) =>
-                  handleOccupancyDraftChange("occupiedBeds", e.target.value)
-                }
+                readOnly
+                disabled
               />
             </div>
 
             <button
               type="button"
-              className="occupancy-step-btn add"
-              onClick={() => handleOccupancyStep("occupiedBeds", 1)}
-              disabled={
-                Number(selectedPlace.bedCapacity || 0) > 0 &&
-                Number(occupancyDraft.occupiedBeds || 0) >=
-                  Number(selectedPlace.bedCapacity || 0)
-              }
-              title="Add one occupied bed"
+              className="occupancy-auto-note"
+              disabled
+              title="Occupied beds are automatically based on current people"
             >
-              +
+              From people
             </button>
           </div>
         </div>
@@ -3484,7 +3964,7 @@ const handleSaveOccupancy = useCallback(async () => {
           <button
             type="button"
             className={`status-action-btn available ${
-              safeLower(selectedPlace.capacityStatus) === "available"
+              safeLower(draftCapacityStatus) === "available"
                 ? "active"
                 : ""
             }`}
@@ -3497,7 +3977,7 @@ const handleSaveOccupancy = useCallback(async () => {
           <button
             type="button"
             className={`status-action-btn limited ${
-              safeLower(selectedPlace.capacityStatus) === "limited" ? "active" : ""
+              safeLower(draftCapacityStatus) === "limited" ? "active" : ""
             }`}
             disabled
           >
@@ -3508,7 +3988,7 @@ const handleSaveOccupancy = useCallback(async () => {
           <button
             type="button"
             className={`status-action-btn full ${
-              safeLower(selectedPlace.capacityStatus) === "full" ? "active" : ""
+              safeLower(draftCapacityStatus) === "full" ? "active" : ""
             }`}
             disabled
           >
@@ -3517,7 +3997,7 @@ const handleSaveOccupancy = useCallback(async () => {
           </button>
         </div>
 
-        <div className="occupancy-save-row">
+        <div className="occupancy-save-row occupancy-autosave-row">
           <button
             type="button"
             className="ghost-btn"
@@ -3527,20 +4007,15 @@ const handleSaveOccupancy = useCallback(async () => {
             Reset
           </button>
 
-          <button
-            type="button"
-            className="primary-btn"
-            onClick={handleSaveOccupancy}
-            disabled={!hasOccupancyChanges || savingOccupancy}
-          >
-            {savingOccupancy ? "Saving..." : "Save Occupancy"}
-          </button>
+          <span className="occupancy-autosave-status">
+            {savingOccupancy
+              ? "Saving..."
+              : hasOccupancyChanges
+              ? "Autosaves after changes"
+              : "Saved"}
+          </span>
         </div>
 
-        <p className="occupancy-helper-text">
-          Type freely, then save once. Status is automatic: below {LIMITED_OCCUPANCY_PERCENT}%
-          is available, {LIMITED_OCCUPANCY_PERCENT}% to 99% is limited, and 100% or more is full.
-        </p>
       </>
     );
   })()}
@@ -3561,14 +4036,25 @@ const handleSaveOccupancy = useCallback(async () => {
 
                     {(isPrivilegedOps || isBarangayRole) && (
                       selectedPlace?.isArchived ? (
-                        <button
-                          type="button"
-                          className="ghost-btn"
-                          onClick={handleUnarchivePlace}
-                        >
-                          <FaArchive aria-hidden="true" />
-                          Unarchive Area
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="ghost-btn"
+                            onClick={handleUnarchivePlace}
+                          >
+                            <FaArchive aria-hidden="true" />
+                            Unarchive Area
+                          </button>
+
+                          <button
+                            type="button"
+                            className="danger-btn"
+                            onClick={() => setShowDeleteConfirm(true)}
+                          >
+                            <FaTimes aria-hidden="true" />
+                            Delete Area
+                          </button>
+                        </>
                       ) : (
                         <button
                           type="button"
@@ -3750,6 +4236,7 @@ const handleSaveOccupancy = useCallback(async () => {
         })}
 
         {renderArchiveConfirm()}
+        {renderDeleteConfirm()}
         {renderBulkPublicConfirm()}
       </div>
     </DashboardShell>

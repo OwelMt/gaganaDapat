@@ -11,7 +11,7 @@
   top: auto !important;
   right: auto !important;
   width: min(360px, calc(100vw - 36px)) !important;
-  z-index: 2147483646 !important;
+  z-index: 2147483647 !important;
 }
 
 .rrf-modal-backdrop,
@@ -20,15 +20,20 @@
 .inventory-modal-backdrop,
 .inventory-modal-backdrop-centered,
 .inventory-confirm-backdrop,
+.inventory-image-modal,
+.inventory-add-proof-modal,
 .dqv-modal-backdrop,
 .dqv-image-modal,
 .evac-modal,
 .evac-confirm-backdrop,
 .gl-modal-backdrop,
 .gl-modal-backdrop-centered,
+.gl-image-overlay,
 .account-modal-backdrop,
 .incident-image-modal,
 .incident-history-modal,
+.incident-action-modal,
+.confirm-overlay,
 .rr-modal {
   position: fixed !important;
   inset: 0 !important;
@@ -36,7 +41,10 @@
   align-items: center !important;
   justify-content: center !important;
   padding: 20px !important;
-  z-index: 2147483647 !important;
+  z-index: 2147483600 !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  filter: none !important;
 }
 
 .rrf-modal-card,
@@ -44,13 +52,18 @@
 .rrl-pdf-modal,
 .inventory-modal,
 .inventory-confirm-card,
+.inventory-image-modal-card,
+.inventory-add-proof-modal-card,
 .dqv-image-modal-card,
 .evac-modal-card,
+.evac-confirm-card,
 .gl-modal-card,
 .gl-modal-card-fixed,
 .account-modal-card,
 .incident-image-modal-card,
 .incident-history-modal-card,
+.incident-action-modal-card,
+.confirm-card,
 .rr-modal-card {
   margin: 0 auto !important;
   inset: auto !important;
@@ -80,15 +93,20 @@
   .inventory-modal-backdrop,
   .inventory-modal-backdrop-centered,
   .inventory-confirm-backdrop,
+  .inventory-image-modal,
+  .inventory-add-proof-modal,
   .dqv-modal-backdrop,
   .dqv-image-modal,
   .evac-modal,
   .evac-confirm-backdrop,
   .gl-modal-backdrop,
   .gl-modal-backdrop-centered,
+  .gl-image-overlay,
   .account-modal-backdrop,
   .incident-image-modal,
   .incident-history-modal,
+  .incident-action-modal,
+  .confirm-overlay,
   .rr-modal {
     padding: 12px !important;
   }
@@ -98,13 +116,18 @@
   .rrl-pdf-modal,
   .inventory-modal,
   .inventory-confirm-card,
+  .inventory-image-modal-card,
+  .inventory-add-proof-modal-card,
   .dqv-image-modal-card,
   .evac-modal-card,
+  .evac-confirm-card,
   .gl-modal-card,
   .gl-modal-card-fixed,
   .account-modal-card,
   .incident-image-modal-card,
   .incident-history-modal-card,
+  .incident-action-modal-card,
+  .confirm-card,
   .rr-modal-card {
     max-height: calc(100vh - 24px) !important;
   }

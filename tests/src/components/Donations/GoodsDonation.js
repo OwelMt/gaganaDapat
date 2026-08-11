@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import {
   FaBell,
   FaCheck,
-  FaDonate,
   FaExclamationTriangle,
   FaExternalLinkAlt,
   FaInbox,
@@ -458,15 +457,6 @@ export default function DonationValidationQueue() {
               <div className="rrl-header-main">
                 <span className="rrl-kicker">Donation Validation</span>
                 <h1 className="rrl-header-title">Review mobile donations before inventory intake</h1>
-                <div className="rrl-title-meta">
-                  <span className="rrl-top-pill">
-                    <FaDonate />
-                    Physical receipt validation
-                  </span>
-                  <span className="rrl-top-pill subtle">
-                    Inventory only after DRRMO confirmation
-                  </span>
-                </div>
               </div>
             </div>
 
@@ -477,7 +467,6 @@ export default function DonationValidationQueue() {
                   <span className="rrl-total-icon"><FaInbox /></span>
                 </div>
                 <strong>{topTotals.total}</strong>
-                <span className="rrl-total-note">All mobile donation records</span>
               </div>
               <div className="rrl-total-card pending">
                 <div className="rrl-total-card-top">
@@ -485,7 +474,6 @@ export default function DonationValidationQueue() {
                   <span className="rrl-total-icon"><FaExclamationTriangle /></span>
                 </div>
                 <strong>{topTotals.pending}</strong>
-                <span className="rrl-total-note">First-time submissions</span>
               </div>
               <div className="rrl-total-card warning">
                 <div className="rrl-total-card-top">
@@ -493,7 +481,6 @@ export default function DonationValidationQueue() {
                   <span className="rrl-total-icon"><FaUndo /></span>
                 </div>
                 <strong>{topTotals.resubmitted}</strong>
-                <span className="rrl-total-note">Reopened after not received</span>
               </div>
               <div className="rrl-total-card success">
                 <div className="rrl-total-card-top">
@@ -501,7 +488,6 @@ export default function DonationValidationQueue() {
                   <span className="rrl-total-icon"><FaCheck /></span>
                 </div>
                 <strong>{topTotals.received}</strong>
-                <span className="rrl-total-note">Already moved to inventory</span>
               </div>
             </div>
           </section>

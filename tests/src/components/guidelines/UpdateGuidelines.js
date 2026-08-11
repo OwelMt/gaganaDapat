@@ -1,8 +1,11 @@
 import React, { useState } from "react";
 import axios from "axios";
 import {
+  CONTENT_PRIORITY_OPTIONS,
+  CONTENT_STATUS_OPTIONS,
   MAX_CONTENT_DESCRIPTION_LENGTH,
   MAX_CONTENT_TITLE_LENGTH,
+  sanitizeContentChoice,
   sanitizeContentDescription,
   sanitizeContentDescriptionInput,
   sanitizeContentTitle,
@@ -11,13 +14,20 @@ import {
 } from "../contentTextUtils";
 
 export default function UpdateGuideline({ guideline, onClose, onUpdated }) {
+const categoryOptions = ["earthquake", "flood", "typhoon", "general"];
 const [title, setTitle] = useState(sanitizeContentTitle(guideline.title));
 const [description, setDescription] = useState(
   sanitizeContentDescription(guideline.description)
 );
-const [category, setCategory] = useState(guideline.category);
-const [status, setStatus] = useState(guideline.status);
-const [priorityLevel, setPriorityLevel] = useState(guideline.priorityLevel);
+const [category, setCategory] = useState(
+  sanitizeContentChoice(guideline.category, categoryOptions, "general")
+);
+const [status, setStatus] = useState(
+  sanitizeContentChoice(guideline.status, CONTENT_STATUS_OPTIONS, "draft")
+);
+const [priorityLevel, setPriorityLevel] = useState(
+  sanitizeContentChoice(guideline.priorityLevel, CONTENT_PRIORITY_OPTIONS, "medium")
+);
 
 const BASE_URL = process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
 
@@ -55,6 +65,7 @@ return ( <div style={styles.overlay}> <div style={styles.modal}> <h2>Update Guid
       style={styles.input}
       value={title}
       onChange={(e) => setTitle(sanitizeContentTitleInput(e.target.value))}
+      onBlur={(e) => setTitle(sanitizeContentTitle(e.target.value))}
       maxLength={MAX_CONTENT_TITLE_LENGTH}
     />
 
@@ -62,26 +73,61 @@ return ( <div style={styles.overlay}> <div style={styles.modal}> <h2>Update Guid
       style={styles.input}
       value={description}
       onChange={(e) => setDescription(sanitizeContentDescriptionInput(e.target.value))}
+      onBlur={(e) => setDescription(sanitizeContentDescription(e.target.value))}
       maxLength={MAX_CONTENT_DESCRIPTION_LENGTH}
     />
 
-    <input
+    <select
       style={styles.input}
       value={category}
-      onChange={(e) => setCategory(e.target.value)}
-    />
+      onChange={(e) =>
+        setCategory(
+          sanitizeContentChoice(e.target.value, categoryOptions, "general")
+        )
+      }
+    >
+      {categoryOptions.map((item) => (
+        <option key={item} value={item}>
+          {item}
+        </option>
+      ))}
+    </select>
 
-    <input
+    <select
       style={styles.input}
       value={status}
-      onChange={(e) => setStatus(e.target.value)}
-    />
+      onChange={(e) =>
+        setStatus(
+          sanitizeContentChoice(e.target.value, CONTENT_STATUS_OPTIONS, "draft")
+        )
+      }
+    >
+      {CONTENT_STATUS_OPTIONS.map((item) => (
+        <option key={item} value={item}>
+          {item}
+        </option>
+      ))}
+    </select>
 
-    <input
+    <select
       style={styles.input}
       value={priorityLevel}
-      onChange={(e) => setPriorityLevel(e.target.value)}
-    />
+      onChange={(e) =>
+        setPriorityLevel(
+          sanitizeContentChoice(
+            e.target.value,
+            CONTENT_PRIORITY_OPTIONS,
+            "medium"
+          )
+        )
+      }
+    >
+      {CONTENT_PRIORITY_OPTIONS.map((item) => (
+        <option key={item} value={item}>
+          {item}
+        </option>
+      ))}
+    </select>
 
     <button style={styles.button} onClick={updateGuideline}>
       Update

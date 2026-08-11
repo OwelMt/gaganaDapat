@@ -825,7 +825,10 @@ export default function HomeGuidelines() {
                       className="gl-input"
                       placeholder="Enter guideline title"
                       value={title}
-                      onChange={(e) => setTitle(sanitizeContentTitleInput(e.target.value))}
+                      onChange={(e) =>
+                        setTitle(sanitizeContentTitleInput(e.target.value))
+                      }
+                      onBlur={(e) => setTitle(sanitizeContentTitle(e.target.value))}
                       maxLength={MAX_CONTENT_TITLE_LENGTH}
                     />
                   </div>
@@ -838,6 +841,9 @@ export default function HomeGuidelines() {
                       value={description}
                       onChange={(e) =>
                         setDescription(sanitizeContentDescriptionInput(e.target.value))
+                      }
+                      onBlur={(e) =>
+                        setDescription(sanitizeContentDescription(e.target.value))
                       }
                       maxLength={MAX_CONTENT_DESCRIPTION_LENGTH}
                     />
@@ -1184,6 +1190,7 @@ export default function HomeGuidelines() {
                         onChange={(e) =>
                           setEditTitle(sanitizeContentTitleInput(e.target.value))
                         }
+                        onBlur={(e) => setEditTitle(sanitizeContentTitle(e.target.value))}
                         placeholder="Guideline title"
                         maxLength={MAX_CONTENT_TITLE_LENGTH}
                       />
@@ -1195,7 +1202,12 @@ export default function HomeGuidelines() {
                         className="gl-modal-textarea"
                         value={editDescription}
                         onChange={(e) =>
-                          setEditDescription(sanitizeContentDescriptionInput(e.target.value))
+                          setEditDescription(
+                            sanitizeContentDescriptionInput(e.target.value)
+                          )
+                        }
+                        onBlur={(e) =>
+                          setEditDescription(sanitizeContentDescription(e.target.value))
                         }
                         placeholder="Guideline description"
                         maxLength={MAX_CONTENT_DESCRIPTION_LENGTH}

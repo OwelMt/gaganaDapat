@@ -4,8 +4,10 @@ import dampulanZones from "./data/dampulan.json";
 import langlaZones from "./data/langla.json";
 import magsalisiZones from "./data/magsalisi.json";
 import "leaflet/dist/leaflet.css";
+import { getBasemapTileLayerProps } from "./map/mapBasemap";
 
 function Mapp() {
+  const basemapTileProps = getBasemapTileLayerProps();
 
   // Style for first polygon
   const floodStyle = {
@@ -40,10 +42,7 @@ function Mapp() {
       zoom={13}
       style={{ height: "100vh", width: "100%" }}
     >
-      <TileLayer
-        attribution="&copy; OpenStreetMap contributors"
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+      <TileLayer {...basemapTileProps} />
 
       {/* Plot first JSON */}
       <GeoJSON data={floodZones} style={floodStyle} />

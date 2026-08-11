@@ -54,10 +54,12 @@
 /* Text */
 .splash-text {
   color: #000000;
-  font-family: "Courier New", monospace;
+  font-family: var(--app-font-sans);
   font-size: 22px;
   text-align: center;
   margin: 0;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 /* Animations */

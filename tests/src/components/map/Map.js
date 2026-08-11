@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import axios from "axios";
 import {
   MapContainer,
@@ -17,41 +17,48 @@ import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { point as turfPoint } from "@turf/helpers";
 import "leaflet/dist/leaflet.css";
 import jaenGeoJSON from "../data/jaen.json";
+import { getBasemapTileLayerProps } from "./mapBasemap";
 
 const DEFAULT_CENTER = [15.3382, 120.9056];
-const BOUNDS_BUFFER = 0.01;
+const BOUNDS_BUFFER = 0.035;
+const JAEN_MIN_ZOOM = 12.25;
+const JAEN_INITIAL_ZOOM = 13;
+const JAEN_FIT_MAX_ZOOM = 13;
 
 /* ---------------- Icons ---------------- */
 
+const STATUS_MARKER_SIZE = 24;
+const STATUS_MARKER_ANCHOR = [12, 24];
+
 const blueIcon = new L.Icon({
   iconUrl: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png",
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
+  iconSize: [STATUS_MARKER_SIZE, STATUS_MARKER_SIZE],
+  iconAnchor: STATUS_MARKER_ANCHOR,
 });
 
 const greenIcon = new L.Icon({
   iconUrl: "https://maps.google.com/mapfiles/ms/icons/green-dot.png",
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
+  iconSize: [STATUS_MARKER_SIZE, STATUS_MARKER_SIZE],
+  iconAnchor: STATUS_MARKER_ANCHOR,
 });
 
 const orangeIcon = new L.Icon({
   iconUrl: "https://maps.google.com/mapfiles/ms/icons/orange-dot.png",
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
+  iconSize: [STATUS_MARKER_SIZE, STATUS_MARKER_SIZE],
+  iconAnchor: STATUS_MARKER_ANCHOR,
 });
 
 const redIcon = new L.Icon({
   iconUrl: "https://maps.google.com/mapfiles/ms/icons/red-dot.png",
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
+  iconSize: [STATUS_MARKER_SIZE, STATUS_MARKER_SIZE],
+  iconAnchor: STATUS_MARKER_ANCHOR,
 });
 
 const greyIcon = L.divIcon({
   className: "custom-evac-archived-marker",
   html: '<span class="custom-evac-archived-marker__dot"></span>',
-  iconSize: [22, 22],
-  iconAnchor: [11, 11],
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
 });
 
 /* ---------------- Styles ---------------- */
@@ -70,6 +77,33 @@ const maskStyle = {
   fillColor: "#1f2937",
   fillOpacity: 0.28,
   interactive: false,
+};
+
+const hazardLayerStyles = {
+  susceptible: {
+    color: "rgba(75, 0, 130, 1)",
+    fillColor: "rgba(75, 0, 130, 1)",
+    weight: 1,
+    opacity: 0.9,
+    fillOpacity: 0.32,
+    interactive: false,
+  },
+  medium: {
+    color: "rgba(128, 0, 128, 1)",
+    fillColor: "rgba(128, 0, 128, 1)",
+    weight: 1,
+    opacity: 0.9,
+    fillOpacity: 0.28,
+    interactive: false,
+  },
+  safe: {
+    color: "rgba(135, 206, 235, 1)",
+    fillColor: "rgba(135, 206, 235, 1)",
+    weight: 1,
+    opacity: 0.85,
+    fillOpacity: 0.22,
+    interactive: false,
+  },
 };
 
 function getBarangayPaletteSeed(colorKey = "") {
@@ -286,17 +320,51 @@ function getBarangayBoundsLabel(entry, fallbackIndex = 0) {
   return directLabel || `Barangay ${fallbackIndex + 1}`;
 }
 
+function getBarangayGeoBounds(entry) {
+  const geoData = getBarangayBoundsData(entry);
+  if (!geoData) return null;
+
+  const bounds = L.geoJSON(geoData).getBounds();
+  return bounds.isValid() ? bounds : null;
+}
+
+function getBarangayLabelFontSize(zoom = 13) {
+  if (zoom >= 17) return 16;
+  if (zoom >= 16) return 15;
+  if (zoom >= 15) return 14;
+  if (zoom >= 14) return 13;
+  return 12;
+}
+
+function getBarangayLabelZoomThreshold(publicMode = false) {
+  return publicMode ? 13.4 : 14;
+}
+
 function buildBarangayPolygonStyle({
   colorKey = "",
   index = 0,
   isBarangayRole = false,
   isOwnedBarangay = false,
   hovered = false,
+  showHazardOverlay = false,
 }) {
   const { hue, saturation, lightness } = getBarangayColorParts(
     colorKey,
     index
   );
+
+  if (showHazardOverlay) {
+    return {
+      color: hovered || isOwnedBarangay
+        ? "rgba(71, 85, 105, 0.92)"
+        : "rgba(100, 116, 139, 0.58)",
+      weight: hovered || isOwnedBarangay ? 2.6 : 1.35,
+      fillColor: hovered || isOwnedBarangay
+        ? "rgba(148, 163, 184, 0.24)"
+        : "rgba(148, 163, 184, 0.12)",
+      fillOpacity: hovered || isOwnedBarangay ? 0.34 : 0.22,
+    };
+  }
 
   if (isBarangayRole) {
     if (isOwnedBarangay) {
@@ -407,7 +475,7 @@ function getStatusIcon(placeOrStatus) {
 
 /* ---------------- Fit map to Jaen ---------------- */
 
-function FitToJaenBounds({ bounds, publicMode = false }) {
+function FitToJaenBounds({ bounds, maxBounds, publicMode = false }) {
   const map = useMap();
 
   useEffect(() => {
@@ -416,14 +484,10 @@ function FitToJaenBounds({ bounds, publicMode = false }) {
     let cancelled = false;
 
     map.fitBounds(bounds, {
-      padding: publicMode ? [28, 28] : [20, 20],
+      padding: publicMode ? [58, 58] : [48, 48],
+      maxZoom: JAEN_FIT_MAX_ZOOM,
     });
-
-    if (!publicMode) {
-      map.setMaxBounds(bounds);
-    } else {
-      map.setMaxBounds(null);
-    }
+    map.setMaxBounds(maxBounds || bounds);
 
     const timer = setTimeout(() => {
       if (!cancelled && map?._container) {
@@ -435,7 +499,42 @@ function FitToJaenBounds({ bounds, publicMode = false }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [bounds, map, publicMode]);
+  }, [bounds, map, maxBounds, publicMode]);
+
+  return null;
+}
+
+function FitToSelectedBarangay({
+  selectedBounds,
+  fallbackBounds,
+  publicMode = false,
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!publicMode) return;
+
+    const targetBounds = selectedBounds || fallbackBounds;
+    if (!targetBounds) return;
+
+    let cancelled = false;
+
+    map.fitBounds(targetBounds, {
+      padding: selectedBounds ? [48, 48] : [58, 58],
+      maxZoom: selectedBounds ? 15 : JAEN_FIT_MAX_ZOOM,
+    });
+
+    const timer = setTimeout(() => {
+      if (!cancelled && map?._container) {
+        map.invalidateSize();
+      }
+    }, 150);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [selectedBounds, fallbackBounds, map, publicMode]);
 
   return null;
 }
@@ -452,9 +551,7 @@ function MapUpdater({ position, zoom, allowedBounds, publicMode = false }) {
 
     const target = L.latLng(position[0], position[1]);
 
-    if (publicMode) {
-      map.setView(position, zoom);
-    } else if (!allowedBounds || allowedBounds.contains(target)) {
+    if (!allowedBounds || allowedBounds.contains(target)) {
       map.setView(position, zoom);
     }
 
@@ -493,6 +590,20 @@ function MapUpdater({ position, zoom, allowedBounds, publicMode = false }) {
       window.removeEventListener("resize", handleResize);
     };
   }, [map]);
+
+  return null;
+}
+
+function MapZoomTracker({ onZoomChange }) {
+  const map = useMapEvents({
+    zoomend() {
+      onZoomChange?.(map.getZoom());
+    },
+  });
+
+  useEffect(() => {
+    onZoomChange?.(map.getZoom());
+  }, [map, onZoomChange]);
 
   return null;
 }
@@ -651,6 +762,7 @@ function FlyToOnClickMarker({
   onSelectLocation,
   onSelectPlace,
   allowedBounds,
+  markerLabelsVisible = true,
   publicMode = false,
 }) {
   const map = useMap();
@@ -677,15 +789,28 @@ function FlyToOnClickMarker({
         click: handleMarkerClick,
       }}
     >
-      <Tooltip
-        direction="top"
-        offset={[0, -28]}
-        opacity={1}
-        permanent
-        className="evac-marker-label"
-      >
-        <div className="evac-marker-label__text">{place.name}</div>
-      </Tooltip>
+      {markerLabelsVisible ? (
+        <Tooltip
+          key="marker-label-permanent"
+          direction="top"
+          offset={[0, -24]}
+          opacity={1}
+          permanent
+          className="evac-marker-label"
+        >
+          <div className="evac-marker-label__text">{place.name}</div>
+        </Tooltip>
+      ) : (
+        <Tooltip
+          key="marker-label-hover"
+          direction="top"
+          offset={[0, -24]}
+          opacity={1}
+          className="evac-marker-label"
+        >
+          <div className="evac-marker-label__text">{place.name}</div>
+        </Tooltip>
+      )}
 
       {publicMode ? renderPublicPopup(place) : renderOperationalPopup(place)}
     </Marker>
@@ -707,6 +832,12 @@ const Map = ({
   routeCoords = [],
   pickMode = false,
   publicMode = false,
+  markerLabelsVisible = true,
+  hazardLayers = null,
+  showHazardOverlay = false,
+  selectedBarangayName = "",
+  selectedBarangayNames = [],
+  onSelectBarangay,
 }) => {
   const jaenBounds = useMemo(() => {
     if (!jaenGeoJSON) return null;
@@ -729,25 +860,9 @@ const Map = ({
       ]
     );
   }, [jaenBounds]);
+  const basemapTileProps = useMemo(() => getBasemapTileLayerProps(), []);
 
-  const relaxedPublicBounds = useMemo(() => {
-    if (!jaenBounds) return null;
-
-    return L.latLngBounds(
-      [
-        [
-          jaenBounds.getSouthWest().lat - 0.08,
-          jaenBounds.getSouthWest().lng - 0.08,
-        ],
-        [
-          jaenBounds.getNorthEast().lat + 0.08,
-          jaenBounds.getNorthEast().lng + 0.08,
-        ],
-      ]
-    );
-  }, [jaenBounds]);
-
-  const effectiveBounds = publicMode ? relaxedPublicBounds : allowedBounds;
+  const effectiveBounds = allowedBounds;
 
   const maskGeoJSON = useMemo(() => {
     return buildInverseMaskGeoJSON(jaenGeoJSON);
@@ -767,9 +882,20 @@ const Map = ({
   }, [jaenBounds]);
 
   const [position, setPosition] = useState(initialCenter);
-  const [zoom, setZoom] = useState(publicMode ? 12 : 13);
+  const [zoom, setZoom] = useState(JAEN_MIN_ZOOM);
+  const [currentZoom, setCurrentZoom] = useState(publicMode ? JAEN_MIN_ZOOM : JAEN_INITIAL_ZOOM);
   const [placeName, setPlaceName] = useState("Jaen, Nueva Ecija");
   const [hoveredBarangayKey, setHoveredBarangayKey] = useState("");
+  const selectedBarangayKeySet = useMemo(() => {
+    const names =
+      Array.isArray(selectedBarangayNames) && selectedBarangayNames.length
+        ? selectedBarangayNames
+        : selectedBarangayName && safeLower(selectedBarangayName) !== "all"
+        ? [selectedBarangayName]
+        : [];
+
+    return new Set(names.map((name) => safeLower(name)).filter(Boolean));
+  }, [selectedBarangayName, selectedBarangayNames]);
   const renderedBarangayBounds = useMemo(() => {
     return [...barangayBounds].sort((a, b) => {
       const aLabel = getBarangayBoundsLabel(a);
@@ -788,22 +914,70 @@ const Map = ({
     });
   }, [barangayBounds, matchedBarangayBounds]);
 
+  const selectedBarangayBounds = useMemo(() => {
+    if (!selectedBarangayName || safeLower(selectedBarangayName) === "all") {
+      return null;
+    }
+
+    const matchedBarangay = renderedBarangayBounds.find((entry, index) => {
+      return (
+        safeLower(getBarangayBoundsLabel(entry, index)) ===
+        safeLower(selectedBarangayName)
+      );
+    });
+
+    return getBarangayGeoBounds(matchedBarangay);
+  }, [renderedBarangayBounds, selectedBarangayName]);
+
+  const visibleBarangayBounds = useMemo(() => {
+    if (!publicMode || selectedBarangayKeySet.size === 0) {
+      return renderedBarangayBounds;
+    }
+
+    return renderedBarangayBounds.filter((entry, index) =>
+      selectedBarangayKeySet.has(safeLower(getBarangayBoundsLabel(entry, index)))
+    );
+  }, [publicMode, renderedBarangayBounds, selectedBarangayKeySet]);
+
+  const visiblePlaces = useMemo(() => {
+    if (!publicMode || selectedBarangayKeySet.size === 0) {
+      return places;
+    }
+
+    return places.filter((place) =>
+      selectedBarangayKeySet.has(safeLower(place?.barangayName || place?.barangay))
+    );
+  }, [places, publicMode, selectedBarangayKeySet]);
+
+  const handleBarangayBoundaryDoubleClick = useCallback(
+    (event, label) => {
+      if (event?.originalEvent) {
+        L.DomEvent.stop(event.originalEvent);
+      }
+      onSelectBarangay?.(label);
+    },
+    [onSelectBarangay]
+  );
+
   useEffect(() => {
     setPosition(initialCenter);
   }, [initialCenter]);
 
   useEffect(() => {
-    setZoom(publicMode ? 12 : 13);
+    setZoom(JAEN_MIN_ZOOM);
   }, [publicMode]);
 
   return (
     <MapContainer
       center={initialCenter}
-      zoom={publicMode ? 12 : 14}
-      minZoom={publicMode ? 11 : 13}
+      zoom={publicMode ? JAEN_MIN_ZOOM : JAEN_INITIAL_ZOOM}
+      minZoom={JAEN_MIN_ZOOM}
       maxZoom={18}
+      zoomSnap={0.25}
+      zoomDelta={0.5}
       maxBounds={effectiveBounds || jaenBounds || undefined}
-      maxBoundsViscosity={publicMode ? 0.35 : 1.0}
+      maxBoundsViscosity={publicMode ? 0.65 : 1.0}
+      doubleClickZoom={false}
       style={{ height: "100%", width: "100%" }}
       whenCreated={(map) => {
         const timer = setTimeout(() => {
@@ -815,8 +989,18 @@ const Map = ({
         return () => clearTimeout(timer);
       }}
     >
-      <FitToJaenBounds bounds={jaenBounds} publicMode={publicMode} />
+      <FitToJaenBounds
+        bounds={jaenBounds}
+        maxBounds={effectiveBounds || jaenBounds}
+        publicMode={publicMode}
+      />
+      <FitToSelectedBarangay
+        selectedBounds={publicMode ? null : selectedBarangayBounds}
+        fallbackBounds={jaenBounds}
+        publicMode={publicMode}
+      />
       <MapBusBridge allowedBounds={effectiveBounds} publicMode={publicMode} />
+      <MapZoomTracker onZoomChange={setCurrentZoom} />
       <MapUpdater
         position={position}
         zoom={zoom}
@@ -834,12 +1018,21 @@ const Map = ({
         pickBoundaryGeoJSON={pickBoundaryGeoJSON}
       />
 
-      <TileLayer
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        attribution="© OpenStreetMap contributors"
-      />
+      <TileLayer {...basemapTileProps} />
 
       <GeoJSON data={maskGeoJSON} style={maskStyle} />
+      {showHazardOverlay && hazardLayers?.safe ? (
+        <GeoJSON data={hazardLayers.safe} style={hazardLayerStyles.safe} />
+      ) : null}
+      {showHazardOverlay && hazardLayers?.medium ? (
+        <GeoJSON data={hazardLayers.medium} style={hazardLayerStyles.medium} />
+      ) : null}
+      {showHazardOverlay && hazardLayers?.susceptible ? (
+        <GeoJSON
+          data={hazardLayers.susceptible}
+          style={hazardLayerStyles.susceptible}
+        />
+      ) : null}
       <GeoJSON data={jaenGeoJSON} style={jaenStyle} />
 
       {pickMode && (
@@ -848,7 +1041,7 @@ const Map = ({
         </Marker>
       )}
 
-      {places.map((place) => {
+      {visiblePlaces.map((place) => {
         if (place?.latitude === undefined || place?.longitude === undefined) {
           return null;
         }
@@ -861,12 +1054,13 @@ const Map = ({
             onSelectLocation={onSelectLocation}
             onSelectPlace={onSelectPlace}
             allowedBounds={effectiveBounds}
+            markerLabelsVisible={markerLabelsVisible}
             publicMode={publicMode}
           />
         );
       })}
 
-      {renderedBarangayBounds.map((b, index) => {
+      {visibleBarangayBounds.map((b, index) => {
         const geoData = getBarangayBoundsData(b);
         const label = getBarangayBoundsLabel(b, index);
         const isOwnedBarangay =
@@ -889,12 +1083,18 @@ const Map = ({
           .filter((polygon) => Array.isArray(polygon?.[0]) && polygon[0].length >= 3);
 
         const barangayKey = String(b?._id || label || index);
+        const isHovered = hoveredBarangayKey === barangayKey;
+        const showBarangayLabel =
+          isHovered ||
+          currentZoom >= getBarangayLabelZoomThreshold(publicMode) ||
+          (publicMode && selectedBarangayKeySet.has(safeLower(label)));
         const style = buildBarangayPolygonStyle({
           colorKey: label,
           index,
           isBarangayRole,
           isOwnedBarangay,
-          hovered: hoveredBarangayKey === barangayKey,
+          hovered: isHovered,
+          showHazardOverlay,
         });
 
         return polygonSets.map((polygon, polygonIndex) => (
@@ -903,20 +1103,31 @@ const Map = ({
             positions={polygon}
             pathOptions={style}
             eventHandlers={{
+              dblclick: (event) => handleBarangayBoundaryDoubleClick(event, label),
               mouseover: () => setHoveredBarangayKey(barangayKey),
               mouseout: () => setHoveredBarangayKey((current) =>
                 current === barangayKey ? "" : current
               ),
             }}
           >
-            <Tooltip
-              sticky
-              direction="top"
-              className="barangay-bound-label"
-              opacity={0.96}
-            >
-              {label}
-            </Tooltip>
+            {showBarangayLabel ? (
+              <Tooltip
+                permanent
+                direction="center"
+                interactive={false}
+                className={`barangay-bound-label ${
+                  showHazardOverlay ? "is-hazard-on" : ""
+                }`.trim()}
+                opacity={0.98}
+              >
+                <span
+                  className="barangay-bound-label__text"
+                  style={{ fontSize: `${getBarangayLabelFontSize(currentZoom)}px` }}
+                >
+                  {label}
+                </span>
+              </Tooltip>
+            ) : null}
           </Polygon>
         ));
       })}

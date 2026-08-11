@@ -4,12 +4,6 @@ const controller = require("../controllers/reliefDistributionController");
 const { requireLogin } = require("../middleware/adminMiddleware");
 
 router.get(
-  "/template/download",
-  requireLogin,
-  controller.downloadDistributionTemplate
-);
-
-router.get(
   "/:reliefRequestId/export-accomplished-report-pdf",
   requireLogin,
   controller.exportAccomplishedReportPdf

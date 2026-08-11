@@ -8,8 +8,9 @@
 }
 
 .acc-shell {
-  max-width: 1400px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -160,7 +161,7 @@
   border: 1px solid #dce9de;
   padding: 18px;
   box-shadow: 0 16px 36px rgba(20, 83, 45, 0.08);
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* TAB ANIMATION */
@@ -455,6 +456,11 @@
   .acc-content {
     padding: 16px;
     border-radius: 22px;
+  }
+
+  .acc-content {
+    overflow: visible;
+    padding-bottom: 20px;
   }
 
   .acc-stats-row {

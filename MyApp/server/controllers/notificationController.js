@@ -1,4 +1,7 @@
 const Notification = require("../models/Notification");
+const {
+  syncRiskNotificationsForSession,
+} = require("../utils/riskNotificationScanner");
 
 const normalizeString = (value) => {
   if (value === undefined || value === null) return "";
@@ -254,6 +257,8 @@ const getNotifications = async (req, res) => {
     const statusFilter = normalizeString(req.query.status).toLowerCase();
     const allowedModules = getAllowedModulesForRole(session.role);
 
+    await syncRiskNotificationsForSession(session, moduleFilter);
+
     const finalQuery = {
       ...query,
       ...getReadQuery(statusFilter, session.userId),
@@ -312,6 +317,8 @@ const getUnreadNotificationCount = async (req, res) => {
     if (!query) {
       return res.status(200).json({ unreadCount: 0 });
     }
+
+    await syncRiskNotificationsForSession(session, normalizeString(req.query.module));
 
     const unreadQuery = {
       ...query,

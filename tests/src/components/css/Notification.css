@@ -1,5 +1,6 @@
 .notification-page {
   min-height: 100%;
+  width: 100%;
   padding: 22px;
   background:
     radial-gradient(circle at top right, rgba(22, 101, 52, 0.08), transparent 28%),
@@ -8,8 +9,9 @@
 }
 
 .notification-shell {
-  max-width: 980px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
 }
 
 .notification-header-card {

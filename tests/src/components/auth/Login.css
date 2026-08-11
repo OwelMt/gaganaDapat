@@ -291,6 +291,18 @@ body,
   color: #7b9785;
 }
 
+.form-card input[type='password']::-ms-reveal,
+.form-card input[type='password']::-ms-clear {
+  display: none;
+}
+
+.form-card input[type='password']::-webkit-credentials-auto-fill-button,
+.form-card input[type='password']::-webkit-caps-lock-indicator {
+  visibility: hidden;
+  display: none !important;
+  pointer-events: none;
+}
+
 .form-card input:focus,
 .form-card input:focus-visible,
 .password-toggle:focus,

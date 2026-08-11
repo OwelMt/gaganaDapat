@@ -30,8 +30,9 @@
 }
 
 .rtk-shell {
-  max-width: 1360px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 22px;

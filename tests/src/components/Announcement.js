@@ -822,6 +822,7 @@ export default function Announcement() {
                       className="gl-input"
                       value={title}
                       onChange={(e) => setTitle(sanitizeContentTitleInput(e.target.value))}
+                      onBlur={(e) => setTitle(sanitizeContentTitle(e.target.value))}
                       placeholder="Enter announcement title"
                       maxLength={MAX_CONTENT_TITLE_LENGTH}
                     />
@@ -834,6 +835,9 @@ export default function Announcement() {
                       value={description}
                       onChange={(e) =>
                         setDescription(sanitizeContentDescriptionInput(e.target.value))
+                      }
+                      onBlur={(e) =>
+                        setDescription(sanitizeContentDescription(e.target.value))
                       }
                       placeholder="Write announcement details"
                       maxLength={MAX_CONTENT_DESCRIPTION_LENGTH}
@@ -1210,6 +1214,7 @@ export default function Announcement() {
                         onChange={(e) =>
                           setEditTitle(sanitizeContentTitleInput(e.target.value))
                         }
+                        onBlur={(e) => setEditTitle(sanitizeContentTitle(e.target.value))}
                         placeholder="Announcement title"
                         maxLength={MAX_CONTENT_TITLE_LENGTH}
                       />
@@ -1221,7 +1226,12 @@ export default function Announcement() {
                         className="gl-modal-textarea"
                         value={editDescription}
                         onChange={(e) =>
-                          setEditDescription(sanitizeContentDescriptionInput(e.target.value))
+                          setEditDescription(
+                            sanitizeContentDescriptionInput(e.target.value)
+                          )
+                        }
+                        onBlur={(e) =>
+                          setEditDescription(sanitizeContentDescription(e.target.value))
                         }
                         placeholder="Announcement description"
                         maxLength={MAX_CONTENT_DESCRIPTION_LENGTH}

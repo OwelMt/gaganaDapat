@@ -40,8 +40,10 @@ import {
 import * as dafacWorkbookUtils from './dafacWorkbookUtils';
 import DafacDistributionCard from './DafacDistributionCard';
 import AccomplishedReportPanel from './AccomplishedReportPanel';
+import { buildProofFileHref, isImageProofFile } from '../Donations/proofFileUtils';
 import '../css/ReliefRequestForm.css';
 import { API_BASE_URL } from "../../config/api";
+import { getTodayInputDate } from "../Donations/inventoryExpiryUtils";
 
 const BASE_URL = API_BASE_URL;
 const dafacDistributionUtils = require('./dafacDistributionUtils');
@@ -123,6 +125,12 @@ const formatDateTime = (value) => {
   } catch {
     return '-';
   }
+};
+
+const clampToTodayOrFutureDate = (value) => {
+  const today = getTodayInputDate();
+  if (!value) return today;
+  return value < today ? today : value;
 };
 
 const createDistributionFamilyMember = (member = {}) => ({
@@ -368,11 +376,12 @@ export default function ReliefRequestForm() {
     createRequestedAppliance()
   ]);
   const [requestDate, setRequestDate] = useState(
-    new Date().toISOString().slice(0, 10)
+    getTodayInputDate()
   );
   const [remarks, setRemarks] = useState('');
   const [rows, setRows] = useState([]);
   const [bootstrapRows, setBootstrapRows] = useState([]);
+  const minAllowedDate = useMemo(() => getTodayInputDate(), []);
 
   const [journey, setJourney] = useState({
     request: null,
@@ -1040,6 +1049,12 @@ export default function ReliefRequestForm() {
       errors.disaster = 'Disaster or incident is required.';
     }
 
+    if (!requestDate) {
+      errors.requestDate = 'Request date is required.';
+    } else if (requestDate < minAllowedDate) {
+      errors.requestDate = 'Request date cannot be in the past.';
+    }
+
     if (includesMonetary && requestedMonetaryValue <= 0) {
       errors.requestedMonetaryAmount = 'Enter a valid monetary amount.';
     }
@@ -1077,6 +1092,8 @@ export default function ReliefRequestForm() {
   }, [
     supportTypes,
     disaster,
+    requestDate,
+    minAllowedDate,
     includesMonetary,
     requestedMonetaryValue,
     remarks,
@@ -1741,6 +1758,21 @@ export default function ReliefRequestForm() {
     );
   }, [receivedReleaseRecords, releaseRecords, journey?.stage]);
 
+  const releaseProofItems = useMemo(() => {
+    const proofSource = releaseRecords.length > 0 ? releaseRecords : [];
+
+    return proofSource.flatMap((release, releaseIndex) =>
+      (Array.isArray(release?.proofFiles) ? release.proofFiles : [])
+        .filter(Boolean)
+        .map((proofPath, proofIndex) => ({
+          key: `release-${release?._id || releaseIndex}-${proofIndex}`,
+          url: buildProofFileHref(proofPath, BASE_URL),
+          sourceValue: proofPath,
+          label: `Release Proof ${proofIndex + 1}`
+        }))
+    );
+  }, [releaseRecords]);
+
   useEffect(() => {
     if (hasReceiptCompletionSignal || !latestRequest?._id) {
       setReceiptProofFiles([]);
@@ -2041,7 +2073,8 @@ export default function ReliefRequestForm() {
         cursor = cursor[keys[index]];
       }
 
-      cursor[keys[keys.length - 1]] = value;
+      cursor[keys[keys.length - 1]] =
+        path === 'distributionDate' ? clampToTodayOrFutureDate(value) : value;
       return next;
     });
   };
@@ -2294,6 +2327,10 @@ export default function ReliefRequestForm() {
 
     if (!payload.distributionDate) {
       throw new Error('Distribution date is required.');
+    }
+
+    if (payload.distributionDate < minAllowedDate) {
+      throw new Error('Distribution date cannot be in the past.');
     }
 
     if (dafacAidVisibility.showsFoodPacks && payload.distribution.foodPacksReceived <= 0) {
@@ -2809,10 +2846,6 @@ export default function ReliefRequestForm() {
       `${BASE_URL}/api/relief-distributions/${latestRequest._id}/export-accomplished-report-pdf`,
       '_blank'
     );
-  };
-
-  const handleDownloadDistributionTemplate = () => {
-    window.open(`${BASE_URL}/api/relief-distributions/template/download`, '_blank');
   };
 
   const handleSaveDistributionRecord = async (editorCard) => {
@@ -3443,8 +3476,14 @@ export default function ReliefRequestForm() {
                                 id="requestDate"
                                 type="date"
                                 value={requestDate}
-                                onChange={(e) => setRequestDate(e.target.value)}
+                                min={minAllowedDate}
+                                onChange={(e) =>
+                                  setRequestDate(clampToTodayOrFutureDate(e.target.value))
+                                }
                               />
+                              {inlineErrors.requestDate ? (
+                                <small className="rrf-inline-error">{inlineErrors.requestDate}</small>
+                              ) : null}
                             </div>
 
                             <div className="rrf-field rrf-support-type-field">
@@ -4107,6 +4146,54 @@ export default function ReliefRequestForm() {
                         </div>
 
                         <div className="rrf-unified-items-panel">
+                          {!isReceiptConfirmed ? (
+                            <div className="rrf-receipt-proof-panel">
+                              <div className="rrf-subsection-head">
+                                <div>
+                                  <span className="rrf-subsection-kicker">Release Proof</span>
+                                  <h3>Uploaded by DRRMO or Accountant</h3>
+                                </div>
+                              </div>
+
+                              <p className="rrf-receipt-proof-note">
+                                Barangay can review the release evidence here before confirming receipt.
+                              </p>
+
+                              {releaseProofItems.length > 0 ? (
+                                <div className="rrf-proof-grid">
+                                  {releaseProofItems.map((proof) => (
+                                    <div key={proof.key} className="rrf-proof-card">
+                                      {isImageProofFile(proof.sourceValue || proof.url) ? (
+                                        <img
+                                          src={proof.url}
+                                          alt={proof.label}
+                                        />
+                                      ) : (
+                                        <a
+                                          href={proof.url || '#'}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="rrf-proof-file-link"
+                                          title={proof.label}
+                                        >
+                                          <FaFilePdf />
+                                          <span>{proof.label}</span>
+                                        </a>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="rrf-received-empty compact">
+                                  <div>
+                                    <h4>No release proof uploaded yet</h4>
+                                    <p>The release record exists, but no proof file has been attached yet.</p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
+
                           <div className="rrf-receipt-proof-panel">
                             <div className="rrf-subsection-head">
                               <div>
@@ -4258,13 +4345,6 @@ export default function ReliefRequestForm() {
                               <button
                                 type="button"
                                 className="rrf-btn rrf-btn-secondary rrf-btn-small"
-                                onClick={handleDownloadDistributionTemplate}
-                              >
-                                Download Template
-                              </button>
-                              <button
-                                type="button"
-                                className="rrf-btn rrf-btn-secondary rrf-btn-small"
                                 onClick={handleChooseDistributionFile}
                                 disabled={distributionImporting || distributionSubmitting}
                               >
@@ -4373,6 +4453,7 @@ export default function ReliefRequestForm() {
                                         <input
                                           type="date"
                                           value={editorCard.draft.distributionDate}
+                                          min={minAllowedDate}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,

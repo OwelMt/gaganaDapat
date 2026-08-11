@@ -1055,12 +1055,6 @@ export default function Overview() {
               </span>
             </h3>
 
-            <p className="overview-command-copy">
-              This overview combines inventory, goods donations, monetary donations, relief
-              requests, incident reports, and evacuation readiness without repeating each detailed
-              analytics tab.
-            </p>
-
             <div className="overview-sync-line">
               <FaClockRotateLeft />
               {refreshing ? "Refreshing overview..." : `Last updated: ${formatDateTime(lastUpdated)}`}

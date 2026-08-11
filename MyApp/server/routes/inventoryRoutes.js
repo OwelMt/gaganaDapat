@@ -29,6 +29,27 @@ router.get(
   inventoryController.exportInventoryPdf
 );
 
+router.get(
+  "/proof-preview",
+  requireLogin,
+  requireAdminOrDrrmo,
+  inventoryController.previewInventoryProof
+);
+
+router.get(
+  "/proof-file/:id",
+  requireLogin,
+  requireAdminOrDrrmo,
+  inventoryController.streamInventoryProofFile
+);
+
+router.get(
+  "/proof-file/:id/:filename",
+  requireLogin,
+  requireAdminOrDrrmo,
+  inventoryController.streamInventoryProofFile
+);
+
 // =========================
 // INVENTORY CRUD
 // =========================

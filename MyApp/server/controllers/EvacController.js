@@ -1951,6 +1951,47 @@ const deletePlace = async (req, res) => {
   }
 };
 
+const permanentDeletePlace = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const existing = await Place.findById(id);
+    if (!existing) {
+      return res.status(404).json({ message: "Place not found" });
+    }
+
+    if (!isBarangayOwnerOfPlace(req, existing)) {
+      return res.status(403).json({
+        message: "You are not allowed to delete this evacuation area",
+      });
+    }
+
+    if (!existing.isArchived) {
+      return res.status(400).json({
+        message: "Only archived evacuation areas can be permanently deleted",
+      });
+    }
+
+    const placeName = existing.name;
+
+    await existing.deleteOne();
+
+    await EHistory.create({
+      action: "DELETE",
+      placeName,
+      details: "Archived place permanently deleted",
+      ...buildHistoryMeta(req, existing),
+    });
+
+    return res.json({
+      message: "Archived evacuation area deleted successfully",
+    });
+  } catch (err) {
+    console.error("Permanent Delete Place Error:", err);
+    return res.status(500).json({ message: "Permanent delete failed" });
+  }
+};
+
 // -----------------------------
 // ANALYTICS SUMMARY
 // -----------------------------
@@ -2175,6 +2216,7 @@ module.exports = {
   updateOccupancy,
   updateLandingVisibility,
   deletePlace,
+  permanentDeletePlace,
   unarchivePlace,
   getAnalyticsSummary,
 };

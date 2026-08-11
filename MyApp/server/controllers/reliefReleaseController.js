@@ -27,12 +27,10 @@ const {
   normalizeSupportTypes,
   deriveLegacyRequestType,
   getSupportTypesFromRequest,
+  getRequestedMonetaryAmountFromRequest,
   hasSupportType,
 } = require("../utils/reliefSupportTypes");
-const {
-  canManageReliefRequest,
-  normalizeRole,
-} = require("../utils/roleAccessUtils");
+const { normalizeRole } = require("../utils/roleAccessUtils");
 
 const RELIEF_PROOF_UPLOAD_DIR = path.join(__dirname, "..", "uploads", "proofs");
 
@@ -53,6 +51,23 @@ const toNumber = (value) => {
   if (value === undefined || value === null || value === "") return 0;
   const parsed = Number(value);
   return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const getInventoryExpiryStatus = (expirationDate) => {
+  if (!expirationDate) return "no_expiry";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const expiry = new Date(expirationDate);
+  expiry.setHours(0, 0, 0, 0);
+
+  const diffMs = expiry.getTime() - today.getTime();
+  const daysUntilExpiration = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  if (daysUntilExpiration < 0) return "expired";
+  if (daysUntilExpiration <= 30) return "soon";
+  return "ok";
 };
 
 const parseIncomingReleaseBody = (body = {}) => {
@@ -161,7 +176,7 @@ const getRequestDemandProfile = (request = {}) => {
       ? toNumber(totals.requestedFoodPacks)
       : 0,
     requestedMonetaryAmount: requiresMonetaryFulfillment({ supportTypes, requestType })
-      ? toNumber(totals.requestedMonetaryAmount)
+      ? getRequestedMonetaryAmountFromRequest(request)
       : 0,
     requestedAppliances: Array.isArray(request.requestedAppliances)
       ? request.requestedAppliances
@@ -182,11 +197,36 @@ const getRequestDemandProfile = (request = {}) => {
   };
 };
 
-const canRoleManageReleaseRequest = (role = "", request = {}) =>
-  canManageReliefRequest(role, request);
+const canRoleManageReleaseRequest = (role = "", request = {}) => {
+  const normalizedRole = normalizeRole(role);
+  const supportTypes = getSupportTypesFromRequest(request);
+
+  if (normalizedRole === "admin" || normalizedRole === "accountant") {
+    return hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY);
+  }
+
+  if (normalizedRole === "drrmo") {
+    return (
+      hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS) ||
+      hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE)
+    );
+  }
+
+  return false;
+};
+
+const isMonetaryOnlyReliefRequest = (request = {}) => {
+  const supportTypes = getSupportTypesFromRequest(request);
+
+  return (
+    hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY) &&
+    !hasSupportType(supportTypes, SUPPORT_TYPE_FOODPACKS) &&
+    !hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE)
+  );
+};
 
 const getRequestOwnerRole = (request = {}) =>
-  canManageReliefRequest("admin", request) ? "admin" : "drrmo";
+  isMonetaryOnlyReliefRequest(request) ? "admin" : "drrmo";
 
 const getRequestOwnerLabel = (request = {}) =>
   getRequestOwnerRole(request) === "admin" ? "Admin" : "DRRMO";
@@ -360,7 +400,10 @@ const allocateInventoryForReleaseItem = async (item, session) => {
 
   const candidates = sortInventoryDocsForAllocation(
     Array.from(uniqueCandidates.values()).filter(
-      (doc) => Number(doc.quantity || 0) > 0
+      (doc) =>
+        Number(doc.quantity || 0) > 0 &&
+        (normalizedSignature.itemType === "appliance" ||
+          getInventoryExpiryStatus(doc.expirationDate) !== "expired")
     )
   );
 
@@ -470,25 +513,27 @@ const buildTemplateReleaseItems = async (
   const generatedItems = [];
 
   for (const item of template.items || []) {
-    let inventoryDoc = await InventoryItem.findOne({
-      _id: item.inventoryItemId,
-      isArchive: false,
-      type: "goods",
-    }).session(session);
-
-    if (!inventoryDoc) {
-      inventoryDoc = await InventoryItem.findOne({
+    const matchingInventoryDocs = sortInventoryDocsForAllocation(
+      await InventoryItem.find({
         isArchive: false,
         type: "goods",
         name: item.itemName,
         category: item.category,
         unit: item.unit,
-      }).session(session);
-    }
+      }).session(session)
+    );
+    const inventoryDoc =
+      matchingInventoryDocs.find((doc) => Number(doc.quantity || 0) > 0) || null;
 
     if (!inventoryDoc) {
       return {
-        error: `Inventory item not found for template item "${item.itemName}".`,
+        error: `Inventory item not available for template item "${item.itemName}".`,
+      };
+    }
+
+    if (getInventoryExpiryStatus(inventoryDoc.expirationDate) === "expired") {
+      return {
+        error: `Template item "${item.itemName}" is expired and must be updated before release.`,
       };
     }
 
@@ -790,9 +835,7 @@ const getApprovedRequestsForRelease = async (req, res) => {
         totals: {
           ...(request.totals?.toObject?.() || request.totals || {}),
           requestedFoodPacks: toNumber(request?.totals?.requestedFoodPacks),
-          requestedMonetaryAmount: toNumber(
-            request?.totals?.requestedMonetaryAmount
-          ),
+          requestedMonetaryAmount: getRequestedMonetaryAmountFromRequest(request),
           requestedApplianceQuantity:
             Array.isArray(request?.requestedAppliances) &&
             request.requestedAppliances.length > 0
@@ -886,8 +929,8 @@ const createReliefRelease = async (req, res) => {
       await session.abortTransaction();
       return res.status(403).json({
         message:
-          sessionRole === "admin"
-            ? "Admin can only release standalone monetary requests."
+          sessionRole === "admin" || sessionRole === "accountant"
+            ? `${sessionRole === "accountant" ? "Accountant" : "Admin"} can only release requests with monetary assistance.`
             : "DRRMO can only release food pack or appliance requests.",
       });
     }
@@ -963,10 +1006,13 @@ const createReliefRelease = async (req, res) => {
       });
     }
 
-    if (sessionRole === "admin" && (isReleasingFoodPacks || isReleasingAppliances)) {
+    if (
+      (sessionRole === "admin" || sessionRole === "accountant") &&
+      (isReleasingFoodPacks || isReleasingAppliances)
+    ) {
       await session.abortTransaction();
       return res.status(400).json({
-        message: "Admin release planning only supports monetary assistance.",
+        message: `${sessionRole === "accountant" ? "Accountant" : "Admin"} release planning only supports monetary assistance.`,
       });
     }
 

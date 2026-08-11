@@ -1,8 +1,13 @@
 import {
+  CONTENT_PRIORITY_OPTIONS,
+  CONTENT_STATUS_OPTIONS,
   MAX_CONTENT_DESCRIPTION_LENGTH,
   MAX_CONTENT_TITLE_LENGTH,
+  sanitizeContentChoice,
   sanitizeContentDescription,
+  sanitizeContentDescriptionInput,
   sanitizeContentTitle,
+  sanitizeContentTitleInput,
   validateContentFields,
 } from "./contentTextUtils";
 
@@ -18,16 +23,34 @@ describe("contentTextUtils", () => {
       sanitizeContentDescription(
         "  Stay indoors!!!\n\nBring water, food, and IDs. ###  "
       )
-    ).toBe("Stay indoors!!!\nBring water, food, and IDs.");
+    ).toBe("Stay indoors!!\nBring water, food, and IDs.");
   });
 
   test("caps title and description length", () => {
-    expect(sanitizeContentTitle("a".repeat(MAX_CONTENT_TITLE_LENGTH + 20))).toHaveLength(
-      MAX_CONTENT_TITLE_LENGTH
-    );
     expect(
-      sanitizeContentDescription("b".repeat(MAX_CONTENT_DESCRIPTION_LENGTH + 30))
+      sanitizeContentTitle("storm update ".repeat(20))
+    ).toHaveLength(MAX_CONTENT_TITLE_LENGTH);
+    expect(
+      sanitizeContentDescription("evacuation support details ".repeat(40))
     ).toHaveLength(MAX_CONTENT_DESCRIPTION_LENGTH);
+  });
+
+  test("normalizes repeated punctuation and invalid choice values", () => {
+    expect(sanitizeContentTitle("Flood alert!!!!!!")).toBe("Flood alert!!");
+    expect(
+      sanitizeContentChoice(" published ", CONTENT_STATUS_OPTIONS, "draft")
+    ).toBe("published");
+    expect(
+      sanitizeContentChoice("super urgent", CONTENT_PRIORITY_OPTIONS, "medium")
+    ).toBe("medium");
+  });
+
+  test("keeps in-progress spaces while typing", () => {
+    expect(sanitizeContentTitleInput("Flood ")).toBe("Flood ");
+    expect(sanitizeContentTitleInput("Flood advisory ")).toBe("Flood advisory ");
+    expect(sanitizeContentDescriptionInput("Bring food and water ")).toBe(
+      "Bring food and water "
+    );
   });
 
   test("rejects values without enough readable letters", () => {

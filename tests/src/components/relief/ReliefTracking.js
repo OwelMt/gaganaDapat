@@ -313,10 +313,6 @@ export default function ReliefTracking() {
             <div>
               <span className="rtk-kicker">Barangay Tracking Module</span>
               <h1 className="rtk-title">Relief Request Tracking</h1>
-              <p className="rtk-subtitle">
-                Monitor the status of your submitted relief requests, review request
-                details, and manage requests that are still pending.
-              </p>
             </div>
 
             <div className="rtk-header-actions">

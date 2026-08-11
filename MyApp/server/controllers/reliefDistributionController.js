@@ -14,7 +14,6 @@ const {
   formatPdfDateValue,
 } = require("../utils/pdfTheme");
 const {
-  buildDistributionTemplateWorkbookBuffer,
   parseDistributionWorkbookBuffer,
 } = require("../utils/reliefDistributionImport");
 const {
@@ -1154,34 +1153,6 @@ const confirmAccomplishedDistribution = async (req, res) => {
   }
 };
 
-const downloadDistributionTemplate = async (req, res) => {
-  try {
-    if (!req.session?.userId) {
-      return res.status(401).json({ message: "Not logged in" });
-    }
-
-    const role = normalizeStatus(req.session.role);
-    if (role !== "barangay") {
-      return res.status(403).json({ message: "Barangay access required" });
-    }
-
-    const workbookBuffer = buildDistributionTemplateWorkbookBuffer();
-
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    );
-    res.setHeader(
-      "Content-Disposition",
-      'attachment; filename="relief-distribution-template.xlsx"'
-    );
-
-    return res.send(workbookBuffer);
-  } catch (err) {
-    return handleControllerError(res, "Download Distribution Template Error", err);
-  }
-};
-
 const exportAccomplishedReportPdf = async (req, res) => {
   try {
     const context = await loadRequestContextForBarangayUser(req);
@@ -1308,6 +1279,5 @@ module.exports = {
   deleteDistributionRecord,
   importDistributionWorkbook,
   confirmAccomplishedDistribution,
-  downloadDistributionTemplate,
   exportAccomplishedReportPdf,
 };

@@ -5,6 +5,7 @@ const { requireLogin } = require("../middleware/adminMiddleware");
 const { uploadReleaseProofImages } = require("../middleware/upload");
 
 router.get("/bootstrap", requireLogin, controller.getReliefRequestBootstrap);
+router.get("/history", requireLogin, controller.getReliefRequestHistory);
 router.get("/journey/current", requireLogin, controller.getCurrentReliefJourney);
 
 router.post("/", requireLogin, controller.submitReliefRequest);

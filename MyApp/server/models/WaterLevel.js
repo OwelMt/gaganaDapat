@@ -1,16 +1,13 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
+
+const THIRTY_DAYS_IN_MS = 30 * 24 * 60 * 60 * 1000;
 
 const waterLevelSchema = new mongoose.Schema(
   {
-    camera_id: {
-      type: String,
-      default: "cam_1",
-      index: true,
-    },
-
     water_level: {
       type: Number,
       required: true,
+      min: 0,
     },
 
     warning_level: {
@@ -21,6 +18,7 @@ const waterLevelSchema = new mongoose.Schema(
 
     danger_level: {
       type: Number,
+      required: true,
       default: 10,
     },
 
@@ -28,22 +26,49 @@ const waterLevelSchema = new mongoose.Schema(
       type: String,
       enum: ["SAFE", "WARNING", "DANGER"],
       required: true,
-      index: true,
+    },
+
+    camera_id: {
+      type: String,
+      required: true,
+      default: "cam_1",
+      trim: true,
     },
 
     timestamp: {
       type: Date,
+      required: true,
       default: Date.now,
-      index: true,
+    },
+
+    received_at: {
+      type: Date,
+      default: Date.now,
+    },
+
+    expires_at: {
+      type: Date,
+      default: () => new Date(Date.now() + THIRTY_DAYS_IN_MS),
+      index: {
+        expireAfterSeconds: 0,
+      },
     },
   },
   {
-    versionKey: false,
     timestamps: true,
   }
 );
 
-waterLevelSchema.index({ camera_id: 1, timestamp: -1 });
-waterLevelSchema.index({ camera_id: 1, createdAt: -1 });
-module.exports = mongoose.model("WaterLevel", waterLevelSchema);
+// Fast latest-reading lookup
+waterLevelSchema.index({
+  camera_id: 1,
+  timestamp: -1,
+});
 
+// Auto-delete raw readings after expires_at
+waterLevelSchema.index(
+  { expires_at: 1 },
+  { expireAfterSeconds: 0 }
+);
+
+export default mongoose.model("WaterLevel", waterLevelSchema);

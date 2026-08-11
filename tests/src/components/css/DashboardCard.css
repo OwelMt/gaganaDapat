@@ -45,11 +45,10 @@
   text-align: left !important;
 }
 
-/* 🚫 Kill any old pseudo lines that created a second stroke */
+/* Keep optional leading icon support on ::before, but allow the shared
+   system-wide card accent on ::after from ThemeTokens.css. */
 .dashboard-card::before,
-.dashboard-card::after,
-.card-surface::before,
-.card-surface::after {
+.card-surface::before {
   content: none !important;
 }
 

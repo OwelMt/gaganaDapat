@@ -7,7 +7,6 @@ import {
   FaClipboardList,
   FaDonate,
   FaExclamationTriangle,
-  FaFilter,
   FaHospital,
   FaFilePdf,
   FaRedo,
@@ -45,6 +44,20 @@ const actorRoleLabels = {
   barangay: "Barangay",
   system: "System",
 };
+
+const fixedActorRoles = ["admin", "drrmo", "accountant", "barangay", "system"];
+const fixedModules = [
+  "relief",
+  "inventory",
+  "donation",
+  "announcement",
+  "incident",
+  "evacuation",
+  "guidelines",
+  "account",
+  "analytics",
+  "system",
+];
 
 function formatDateTime(value) {
   if (!value) return "Unknown time";
@@ -149,8 +162,23 @@ export default function AuditTrails() {
     }
   }, [navigate, role]);
 
+  const buildAuditQueryParams = (limit = "500") => {
+    const params = new URLSearchParams();
+    params.set("limit", limit);
+    if (selectedModule !== "all") params.set("module", selectedModule);
+    if (selectedActorRole !== "all") params.set("actorRole", selectedActorRole);
+    if (search.trim()) params.set("search", search.trim());
+    if (selectedDays !== "all") params.set("days", selectedDays);
+    return params;
+  };
+
   const exportAuditPdf = () => {
-    window.print();
+    const params = buildAuditQueryParams("500");
+    window.open(
+      `${BASE_URL}/api/audit/export-pdf?${params.toString()}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
   };
 
   const fetchAuditTrail = async ({ background = false } = {}) => {
@@ -162,12 +190,7 @@ export default function AuditTrails() {
       }
       setError("");
 
-      const params = new URLSearchParams();
-      params.set("limit", "250");
-      if (selectedModule !== "all") params.set("module", selectedModule);
-      if (selectedActorRole !== "all") params.set("actorRole", selectedActorRole);
-      if (search.trim()) params.set("search", search.trim());
-      if (selectedDays !== "all") params.set("days", selectedDays);
+      const params = buildAuditQueryParams("250");
 
       const res = await fetch(`${BASE_URL}/api/audit?${params.toString()}`, {
         method: "GET",
@@ -244,8 +267,17 @@ export default function AuditTrails() {
 
   const availableModules = useMemo(() => {
     const seen = new Set(["all"]);
+    const fixedModuleOptions = fixedModules.map((moduleValue) => {
+      seen.add(moduleValue);
+      return {
+        value: moduleValue,
+        label: moduleLabels[moduleValue],
+      };
+    });
+
     return [
       { value: "all", label: moduleLabels.all },
+      ...fixedModuleOptions,
       ...filters.modules.filter((moduleOption) => {
         const value = String(moduleOption?.value || "").toLowerCase();
         if (!value || seen.has(value)) return false;
@@ -257,8 +289,17 @@ export default function AuditTrails() {
 
   const availableActorRoles = useMemo(() => {
     const seen = new Set(["all"]);
+    const fixedRoles = fixedActorRoles.map((roleValue) => {
+      seen.add(roleValue);
+      return {
+        value: roleValue,
+        label: actorRoleLabels[roleValue],
+      };
+    });
+
     return [
       { value: "all", label: actorRoleLabels.all },
+      ...fixedRoles,
       ...filters.actorRoles.filter((roleOption) => {
         const value = String(roleOption?.value || "").toLowerCase();
         if (!value || seen.has(value)) return false;
@@ -282,10 +323,11 @@ export default function AuditTrails() {
                 <div>
                   <span className="audit-eyebrow">Admin Oversight</span>
                   <h1 className="audit-title">System Audit Trail</h1>
-                  <p className="audit-subtitle">
-                    Review cross-module activity by account, module, request, and time.
-                    {lastUpdated ? ` Last updated ${getTimeAgo(lastUpdated)}.` : ""}
-                  </p>
+                  {lastUpdated ? (
+                    <p className="audit-subtitle">
+                      Last updated {getTimeAgo(lastUpdated)}.
+                    </p>
+                  ) : null}
                 </div>
               </div>
 
@@ -323,11 +365,6 @@ export default function AuditTrails() {
           {error ? <div className="audit-error-row">{error}</div> : null}
 
           <div className="audit-filters">
-            <span className="audit-filter-label">
-              <FaFilter />
-              Filter
-            </span>
-
             <div className="audit-search-wrap">
               <FaSearch />
               <input
@@ -339,40 +376,49 @@ export default function AuditTrails() {
               />
             </div>
 
-            <select
-              className="audit-select"
-              value={selectedModule}
-              onChange={(event) => setSelectedModule(event.target.value)}
-            >
-              {availableModules.map((moduleOption) => (
-                <option key={moduleOption.value} value={moduleOption.value}>
-                  {moduleOption.label || moduleLabels[moduleOption.value] || moduleOption.value}
-                </option>
-              ))}
-            </select>
+            <label className="audit-filter-field">
+              <span>Module</span>
+              <select
+                className="audit-select"
+                value={selectedModule}
+                onChange={(event) => setSelectedModule(event.target.value)}
+              >
+                {availableModules.map((moduleOption) => (
+                  <option key={moduleOption.value} value={moduleOption.value}>
+                    {moduleOption.label || moduleLabels[moduleOption.value] || moduleOption.value}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-            <select
-              className="audit-select"
-              value={selectedActorRole}
-              onChange={(event) => setSelectedActorRole(event.target.value)}
-            >
-              {availableActorRoles.map((roleOption) => (
-                <option key={roleOption.value} value={roleOption.value}>
-                  {roleOption.label || actorRoleLabels[roleOption.value] || roleOption.value}
-                </option>
-              ))}
-            </select>
+            <label className="audit-filter-field">
+              <span>Role</span>
+              <select
+                className="audit-select"
+                value={selectedActorRole}
+                onChange={(event) => setSelectedActorRole(event.target.value)}
+              >
+                {availableActorRoles.map((roleOption) => (
+                  <option key={roleOption.value} value={roleOption.value}>
+                    {roleOption.label || actorRoleLabels[roleOption.value] || roleOption.value}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-            <select
-              className="audit-select"
-              value={selectedDays}
-              onChange={(event) => setSelectedDays(event.target.value)}
-            >
-              <option value="1">Today</option>
-              <option value="7">Last 7 days</option>
-              <option value="30">Last 30 days</option>
-              <option value="all">All time</option>
-            </select>
+            <label className="audit-filter-field">
+              <span>Date Range</span>
+              <select
+                className="audit-select"
+                value={selectedDays}
+                onChange={(event) => setSelectedDays(event.target.value)}
+              >
+                <option value="1">Today</option>
+                <option value="7">Last 7 days</option>
+                <option value="30">Last 30 days</option>
+                <option value="all">All time</option>
+              </select>
+            </label>
           </div>
 
           <div className="audit-summary">

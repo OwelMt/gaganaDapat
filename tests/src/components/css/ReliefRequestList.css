@@ -33,8 +33,9 @@
 }
 
 .rrl-shell {
-  max-width: 1500px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -47,6 +48,74 @@
   border: 1px solid var(--rrl-border);
   box-shadow: var(--rrl-shadow);
   border-radius: var(--rrl-radius-xl);
+  position: relative;
+  overflow: hidden;
+}
+
+.rrl-card::after,
+.rrl-header-card::after,
+.rrl-total-card::after,
+.rrl-queue-card::after,
+.rrl-details-card-compact::after,
+.rrl-placeholder-card::after,
+.rrl-meta-chip::after,
+.rrl-balance-chip::after,
+.rrl-panel::after,
+.rrl-remarks-summary-card::after,
+.rrl-appliance-request-card::after {
+  content: "";
+  position: absolute;
+  right: -74px;
+  bottom: -74px;
+  width: 148px;
+  height: 148px;
+  border-radius: 999px;
+  background: rgba(20, 83, 45, 0.06);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.rrl-queue-card::after {
+  content: none;
+}
+
+.rrl-total-card.pending::after {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.rrl-total-card.warning::after {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.rrl-total-card.success::after {
+  background: rgba(22, 163, 74, 0.1);
+}
+
+.rrl-total-card.danger::after {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.rrl-meta-chip::after,
+.rrl-balance-chip::after,
+.rrl-panel::after,
+.rrl-remarks-summary-card::after,
+.rrl-appliance-request-card::after {
+  content: none;
+}
+
+.rrl-card > *,
+.rrl-header-card > *,
+.rrl-total-card > *,
+.rrl-queue-card > *,
+.rrl-details-card-compact > *,
+.rrl-placeholder-card > *,
+.rrl-meta-chip > *,
+.rrl-balance-chip > *,
+.rrl-panel > *,
+.rrl-remarks-summary-card > *,
+.rrl-appliance-request-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .rrl-card {
@@ -423,9 +492,10 @@
 
 .rrl-queue-list {
   margin-top: 0;
-  display: grid;
-  align-content: start;
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -444,6 +514,9 @@
 
 .rrl-queue-item {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
   text-align: left;
   border: 1px solid var(--rrl-border);
   border-radius: 18px;
@@ -457,11 +530,12 @@
     background 0.18s ease;
   box-shadow: var(--rrl-shadow-soft);
   border-left-width: 6px;
-  min-height: 112px;
+  min-height: 128px;
   height: auto;
   align-self: start;
   position: relative;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .rrl-queue-item::after {
