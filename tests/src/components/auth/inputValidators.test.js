@@ -4,6 +4,7 @@ import {
   validateEmail,
   validateHotline,
   validatePhoneNumber,
+  validateRegisterAccountForm,
   validateStrongPassword,
   validateUsername
 } from "./inputValidators";
@@ -49,14 +50,58 @@ describe("inputValidators", () => {
     expect(validateStrongPassword("Password")).toBe(
       "Password must contain at least one number"
     );
-    expect(validateStrongPassword("Password1")).toBe("");
+    expect(validateStrongPassword("Password1")).toBe(
+      "Password must contain at least one special character"
+    );
+    expect(validateStrongPassword("Password1!")).toBe("");
 
-    expect(validateConfirmPassword("Password1", "")).toBe(
+    expect(validateConfirmPassword("Password1!", "")).toBe(
       "Please confirm the password"
     );
-    expect(validateConfirmPassword("Password1", "Password2")).toBe(
+    expect(validateConfirmPassword("Password1!", "Password2!")).toBe(
       "Passwords do not match"
     );
-    expect(validateConfirmPassword("Password1", "Password1")).toBe("");
+    expect(validateConfirmPassword("Password1!", "Password1!")).toBe("");
+  });
+
+  test("validates register account fields with the shared inline rules", () => {
+    expect(
+      validateRegisterAccountForm({
+        role: "barangay",
+        username: "",
+        email: "wrong",
+        phoneNumber: "123",
+        hotline: "abc",
+        address: "###",
+        password: "password1",
+        confirmPassword: "password2",
+        barangay: ""
+      })
+    ).toEqual({
+      username: "Username is required",
+      email: "Enter a valid email address",
+      phoneNumber: "Phone number must start with 09 and be 11 digits",
+      hotline: "Hotline must contain at least 7 digits",
+      address: "Address must be at least 5 characters",
+      password: "Password must start with a capital letter",
+      confirmPassword: "Passwords do not match",
+      barangay: "Barangay is required"
+    });
+  });
+
+  test("allows optional hotline when register account fields are valid", () => {
+    expect(
+      validateRegisterAccountForm({
+        role: "drrmo",
+        username: "drrmoUser",
+        email: "name@example.com",
+        phoneNumber: "09123456789",
+        hotline: "",
+        address: "Purok 1, Jaen",
+        password: "Password1!",
+        confirmPassword: "Password1!",
+        barangay: ""
+      })
+    ).toEqual({});
   });
 });

@@ -85,3 +85,37 @@ export function validateConfirmPassword(passwordValue, confirmValue) {
   if (passwordValue !== confirmValue) return "Passwords do not match";
   return "";
 }
+
+export function validateRegisterAccountForm(values = {}) {
+  const errors = {};
+
+  const usernameError = validateUsername(values.username);
+  if (usernameError) errors.username = usernameError;
+
+  const emailError = validateEmail(values.email);
+  if (emailError) errors.email = emailError;
+
+  const phoneError = validatePhoneNumber(values.phoneNumber);
+  if (phoneError) errors.phoneNumber = phoneError;
+
+  const hotlineError = validateHotline(values.hotline);
+  if (hotlineError) errors.hotline = hotlineError;
+
+  const addressError = validateAddress(values.address);
+  if (addressError) errors.address = addressError;
+
+  const passwordError = validateStrongPassword(values.password);
+  if (passwordError) errors.password = passwordError;
+
+  const confirmError = validateConfirmPassword(
+    values.password,
+    values.confirmPassword
+  );
+  if (confirmError) errors.confirmPassword = confirmError;
+
+  if (values.role === "barangay" && !String(values.barangay || "").trim()) {
+    errors.barangay = "Barangay is required";
+  }
+
+  return errors;
+}

@@ -41,6 +41,7 @@ import DashboardShell from "./layout/DashboardShell";
 import EvacMap from "./map/Map";
 import "../components/css/EManagement.css";
 import { API_BASE_URL } from "../config/api";
+import { getEvacuationCapacityErrors } from "./evacuationAreaValidationUtils";
 
 const BASE_URL = API_BASE_URL;
 
@@ -1580,11 +1581,6 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       formData.remarks,
       MAX_REMARKS_LENGTH
     ).trim();
-    const capacityIndividual = Number(formData.capacityIndividual || 0);
-    const capacityFamily = Number(formData.capacityFamily || 0);
-    const bedCapacity = Number(formData.bedCapacity || 0);
-    const floorArea = Number(formData.floorArea || 0);
-
     const nextErrors = {};
 
     if (!cleanName) nextErrors.name = "Evacuation area name is required.";
@@ -1606,33 +1602,14 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       }
     }
 
-    if (
-      formData.capacityIndividual !== "" &&
-      (capacityIndividual <= 0 || capacityIndividual > MAX_CAPACITY_VALUE)
-    ) {
-      nextErrors.capacityIndividual = `Individual capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`;
-    }
-
-    if (
-      formData.capacityFamily !== "" &&
-      (capacityFamily <= 0 || capacityFamily > MAX_CAPACITY_VALUE)
-    ) {
-      nextErrors.capacityFamily = `Family capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`;
-    }
-
-    if (
-      formData.bedCapacity !== "" &&
-      (bedCapacity <= 0 || bedCapacity > MAX_CAPACITY_VALUE)
-    ) {
-      nextErrors.bedCapacity = `Bed capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`;
-    }
-
-    if (
-      formData.floorArea !== "" &&
-      (floorArea <= 0 || floorArea > MAX_FLOOR_AREA_VALUE)
-    ) {
-      nextErrors.floorArea = `Floor area must be between 1 and ${formatNumber(MAX_FLOOR_AREA_VALUE)}.`;
-    }
+    Object.assign(
+      nextErrors,
+      getEvacuationCapacityErrors(formData, {
+        maxCapacityValue: MAX_CAPACITY_VALUE,
+        maxFloorAreaValue: MAX_FLOOR_AREA_VALUE,
+        formatNumber,
+      })
+    );
 
     if (cleanRemarks.length > MAX_REMARKS_LENGTH) {
       nextErrors.remarks = `Remarks must be ${MAX_REMARKS_LENGTH} characters or less.`;

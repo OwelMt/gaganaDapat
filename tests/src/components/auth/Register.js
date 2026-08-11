@@ -9,14 +9,7 @@ import {
   sanitizePhoneNumber,
   sanitizeUsername
 } from './inputSanitizers';
-import {
-  validateAddress,
-  validateConfirmPassword,
-  validateEmail,
-  validatePhoneNumber,
-  validateStrongPassword,
-  validateUsername
-} from './inputValidators';
+import { validateRegisterAccountForm } from './inputValidators';
 import {
   AccountConfirmModal,
   AccountNotificationPortal,
@@ -156,47 +149,28 @@ export default function Register() {
   };
 
   useEffect(() => {
-    const nextErrors = {};
+    const allErrors = validateRegisterAccountForm({
+      role,
+      username,
+      email,
+      phoneNumber,
+      hotline,
+      address,
+      password,
+      confirmPassword,
+      barangay
+    });
 
-    if (touched.username) {
-      const error = validateUsername(username);
-      if (error) nextErrors.username = error;
-    }
-
-    if (touched.email) {
-      const error = validateEmail(email);
-      if (error) nextErrors.email = error;
-    }
-
-    if (touched.phoneNumber) {
-      const error = validatePhoneNumber(phoneNumber);
-      if (error) nextErrors.phoneNumber = error;
-    }
-
-    if (touched.address) {
-      const error = validateAddress(address);
-      if (error) nextErrors.address = error;
-    }
-
-    if (touched.password) {
-      const error = validateStrongPassword(password);
-      if (error) nextErrors.password = error;
-    }
-
-    if (touched.confirmPassword) {
-      const error = validateConfirmPassword(password, confirmPassword);
-      if (error) nextErrors.confirmPassword = error;
-    }
-
-    if (role === 'barangay' && touched.barangay && !barangay) {
-      nextErrors.barangay = 'Barangay is required';
-    }
+    const nextErrors = Object.fromEntries(
+      Object.entries(allErrors).filter(([key]) => touched[key])
+    );
 
     setErrors(nextErrors);
   }, [
     username,
     email,
     phoneNumber,
+    hotline,
     address,
     password,
     confirmPassword,
@@ -206,31 +180,17 @@ export default function Register() {
   ]);
 
   function computeErrors() {
-    const nextErrors = {};
-
-    const usernameError = validateUsername(username);
-    if (usernameError) nextErrors.username = usernameError;
-
-    const emailError = validateEmail(email);
-    if (emailError) nextErrors.email = emailError;
-
-    const phoneError = validatePhoneNumber(phoneNumber);
-    if (phoneError) nextErrors.phoneNumber = phoneError;
-
-    const addressError = validateAddress(address);
-    if (addressError) nextErrors.address = addressError;
-
-    const passwordError = validateStrongPassword(password);
-    if (passwordError) nextErrors.password = passwordError;
-
-    const confirmError = validateConfirmPassword(password, confirmPassword);
-    if (confirmError) nextErrors.confirmPassword = confirmError;
-
-    if (role === 'barangay' && !barangay) {
-      nextErrors.barangay = 'Barangay is required';
-    }
-
-    return nextErrors;
+    return validateRegisterAccountForm({
+      role,
+      username,
+      email,
+      phoneNumber,
+      hotline,
+      address,
+      password,
+      confirmPassword,
+      barangay
+    });
   }
 
   async function handleRegister() {
@@ -241,6 +201,7 @@ export default function Register() {
       username: true,
       email: true,
       phoneNumber: true,
+      hotline: true,
       address: true,
       password: true,
       confirmPassword: true,
@@ -339,11 +300,12 @@ export default function Register() {
     ];
   }, [role, availableBarangays.length, usedCount, barangayLoading]);
 
-  const renderFieldError = (key) => (
-    <div className="field-message" aria-live="polite">
-      {errors[key] || ' '}
-    </div>
-  );
+  const renderFieldError = (key) =>
+    errors[key] ? (
+      <div className="field-message" aria-live="polite">
+        {errors[key]}
+      </div>
+    ) : null;
 
   return (
     <div className="register-page">
@@ -488,17 +450,18 @@ export default function Register() {
 
               <div className="form-block">
                 <label className="input-label">Hotline</label>
-                <div className="input-shell">
+                <div className={`input-shell ${errors.hotline ? 'has-error' : ''}`}>
                   <input
                     className="premium-input"
                     placeholder="Optional"
                     value={hotline}
                     onChange={(e) => {
                       setHotline(sanitizeHotline(e.target.value));
+                      setTouched((prev) => ({ ...prev, hotline: true }));
                     }}
                   />
                 </div>
-                <div className="field-message">{' '}</div>
+                {renderFieldError('hotline')}
               </div>
 
               <div className="form-block form-block-full">

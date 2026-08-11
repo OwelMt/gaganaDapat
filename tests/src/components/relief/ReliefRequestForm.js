@@ -272,6 +272,10 @@ const sanitizeWholeNumberInput = (value) => {
   return raw.replace(/^0+(?=\d)/, '') || (raw ? '0' : '');
 };
 
+const stopFieldKeyPropagation = (event) => {
+  event.stopPropagation();
+};
+
 const createRequestedAppliance = (item = {}) => ({
   itemName: sanitizeInlineText(item.itemName || '', { maxLength: 120 }),
   category: sanitizeInlineText(item.category || '', { maxLength: 80 }),
@@ -428,6 +432,7 @@ export default function ReliefRequestForm() {
     loaded: false
   });
   const [distributionEditorCards, setDistributionEditorCards] = useState([]);
+  const [distributionEditorErrors, setDistributionEditorErrors] = useState({});
   const [distributionSubmitting, setDistributionSubmitting] = useState(false);
   const [distributionImporting, setDistributionImporting] = useState(false);
   const [distributionPage, setDistributionPage] = useState(1);
@@ -2057,11 +2062,36 @@ export default function ReliefRequestForm() {
   const closeDistributionEditor = (localId) => {
     if (!localId) {
       setDistributionEditorCards([]);
+      setDistributionEditorErrors({});
       return;
     }
 
     setDistributionEditorCards((prev) => prev.filter((card) => card.localId !== localId));
+    setDistributionEditorErrors((prev) => {
+      if (!prev[localId]) return prev;
+      const next = { ...prev };
+      delete next[localId];
+      return next;
+    });
   };
+
+  const clearDistributionFieldError = (localId, fieldPath) => {
+    setDistributionEditorErrors((prev) => {
+      const current = prev[localId];
+      if (!current?.[fieldPath]) return prev;
+
+      const nextCardErrors = { ...current };
+      delete nextCardErrors[fieldPath];
+
+      return {
+        ...prev,
+        [localId]: nextCardErrors
+      };
+    });
+  };
+
+  const getDistributionFieldError = (localId, fieldPath) =>
+    distributionEditorErrors?.[localId]?.[fieldPath] || '';
 
   const handleDistributionDraftField = (localId, path, value) => {
     updateDistributionEditorCard(localId, (prev) => {
@@ -2077,6 +2107,7 @@ export default function ReliefRequestForm() {
         path === 'distributionDate' ? clampToTodayOrFutureDate(value) : value;
       return next;
     });
+    clearDistributionFieldError(localId, path);
   };
 
   const handleDistributionMemberChange = (localId, index, field, value) => {
@@ -2104,6 +2135,7 @@ export default function ReliefRequestForm() {
           : member
       )
     }));
+    clearDistributionFieldError(localId, `familyMembers.${index}.${field}`);
   };
 
   const addDistributionMember = (localId) => {
@@ -2310,45 +2342,77 @@ export default function ReliefRequestForm() {
     };
   };
 
-  const validateDistributionDraft = (draft) => {
+  const getDistributionDraftValidation = (draft) => {
     const payload = buildDistributionPayload(draft);
+    const errors = {};
 
     if (!payload.serialNo) {
-      throw new Error('Serial number is required for the DAFAC record.');
+      errors.serialNo = 'Serial number is required.';
     }
 
     if (!payload.evacuationCenterName) {
-      throw new Error('Evacuation center is required.');
-    }
-
-    if (!payload.headOfFamily.surname && !payload.headOfFamily.firstName) {
-      throw new Error('Head of family name is required.');
+      errors.evacuationCenterName = 'Evacuation center is required.';
     }
 
     if (!payload.distributionDate) {
-      throw new Error('Distribution date is required.');
+      errors.distributionDate = 'Distribution date is required.';
+    } else if (payload.distributionDate < minAllowedDate) {
+      errors.distributionDate = 'Distribution date cannot be in the past.';
     }
 
-    if (payload.distributionDate < minAllowedDate) {
-      throw new Error('Distribution date cannot be in the past.');
+    if (!payload.headOfFamily.surname && !payload.headOfFamily.firstName) {
+      errors['headOfFamily.surname'] = 'Enter at least the family head surname or first name.';
+      errors['headOfFamily.firstName'] = 'Enter at least the family head surname or first name.';
     }
 
     if (dafacAidVisibility.showsFoodPacks && payload.distribution.foodPacksReceived <= 0) {
-      throw new Error('Enter how many food packs this family received.');
+      errors['distribution.foodPacksReceived'] =
+        'Enter how many food packs this family received.';
     }
 
     if (
       dafacAidVisibility.showsMonetary &&
       payload.distribution.monetaryAmountReceived <= 0
     ) {
-      throw new Error('Enter how much monetary assistance this family received.');
+      errors['distribution.monetaryAmountReceived'] =
+        'Enter the monetary assistance amount.';
     }
 
     if (
       dafacAidVisibility.showsAppliances &&
       payload.distribution.applianceUnitsReceived <= 0
     ) {
-      throw new Error('Enter how many appliance units this family received.');
+      errors['distribution.applianceUnitsReceived'] =
+        'Enter how many appliance units this family received.';
+    }
+
+    (draft?.familyMembers || []).forEach((member, index) => {
+      const fullName = sanitizeInlineText(member?.fullName, { maxLength: 120 }).trim();
+      const relationship = sanitizeInlineText(member?.relationshipToHead, {
+        maxLength: 80
+      }).trim();
+      const age = parseSafeNumber(member?.age);
+      const hasMemberContent = fullName || relationship || age > 0;
+
+      if (hasMemberContent && !fullName) {
+        errors[`familyMembers.${index}.fullName`] = 'Enter the member full name.';
+      }
+
+      if (age > 130) {
+        errors[`familyMembers.${index}.age`] = 'Age must be 130 or lower.';
+      }
+    });
+
+    return { payload, errors };
+  };
+
+  const validateDistributionDraft = (draft) => {
+    const { payload, errors } = getDistributionDraftValidation(draft);
+
+    if (Object.keys(errors).length > 0) {
+      const error = new Error('Please fix the highlighted DAFAC fields.');
+      error.fieldErrors = errors;
+      throw error;
     }
 
     return payload;
@@ -2884,6 +2948,12 @@ export default function ReliefRequestForm() {
       await loadDistributionData({ silent: true });
     } catch (err) {
       console.error(err);
+      if (err.fieldErrors && editorCard?.localId) {
+        setDistributionEditorErrors((prev) => ({
+          ...prev,
+          [editorCard.localId]: err.fieldErrors
+        }));
+      }
       setErrorFeedback(err.message || 'Failed to save the DAFAC record.');
     } finally {
       setDistributionSubmitting(false);
@@ -4387,6 +4457,10 @@ export default function ReliefRequestForm() {
                                   }
 
                                   const editorCard = entry.editorCard;
+                                  const fieldError = (fieldPath) =>
+                                    getDistributionFieldError(editorCard.localId, fieldPath);
+                                  const fieldClassName = (fieldPath) =>
+                                    fieldError(fieldPath) ? 'rrf-field has-error' : 'rrf-field';
                                   return (
                                   <div key={entry.key} className="rrf-dafac-editor-card">
                                     <div className="rrf-dafac-editor-head">
@@ -4406,11 +4480,13 @@ export default function ReliefRequestForm() {
                                     </div>
 
                                     <div className="rrf-dafac-editor-grid compact">
-                                      <div className="rrf-field">
+                                      <div className={fieldClassName('serialNo')}>
                                         <label>Serial No.</label>
                                         <input
                                           type="text"
                                           value={editorCard.draft.serialNo}
+                                          onKeyDown={stopFieldKeyPropagation}
+                                          aria-invalid={Boolean(fieldError('serialNo'))}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,
@@ -4419,12 +4495,19 @@ export default function ReliefRequestForm() {
                                             )
                                           }
                                         />
+                                        {fieldError('serialNo') ? (
+                                          <small className="rrf-inline-error">
+                                            {fieldError('serialNo')}
+                                          </small>
+                                        ) : null}
                                       </div>
-                                      <div className="rrf-field">
+                                      <div className={fieldClassName('evacuationCenterName')}>
                                         <label>Evacuation Center</label>
                                         <input
                                           type="text"
                                           value={editorCard.draft.evacuationCenterName}
+                                          onKeyDown={stopFieldKeyPropagation}
+                                          aria-invalid={Boolean(fieldError('evacuationCenterName'))}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,
@@ -4433,12 +4516,18 @@ export default function ReliefRequestForm() {
                                             )
                                           }
                                         />
+                                        {fieldError('evacuationCenterName') ? (
+                                          <small className="rrf-inline-error">
+                                            {fieldError('evacuationCenterName')}
+                                          </small>
+                                        ) : null}
                                       </div>
                                       <div className="rrf-field">
                                         <label>Site Label</label>
                                         <input
                                           type="text"
                                           value={editorCard.draft.siteLabel}
+                                          onKeyDown={stopFieldKeyPropagation}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,
@@ -4448,12 +4537,14 @@ export default function ReliefRequestForm() {
                                           }
                                         />
                                       </div>
-                                      <div className="rrf-field">
+                                      <div className={fieldClassName('distributionDate')}>
                                         <label>Date</label>
                                         <input
                                           type="date"
                                           value={editorCard.draft.distributionDate}
                                           min={minAllowedDate}
+                                          onKeyDown={stopFieldKeyPropagation}
+                                          aria-invalid={Boolean(fieldError('distributionDate'))}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,
@@ -4462,12 +4553,19 @@ export default function ReliefRequestForm() {
                                             )
                                           }
                                         />
+                                        {fieldError('distributionDate') ? (
+                                          <small className="rrf-inline-error">
+                                            {fieldError('distributionDate')}
+                                          </small>
+                                        ) : null}
                                       </div>
-                                      <div className="rrf-field">
+                                      <div className={fieldClassName('headOfFamily.surname')}>
                                         <label>Surname</label>
                                         <input
                                           type="text"
                                           value={editorCard.draft.headOfFamily.surname}
+                                          onKeyDown={stopFieldKeyPropagation}
+                                          aria-invalid={Boolean(fieldError('headOfFamily.surname'))}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,
@@ -4476,12 +4574,19 @@ export default function ReliefRequestForm() {
                                             )
                                           }
                                         />
+                                        {fieldError('headOfFamily.surname') ? (
+                                          <small className="rrf-inline-error">
+                                            {fieldError('headOfFamily.surname')}
+                                          </small>
+                                        ) : null}
                                       </div>
-                                      <div className="rrf-field">
+                                      <div className={fieldClassName('headOfFamily.firstName')}>
                                         <label>First Name</label>
                                         <input
                                           type="text"
                                           value={editorCard.draft.headOfFamily.firstName}
+                                          onKeyDown={stopFieldKeyPropagation}
+                                          aria-invalid={Boolean(fieldError('headOfFamily.firstName'))}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,
@@ -4490,14 +4595,24 @@ export default function ReliefRequestForm() {
                                             )
                                           }
                                         />
+                                        {fieldError('headOfFamily.firstName') ? (
+                                          <small className="rrf-inline-error">
+                                            {fieldError('headOfFamily.firstName')}
+                                          </small>
+                                        ) : null}
                                       </div>
                                       {dafacAidVisibility.showsFoodPacks ? (
-                                        <div className="rrf-field">
+                                        <div className={fieldClassName('distribution.foodPacksReceived')}>
                                           <label>Food Packs</label>
                                           <input
-                                            type="number"
-                                            min="0"
+                                            type="text"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
                                             value={editorCard.draft.distribution.foodPacksReceived}
+                                            onKeyDown={stopFieldKeyPropagation}
+                                            aria-invalid={Boolean(
+                                              fieldError('distribution.foodPacksReceived')
+                                            )}
                                             onChange={(e) =>
                                               handleDistributionDraftField(
                                                 editorCard.localId,
@@ -4506,16 +4621,24 @@ export default function ReliefRequestForm() {
                                               )
                                             }
                                           />
+                                          {fieldError('distribution.foodPacksReceived') ? (
+                                            <small className="rrf-inline-error">
+                                              {fieldError('distribution.foodPacksReceived')}
+                                            </small>
+                                          ) : null}
                                         </div>
                                       ) : null}
                                       {dafacAidVisibility.showsMonetary ? (
-                                        <div className="rrf-field">
+                                        <div className={fieldClassName('distribution.monetaryAmountReceived')}>
                                           <label>Monetary</label>
                                           <input
-                                            type="number"
-                                            min="0"
-                                            step="0.01"
+                                            type="text"
+                                            inputMode="decimal"
                                             value={editorCard.draft.distribution.monetaryAmountReceived}
+                                            onKeyDown={stopFieldKeyPropagation}
+                                            aria-invalid={Boolean(
+                                              fieldError('distribution.monetaryAmountReceived')
+                                            )}
                                             onChange={(e) =>
                                               handleDistributionDraftField(
                                                 editorCard.localId,
@@ -4524,15 +4647,25 @@ export default function ReliefRequestForm() {
                                               )
                                             }
                                           />
+                                          {fieldError('distribution.monetaryAmountReceived') ? (
+                                            <small className="rrf-inline-error">
+                                              {fieldError('distribution.monetaryAmountReceived')}
+                                            </small>
+                                          ) : null}
                                         </div>
                                       ) : null}
                                       {dafacAidVisibility.showsAppliances ? (
-                                        <div className="rrf-field">
+                                        <div className={fieldClassName('distribution.applianceUnitsReceived')}>
                                           <label>Appliance</label>
                                           <input
-                                            type="number"
-                                            min="0"
+                                            type="text"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
                                             value={editorCard.draft.distribution.applianceUnitsReceived}
+                                            onKeyDown={stopFieldKeyPropagation}
+                                            aria-invalid={Boolean(
+                                              fieldError('distribution.applianceUnitsReceived')
+                                            )}
                                             onChange={(e) =>
                                               handleDistributionDraftField(
                                                 editorCard.localId,
@@ -4541,6 +4674,11 @@ export default function ReliefRequestForm() {
                                               )
                                             }
                                           />
+                                          {fieldError('distribution.applianceUnitsReceived') ? (
+                                            <small className="rrf-inline-error">
+                                              {fieldError('distribution.applianceUnitsReceived')}
+                                            </small>
+                                          ) : null}
                                         </div>
                                       ) : null}
                                     </div>
@@ -4565,6 +4703,10 @@ export default function ReliefRequestForm() {
                                               type="text"
                                               placeholder="Full name"
                                               value={member.fullName}
+                                              onKeyDown={stopFieldKeyPropagation}
+                                              aria-invalid={Boolean(
+                                                fieldError(`familyMembers.${index}.fullName`)
+                                              )}
                                               onChange={(e) =>
                                                 handleDistributionMemberChange(
                                                   editorCard.localId,
@@ -4578,6 +4720,7 @@ export default function ReliefRequestForm() {
                                               type="text"
                                               placeholder="Relationship"
                                               value={member.relationshipToHead}
+                                              onKeyDown={stopFieldKeyPropagation}
                                               onChange={(e) =>
                                                 handleDistributionMemberChange(
                                                   editorCard.localId,
@@ -4588,10 +4731,15 @@ export default function ReliefRequestForm() {
                                               }
                                             />
                                             <input
-                                              type="number"
-                                              min="0"
+                                              type="text"
+                                              inputMode="numeric"
+                                              pattern="[0-9]*"
                                               placeholder="Age"
                                               value={member.age}
+                                              onKeyDown={stopFieldKeyPropagation}
+                                              aria-invalid={Boolean(
+                                                fieldError(`familyMembers.${index}.age`)
+                                              )}
                                               onChange={(e) =>
                                                 handleDistributionMemberChange(
                                                   editorCard.localId,
@@ -4610,6 +4758,16 @@ export default function ReliefRequestForm() {
                                             >
                                               <FaMinus />
                                             </button>
+                                            {fieldError(`familyMembers.${index}.fullName`) ? (
+                                              <small className="rrf-inline-error rrf-dafac-mini-error name-error">
+                                                {fieldError(`familyMembers.${index}.fullName`)}
+                                              </small>
+                                            ) : null}
+                                            {fieldError(`familyMembers.${index}.age`) ? (
+                                              <small className="rrf-inline-error rrf-dafac-mini-error age-error">
+                                                {fieldError(`familyMembers.${index}.age`)}
+                                              </small>
+                                            ) : null}
                                           </div>
                                         ))}
                                       </div>
@@ -4621,6 +4779,7 @@ export default function ReliefRequestForm() {
                                         <input
                                           type="text"
                                           value={editorCard.draft.signOff.familyHeadPrintedName}
+                                          onKeyDown={stopFieldKeyPropagation}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,
@@ -4635,6 +4794,7 @@ export default function ReliefRequestForm() {
                                         <input
                                           type="text"
                                           value={editorCard.draft.signOff.barangayOfficerPrintedName}
+                                          onKeyDown={stopFieldKeyPropagation}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,
@@ -4650,6 +4810,7 @@ export default function ReliefRequestForm() {
                                       <label>Remarks</label>
                                       <textarea
                                         value={editorCard.draft.remarks}
+                                        onKeyDown={stopFieldKeyPropagation}
                                         onChange={(e) =>
                                           handleDistributionDraftField(
                                             editorCard.localId,

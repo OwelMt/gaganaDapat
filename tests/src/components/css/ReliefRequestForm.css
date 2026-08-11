@@ -521,6 +521,15 @@
   box-shadow: 0 0 0 4px rgba(20, 83, 45, 0.08);
 }
 
+.rrf-field.has-error input,
+.rrf-field.has-error select,
+.rrf-field.has-error textarea,
+.rrf-dafac-mini-row input[aria-invalid="true"] {
+  border-color: rgba(220, 38, 38, 0.55);
+  background: #fffafa;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.08);
+}
+
 .rrf-distribution-stage {
   display: flex;
   flex-direction: column;
@@ -637,6 +646,18 @@
   grid-template-columns: 2fr 1.3fr 0.7fr auto;
   gap: 8px;
   align-items: center;
+}
+
+.rrf-dafac-mini-error {
+  margin-top: -2px;
+}
+
+.rrf-dafac-mini-error.name-error {
+  grid-column: 1 / 2;
+}
+
+.rrf-dafac-mini-error.age-error {
+  grid-column: 3 / 4;
 }
 
 .rrf-dafac-mini-row input {
