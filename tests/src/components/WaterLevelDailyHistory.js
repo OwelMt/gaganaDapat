@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import StatusBadge from "./StatusBadge";
 
-const API_URL = "http://gaganadapat.onrender.com";
+const API_URL = "https://gaganadapat.onrender.com";
 const CAMERA_ID = "cam_1";
 
 const PERIODS = [
