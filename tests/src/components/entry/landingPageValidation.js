@@ -39,7 +39,7 @@ export function validateLandingHotlineField(item, field) {
     return URL_PATTERN.test(number) ? "" : "Enter a valid link.";
   }
 
-  return HOTLINE_PATTERN.test(number) && /\d/.test(number)
+  return HOTLINE_PATTERN.test(number) && number.replace(/\D/g, "").length >= 7
     ? ""
     : "Enter a valid phone number.";
 }

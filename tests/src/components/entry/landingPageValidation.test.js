@@ -42,6 +42,22 @@ describe("landingPageValidation", () => {
     });
   });
 
+  test("rejects phone details with fewer than seven digits", () => {
+    [
+      { type: "call", number: "1" },
+      { type: "sms", number: "9" },
+      { type: "call", number: "123-45" },
+      { type: "sms", number: "+63 12" },
+    ].forEach(({ type, number }) => {
+      expect(
+        validateLandingHotlineField(
+          { type, label: "Emergency", number },
+          "number"
+        )
+      ).toBe("Enter a valid phone number.");
+    });
+  });
+
   test("validates email and link contact types", () => {
     expect(
       validateLandingHotlineField(
