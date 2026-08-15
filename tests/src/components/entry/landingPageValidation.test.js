@@ -31,6 +31,17 @@ describe("landingPageValidation", () => {
     ).toBe("Enter a valid phone number.");
   });
 
+  test("rejects punctuation-only phone details", () => {
+    ["---", "()", " + "].forEach((number) => {
+      expect(
+        validateLandingHotlineField(
+          { type: "call", label: "Emergency", number },
+          "number"
+        )
+      ).toBe("Enter a valid phone number.");
+    });
+  });
+
   test("validates email and link contact types", () => {
     expect(
       validateLandingHotlineField(

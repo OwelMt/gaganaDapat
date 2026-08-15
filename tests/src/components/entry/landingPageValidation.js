@@ -39,7 +39,9 @@ export function validateLandingHotlineField(item, field) {
     return URL_PATTERN.test(number) ? "" : "Enter a valid link.";
   }
 
-  return HOTLINE_PATTERN.test(number) ? "" : "Enter a valid phone number.";
+  return HOTLINE_PATTERN.test(number) && /\d/.test(number)
+    ? ""
+    : "Enter a valid phone number.";
 }
 
 export function validateLandingOfficeField(field, value) {
