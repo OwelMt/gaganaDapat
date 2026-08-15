@@ -45,12 +45,32 @@ describe("landingPageValidation", () => {
         "number"
       )
     ).toBe("Enter a valid link.");
+
+    expect(
+      validateLandingHotlineField(
+        { type: "email", label: "Email", number: "help@example.com" },
+        "number"
+      )
+    ).toBe("");
+
+    expect(
+      validateLandingHotlineField(
+        { type: "link", label: "Facebook", number: "https://facebook.com/example" },
+        "number"
+      )
+    ).toBe("");
   });
 
   test("requires and validates office fields", () => {
     expect(validateLandingOfficeField("name", "  ")).toBe("Office name is required.");
+    expect(validateLandingOfficeField("address", "  ")).toBe("Office address is required.");
+    expect(validateLandingOfficeField("hours", "  ")).toBe("Office hours are required.");
+    expect(validateLandingOfficeField("email", "  ")).toBe("Office email is required.");
+    expect(validateLandingOfficeField("facebook", "  ")).toBe("Facebook page link is required.");
     expect(validateLandingOfficeField("email", "wrong")).toBe("Enter a valid office email address.");
     expect(validateLandingOfficeField("facebook", "wrong")).toBe("Enter a valid Facebook page link.");
+    expect(validateLandingOfficeField("email", "office@example.com")).toBe("");
+    expect(validateLandingOfficeField("facebook", "https://facebook.com/example")).toBe("");
   });
 
   test("returns a field-error map for invalid draft content", () => {
