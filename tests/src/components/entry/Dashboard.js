@@ -30,6 +30,13 @@ import hero2 from "../../assets/images/hero2.jpg";
 import hero3 from "../../assets/images/hero3.jpg";
 import EvacMap from "../map/Map";
 import { API_BASE_URL } from "../../config/api";
+import {
+  validateLandingAnnouncementField,
+  validateLandingDraftContent,
+  validateLandingHotlineField,
+  validateLandingOfficeField,
+  validateLandingTipField,
+} from "./landingPageValidation";
 
 const BASE_URL = API_BASE_URL;
 
@@ -307,6 +314,9 @@ export default function Dashboard() {
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingHeroImage, setIsUploadingHeroImage] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [touchedFields, setTouchedFields] = useState({});
+  const [saveAttempted, setSaveAttempted] = useState(false);
   const [userRole, setUserRole] = useState("");
   const [isVisitorMode, setIsVisitorMode] = useState(false);
 
@@ -846,6 +856,70 @@ export default function Dashboard() {
     fetchPublicIncidents();
   }, [fetchPublicBarangayBounds, fetchPublicPlaces]);
 
+  function markFieldTouched(path) {
+    setTouchedFields((prev) => ({ ...prev, [path]: true }));
+  }
+
+  function setFieldError(path, error) {
+    setFieldErrors((prev) => {
+      if (!error && !prev[path]) return prev;
+      const next = { ...prev };
+      if (error) next[path] = error;
+      else delete next[path];
+      return next;
+    });
+  }
+
+  function clearLandingValidationState() {
+    setFieldErrors({});
+    setTouchedFields({});
+    setSaveAttempted(false);
+  }
+
+  function validateSingleField(path, nextDraft = draftContent) {
+    let error = "";
+
+    if (path.startsWith("announcements.")) {
+      const [, index, field] = path.split(".");
+      error = validateLandingAnnouncementField(
+        field,
+        nextDraft.announcements?.[Number(index)]?.[field]
+      );
+    } else if (path.startsWith("tips.")) {
+      const [, index] = path.split(".");
+      error = validateLandingTipField(nextDraft.tips?.[Number(index)]?.text);
+    } else if (path.startsWith("hotlines.")) {
+      const [, index, field] = path.split(".");
+      error = validateLandingHotlineField(
+        nextDraft.hotlines?.[Number(index)],
+        field
+      );
+    } else if (path.startsWith("office.")) {
+      const [, field] = path.split(".");
+      error = validateLandingOfficeField(field, nextDraft.office?.[field]);
+    }
+
+    setFieldError(path, error);
+    return error;
+  }
+
+  function validateBeforeSave(nextDraft = draftContent) {
+    const nextErrors = validateLandingDraftContent(nextDraft);
+    setFieldErrors(nextErrors);
+    setSaveAttempted(true);
+    return nextErrors;
+  }
+
+  function shouldShowFieldError(path) {
+    return Boolean(fieldErrors[path] && (touchedFields[path] || saveAttempted));
+  }
+
+  useEffect(() => {
+    Object.keys(touchedFields).forEach((path) => {
+      validateSingleField(path, draftContent);
+    });
+  }, [draftContent]);
+
   function updateDraft(path, value) {
     setDraftContent((prev) => {
       const next =
@@ -862,6 +936,12 @@ export default function Dashboard() {
       }
 
       ref[keys[keys.length - 1]] = value;
+
+      queueMicrotask(() => {
+        markFieldTouched(path);
+        validateSingleField(path, next);
+      });
+
       return next;
     });
   }
@@ -875,10 +955,23 @@ export default function Dashboard() {
         [field]: value,
       };
 
-      return {
+      const nextDraft = {
         ...prev,
         [section]: nextItems,
       };
+
+      const path = `${section}.${index}.${field}`;
+      queueMicrotask(() => {
+        markFieldTouched(path);
+        validateSingleField(path, nextDraft);
+        if (section === "hotlines" && field === "type") {
+          const detailPath = `${section}.${index}.number`;
+          markFieldTouched(detailPath);
+          validateSingleField(detailPath, nextDraft);
+        }
+      });
+
+      return nextDraft;
     });
   }
 
@@ -915,25 +1008,25 @@ export default function Dashboard() {
   function startInlineEditing() {
     setDraftContent(siteContent);
     setSaveMessage("");
+    clearLandingValidationState();
     setIsEditorOpen(true);
   }
 
   function closeInlineEditing() {
     setDraftContent(siteContent);
     setSaveMessage("");
+    clearLandingValidationState();
     setIsEditorOpen(false);
   }
 
   function resetDraftContent() {
     setDraftContent(siteContent);
+    clearLandingValidationState();
     setSaveMessage("Draft reset to current saved content.");
   }
 
   async function saveSiteContent() {
     if (!canEdit) return;
-
-    setIsSaving(true);
-    setSaveMessage("");
 
     const trimmedPayload = normalizeSitePayload({
       ...draftContent,
@@ -985,6 +1078,15 @@ export default function Dashboard() {
       })),
     });
 
+    const nextErrors = validateBeforeSave(trimmedPayload);
+    if (Object.keys(nextErrors).length > 0) {
+      setSaveMessage("");
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveMessage("");
+
     try {
       const res = await fetch(`${BASE_URL}/api/public-site`, {
         method: "PUT",
@@ -1004,12 +1106,14 @@ export default function Dashboard() {
       setDraftContent(normalized);
       localStorage.setItem("publicSiteContent", JSON.stringify(normalized));
       setSaveMessage("Landing page updated.");
+      clearLandingValidationState();
       setIsEditorOpen(false);
     } catch (err) {
       localStorage.setItem("publicSiteContent", JSON.stringify(trimmedPayload));
       setSiteContent(trimmedPayload);
       setDraftContent(trimmedPayload);
       setSaveMessage("Saved locally. Check API if database save is unavailable.");
+      clearLandingValidationState();
       setIsEditorOpen(false);
     } finally {
       setIsSaving(false);
@@ -2150,7 +2254,15 @@ export default function Dashboard() {
                                   )
                                 }
                                 placeholder="Notice tag"
+                                aria-invalid={shouldShowFieldError(
+                                  `announcements.${index}.tag`
+                                )}
                               />
+                              {shouldShowFieldError(`announcements.${index}.tag`) && (
+                                <span className="inline-field-error" role="alert">
+                                  {fieldErrors[`announcements.${index}.tag`]}
+                                </span>
+                              )}
                             </label>
 
                             <button
@@ -2189,7 +2301,15 @@ export default function Dashboard() {
                                 )
                               }
                               placeholder="Announcement title"
+                              aria-invalid={shouldShowFieldError(
+                                `announcements.${index}.title`
+                              )}
                             />
+                            {shouldShowFieldError(`announcements.${index}.title`) && (
+                              <span className="inline-field-error" role="alert">
+                                {fieldErrors[`announcements.${index}.title`]}
+                              </span>
+                            )}
                           </label>
 
                           <label className="inline-edit-field">
@@ -2208,7 +2328,15 @@ export default function Dashboard() {
                                 )
                               }
                               placeholder="Announcement details"
+                              aria-invalid={shouldShowFieldError(
+                                `announcements.${index}.body`
+                              )}
                             />
+                            {shouldShowFieldError(`announcements.${index}.body`) && (
+                              <span className="inline-field-error" role="alert">
+                                {fieldErrors[`announcements.${index}.body`]}
+                              </span>
+                            )}
                           </label>
                         </>
                       ) : (
@@ -2275,7 +2403,13 @@ export default function Dashboard() {
                               )
                             }
                             placeholder="Preparedness reminder"
+                            aria-invalid={shouldShowFieldError(`tips.${index}.text`)}
                           />
+                          {shouldShowFieldError(`tips.${index}.text`) && (
+                            <span className="inline-field-error" role="alert">
+                              {fieldErrors[`tips.${index}.text`]}
+                            </span>
+                          )}
 
                           <button
                             type="button"
@@ -2328,7 +2462,13 @@ export default function Dashboard() {
                                 updateDraft("office.name", e.target.value)
                               }
                               placeholder="Office name"
+                              aria-invalid={shouldShowFieldError("office.name")}
                             />
+                            {shouldShowFieldError("office.name") && (
+                              <span className="inline-field-error" role="alert">
+                                {fieldErrors["office.name"]}
+                              </span>
+                            )}
                           </label>
 
                           <label className="footer-inline-field">
@@ -2342,7 +2482,13 @@ export default function Dashboard() {
                                 updateDraft("office.address", e.target.value)
                               }
                               placeholder="Office address"
+                              aria-invalid={shouldShowFieldError("office.address")}
                             />
+                            {shouldShowFieldError("office.address") && (
+                              <span className="inline-field-error" role="alert">
+                                {fieldErrors["office.address"]}
+                              </span>
+                            )}
                           </label>
                         </>
                       ) : (
@@ -2419,7 +2565,15 @@ export default function Dashboard() {
                                         )
                                       }
                                       placeholder="Contact label"
+                                      aria-invalid={shouldShowFieldError(
+                                        `hotlines.${index}.label`
+                                      )}
                                     />
+                                    {shouldShowFieldError(`hotlines.${index}.label`) && (
+                                      <span className="inline-field-error" role="alert">
+                                        {fieldErrors[`hotlines.${index}.label`]}
+                                      </span>
+                                    )}
                                   </label>
 
                                   <label className="footer-inline-field">
@@ -2482,7 +2636,15 @@ export default function Dashboard() {
                                       )
                                     }
                                     placeholder="Phone, SMS, email, or link"
+                                    aria-invalid={shouldShowFieldError(
+                                      `hotlines.${index}.number`
+                                    )}
                                   />
+                                  {shouldShowFieldError(`hotlines.${index}.number`) && (
+                                    <span className="inline-field-error" role="alert">
+                                      {fieldErrors[`hotlines.${index}.number`]}
+                                    </span>
+                                  )}
                                 </label>
                               </>
                             ) : (
@@ -2517,7 +2679,13 @@ export default function Dashboard() {
                               updateDraft("office.address", e.target.value)
                             }
                             placeholder="Office address"
+                            aria-invalid={shouldShowFieldError("office.address")}
                           />
+                          {shouldShowFieldError("office.address") && (
+                            <span className="inline-field-error" role="alert">
+                              {fieldErrors["office.address"]}
+                            </span>
+                          )}
                         </label>
                       ) : (
                         <span>{pageContent.office.address}</span>
@@ -2539,7 +2707,13 @@ export default function Dashboard() {
                               updateDraft("office.hours", e.target.value)
                             }
                             placeholder="Office hours"
+                            aria-invalid={shouldShowFieldError("office.hours")}
                           />
+                          {shouldShowFieldError("office.hours") && (
+                            <span className="inline-field-error" role="alert">
+                              {fieldErrors["office.hours"]}
+                            </span>
+                          )}
                         </label>
                       ) : (
                         <span>{pageContent.office.hours}</span>
@@ -2561,7 +2735,13 @@ export default function Dashboard() {
                               updateDraft("office.email", e.target.value)
                             }
                             placeholder="Office email"
+                            aria-invalid={shouldShowFieldError("office.email")}
                           />
+                          {shouldShowFieldError("office.email") && (
+                            <span className="inline-field-error" role="alert">
+                              {fieldErrors["office.email"]}
+                            </span>
+                          )}
                         </label>
                       ) : (
                         <span>{pageContent.office.email}</span>
@@ -2583,7 +2763,13 @@ export default function Dashboard() {
                               updateDraft("office.facebook", e.target.value)
                             }
                             placeholder="Facebook page link"
+                            aria-invalid={shouldShowFieldError("office.facebook")}
                           />
+                          {shouldShowFieldError("office.facebook") && (
+                            <span className="inline-field-error" role="alert">
+                              {fieldErrors["office.facebook"]}
+                            </span>
+                          )}
                         </label>
                       ) : (
                         <span>{pageContent.office.facebook}</span>
