@@ -95,6 +95,22 @@ test("revalidates hotline detail when the contact type changes", async () => {
   ).toBeInTheDocument();
 });
 
+test("renders invalid styling on office email fields with bad input", async () => {
+  renderDashboard();
+
+  await openInlineEditor();
+  fireEvent.change(screen.getByPlaceholderText(/Office email/i), {
+    target: { value: "bad-email" },
+  });
+
+  expect(
+    await screen.findByText("Enter a valid office email address.")
+  ).toBeInTheDocument();
+  expect(screen.getByDisplayValue("bad-email")).toHaveClass(
+    "landing-inline-input-error"
+  );
+});
+
 test("clears validation state when reset is used", async () => {
   renderDashboard();
 

@@ -915,6 +915,17 @@ export default function Dashboard() {
     return Boolean(fieldErrors[path] && (touchedFields[path] || saveAttempted));
   }
 
+  function renderFieldError(path) {
+    if (!shouldShowFieldError(path)) return null;
+    return <span className="landing-inline-error">{fieldErrors[path]}</span>;
+  }
+
+  function getFieldInputClass(path, baseClassName = "landing-inline-input") {
+    return shouldShowFieldError(path)
+      ? `${baseClassName} landing-inline-input-error`
+      : baseClassName;
+  }
+
   useEffect(() => {
     Object.keys(touchedFields).forEach((path) => {
       validateSingleField(path, draftContent);
@@ -2395,7 +2406,7 @@ export default function Dashboard() {
                         <div className="preparedness-inline-edit">
                           <input
                             type="text"
-                            className="landing-inline-input"
+                            className={getFieldInputClass(`tips.${index}.text`)}
                             value={draftContent.tips[index]?.text || ""}
                             maxLength={120}
                             onChange={(e) =>
@@ -2409,11 +2420,7 @@ export default function Dashboard() {
                             placeholder="Preparedness reminder"
                             aria-invalid={shouldShowFieldError(`tips.${index}.text`)}
                           />
-                          {shouldShowFieldError(`tips.${index}.text`) && (
-                            <span className="inline-field-error" role="alert">
-                              {fieldErrors[`tips.${index}.text`]}
-                            </span>
-                          )}
+                          {renderFieldError(`tips.${index}.text`)}
 
                           <button
                             type="button"
@@ -2626,7 +2633,9 @@ export default function Dashboard() {
                                   <span>Contact Detail</span>
                                   <input
                                     type="text"
-                                    className="landing-inline-input"
+                                    className={getFieldInputClass(
+                                      `hotlines.${index}.number`
+                                    )}
                                     value={
                                       draftContent.hotlines[index]?.number || ""
                                     }
@@ -2644,11 +2653,7 @@ export default function Dashboard() {
                                       `hotlines.${index}.number`
                                     )}
                                   />
-                                  {shouldShowFieldError(`hotlines.${index}.number`) && (
-                                    <span className="inline-field-error" role="alert">
-                                      {fieldErrors[`hotlines.${index}.number`]}
-                                    </span>
-                                  )}
+                                  {renderFieldError(`hotlines.${index}.number`)}
                                 </label>
                               </>
                             ) : (
@@ -2732,7 +2737,7 @@ export default function Dashboard() {
                           <span>Email Address</span>
                           <input
                             type="text"
-                            className="landing-inline-input"
+                            className={getFieldInputClass("office.email")}
                             value={draftContent.office.email}
                             maxLength={80}
                             onChange={(e) =>
@@ -2741,11 +2746,7 @@ export default function Dashboard() {
                             placeholder="Office email"
                             aria-invalid={shouldShowFieldError("office.email")}
                           />
-                          {shouldShowFieldError("office.email") && (
-                            <span className="inline-field-error" role="alert">
-                              {fieldErrors["office.email"]}
-                            </span>
-                          )}
+                          {renderFieldError("office.email")}
                         </label>
                       ) : (
                         <span>{pageContent.office.email}</span>

@@ -3455,6 +3455,26 @@
   color: #83988a;
 }
 
+.landing-inline-input-error {
+  border-color: #d92d20;
+  box-shadow: 0 0 0 3px rgba(217, 45, 32, 0.12);
+}
+
+.landing-inline-error {
+  display: block;
+  margin-top: 6px;
+  color: #b42318;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.footer-inline-field .landing-inline-error,
+.preparedness-inline-edit .landing-inline-error,
+.inline-edit-row .landing-inline-error {
+  grid-column: 1 / -1;
+}
+
 .inline-edit-label,
 .inline-edit-field > span,
 .inline-edit-mini-field > span,
