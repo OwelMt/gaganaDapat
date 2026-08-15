@@ -509,6 +509,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!canEdit && isEditorOpen) {
+      clearLandingValidationState();
       setIsEditorOpen(false);
     }
   }, [canEdit, isEditorOpen]);
@@ -1317,6 +1318,7 @@ export default function Dashboard() {
                     }`}
                     onClick={() => {
                       setIsVisitorMode(true);
+                      clearLandingValidationState();
                       setIsEditorOpen(false);
                     }}
                   >
