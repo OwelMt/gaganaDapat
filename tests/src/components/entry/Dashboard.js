@@ -994,10 +994,12 @@ export default function Dashboard() {
   }
 
   function removeItem(section, id) {
+    if ((draftContent[section] || []).length <= 1) return;
+
+    // Array-indexed validation keys no longer match after an item is removed.
+    clearLandingValidationState();
     setDraftContent((prev) => {
       const currentItems = prev[section] || [];
-
-      if (currentItems.length <= 1) return prev;
 
       return {
         ...prev,
