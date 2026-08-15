@@ -106,6 +106,9 @@ test("renders invalid styling on office email fields with bad input", async () =
   expect(
     await screen.findByText("Enter a valid office email address.")
   ).toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "Enter a valid office email address."
+  );
   expect(screen.getByDisplayValue("bad-email")).toHaveClass(
     "landing-inline-input-error"
   );

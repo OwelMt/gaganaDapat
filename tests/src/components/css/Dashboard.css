@@ -3455,7 +3455,8 @@
   color: #83988a;
 }
 
-.landing-inline-input-error {
+.landing-inline-input-error,
+.landing-inline-input-error:focus {
   border-color: #d92d20;
   box-shadow: 0 0 0 3px rgba(217, 45, 32, 0.12);
 }
@@ -3486,6 +3487,16 @@
   font-weight: 900;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.footer-inline-field > .landing-inline-error {
+  margin: 6px 0 0;
+  color: #b42318;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .hero-edit-block .inline-edit-label {

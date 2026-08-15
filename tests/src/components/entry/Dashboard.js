@@ -917,7 +917,11 @@ export default function Dashboard() {
 
   function renderFieldError(path) {
     if (!shouldShowFieldError(path)) return null;
-    return <span className="landing-inline-error">{fieldErrors[path]}</span>;
+    return (
+      <span className="landing-inline-error" role="alert">
+        {fieldErrors[path]}
+      </span>
+    );
   }
 
   function getFieldInputClass(path, baseClassName = "landing-inline-input") {
