@@ -955,6 +955,7 @@ const createReliefRelease = async (req, res) => {
     let releasedFoodPackCount = 0;
     let releasedMonetaryAmount = 0;
     let releasedApplianceQuantity = 0;
+    let monetaryAllocationDetails = [];
 
     if (!isReleasingFoodPacks && !isReleasingMonetary && !isReleasingAppliances) {
       await session.abortTransaction();
@@ -1240,6 +1241,12 @@ const createReliefRelease = async (req, res) => {
 
         await split.inventoryDoc.save({ session });
 
+        monetaryAllocationDetails.push({
+          inventoryItemId: split.inventoryDoc._id,
+          itemName: split.inventoryDoc.name,
+          amountReleased: split.amount,
+        });
+
         await InventoryLog.create(
           [
             {
@@ -1278,6 +1285,8 @@ const createReliefRelease = async (req, res) => {
           foodPacksReleased: releasedFoodPackCount,
           releasedMonetaryAmount,
           receivedMonetaryAmount: 0,
+          monetaryAllocations: monetaryAllocationDetails,
+          inventoryRestored: false,
           items: preparedItems.map((item) => ({
             inventoryItemId: item.inventoryItemId,
             itemType: item.itemType || "goods",

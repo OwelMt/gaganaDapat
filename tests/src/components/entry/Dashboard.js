@@ -210,6 +210,17 @@ function getRainAdvisory(rainChance) {
   return "Minimal chance of rain today";
 }
 
+function withSectionItemIds(items, section) {
+  return Array.isArray(items)
+    ? items.map((item, index) => ({
+        ...item,
+        id:
+          item?.id ||
+          `${section}-${index + 1}-${item?.title || item?.text || item?.label || "item"}`,
+      }))
+    : [];
+}
+
 function normalizeSitePayload(payload) {
   return {
     hero: {
@@ -221,13 +232,16 @@ function normalizeSitePayload(payload) {
       ...(payload?.alert || {}),
     },
     announcements: Array.isArray(payload?.announcements)
-      ? payload.announcements.slice(0, LIMITS.announcements)
+      ? withSectionItemIds(
+          payload.announcements.slice(0, LIMITS.announcements),
+          "announcement"
+        )
       : DEFAULT_SITE_CONTENT.announcements,
     tips: Array.isArray(payload?.tips)
-      ? payload.tips.slice(0, LIMITS.tips)
+      ? withSectionItemIds(payload.tips.slice(0, LIMITS.tips), "tip")
       : DEFAULT_SITE_CONTENT.tips,
     hotlines: Array.isArray(payload?.hotlines)
-      ? payload.hotlines.slice(0, LIMITS.hotlines)
+      ? withSectionItemIds(payload.hotlines.slice(0, LIMITS.hotlines), "hotline")
       : DEFAULT_SITE_CONTENT.hotlines,
     office: {
       ...DEFAULT_SITE_CONTENT.office,
@@ -1008,17 +1022,26 @@ export default function Dashboard() {
     });
   }
 
-  function removeItem(section, id) {
-    if ((draftContent[section] || []).length <= 1) return;
+  function removeItem(section, id, index) {
+    const currentItems = draftContent[section] || [];
+    if (currentItems.length <= 1) return;
+
+    const hasValidIndex =
+      Number.isInteger(index) && index >= 0 && index < currentItems.length;
+    const hasMatchingId = Boolean(id) && currentItems.some((item) => item.id === id);
+
+    if (!hasMatchingId && !hasValidIndex) return;
 
     // Array-indexed validation keys no longer match after an item is removed.
     clearLandingValidationState();
     setDraftContent((prev) => {
-      const currentItems = prev[section] || [];
+      const nextItems = prev[section] || [];
 
       return {
         ...prev,
-        [section]: currentItems.filter((item) => item.id !== id),
+        [section]: hasValidIndex
+          ? nextItems.filter((_, itemIndex) => itemIndex !== index)
+          : nextItems.filter((item) => item.id !== id),
       };
     });
   }
@@ -1315,86 +1338,90 @@ export default function Dashboard() {
                 />
               </form>
 
-              {isPrivilegedUser && (
-                <div className="mode-toggle-wrap">
+              <div className="header-public-actions">
+                {isPrivilegedUser && (
+                  <div className="mode-toggle-wrap">
+                    <button
+                      type="button"
+                      className={`mode-toggle-btn ${
+                        !isVisitorMode ? "active" : ""
+                      }`}
+                      onClick={() => setIsVisitorMode(false)}
+                    >
+                      <FaEdit />
+                      <span>Editor Mode</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`mode-toggle-btn ${
+                        isVisitorMode ? "active" : ""
+                      }`}
+                      onClick={() => {
+                        setIsVisitorMode(true);
+                        clearLandingValidationState();
+                        setIsEditorOpen(false);
+                      }}
+                    >
+                      <FaEye />
+                      <span>Visitor Mode</span>
+                    </button>
+                  </div>
+                )}
+
+                {isPrivilegedUser && (
                   <button
+                    className="editor-toggle-btn"
+                    onClick={goBackToModules}
                     type="button"
-                    className={`mode-toggle-btn ${
-                      !isVisitorMode ? "active" : ""
-                    }`}
-                    onClick={() => setIsVisitorMode(false)}
+                  >
+                    <span>Back</span>
+                  </button>
+                )}
+
+                {canEdit && !isInlineEditing && (
+                  <button
+                    className="editor-toggle-btn"
+                    onClick={startInlineEditing}
+                    type="button"
                   >
                     <FaEdit />
-                    <span>Editor Mode</span>
+                    <span>Edit Landing</span>
                   </button>
+                )}
 
+                {canEdit && isInlineEditing && (
                   <button
+                    className="editor-toggle-btn"
+                    onClick={closeInlineEditing}
                     type="button"
-                    className={`mode-toggle-btn ${
-                      isVisitorMode ? "active" : ""
-                    }`}
-                    onClick={() => {
-                      setIsVisitorMode(true);
-                      clearLandingValidationState();
-                      setIsEditorOpen(false);
-                    }}
+                    disabled={isSaving}
                   >
-                    <FaEye />
-                    <span>Visitor Mode</span>
+                    <FaTimes />
+                    <span>Close Editor</span>
                   </button>
-                </div>
-              )}
-
-              {isPrivilegedUser && (
-                <button
-                  className="editor-toggle-btn"
-                  onClick={goBackToModules}
-                  type="button"
-                >
-                  <span>Back</span>
-                </button>
-              )}
-
-              {canEdit && !isInlineEditing && (
-                <button
-                  className="editor-toggle-btn"
-                  onClick={startInlineEditing}
-                  type="button"
-                >
-                  <FaEdit />
-                  <span>Edit Landing</span>
-                </button>
-              )}
-
-              {canEdit && isInlineEditing && (
-                <button
-                  className="editor-toggle-btn"
-                  onClick={closeInlineEditing}
-                  type="button"
-                  disabled={isSaving}
-                >
-                  <FaTimes />
-                  <span>Close Editor</span>
-                </button>
-              )}
+                )}
+              </div>
             </div>
           </div>
 
           <div className="dashboard-nav-shell">
-            <nav className="nav-links" aria-label="Primary navigation">
-              {NAV_ITEMS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`nav-link-btn ${
-                    activeSection === item.id ? "active" : ""
-                  }`}
-                  onClick={() => handleNavClick(item.id)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </nav>
+            <div className="dashboard-nav-scroll">
+              <nav className="nav-links" aria-label="Primary navigation">
+                {NAV_ITEMS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`nav-link-btn ${
+                      activeSection === item.id ? "active" : ""
+                    }`}
+                    onClick={() => handleNavClick(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
+            </div>
           </div>
         </header>
 
@@ -2290,7 +2317,8 @@ export default function Dashboard() {
                               onClick={() =>
                                 removeItem(
                                   "announcements",
-                                  draftContent.announcements[index]?.id
+                                  draftContent.announcements[index]?.id,
+                                  index
                                 )
                               }
                               disabled={
@@ -2430,7 +2458,7 @@ export default function Dashboard() {
                             type="button"
                             className="inline-delete-btn"
                             onClick={() =>
-                              removeItem("tips", draftContent.tips[index]?.id)
+                              removeItem("tips", draftContent.tips[index]?.id, index)
                             }
                             disabled={(draftContent.tips || []).length <= 1}
                             title="Remove tip"
@@ -2621,7 +2649,8 @@ export default function Dashboard() {
                                     onClick={() =>
                                       removeItem(
                                         "hotlines",
-                                        draftContent.hotlines[index]?.id
+                                        draftContent.hotlines[index]?.id,
+                                        index
                                       )
                                     }
                                     disabled={

@@ -22,7 +22,7 @@ const inventoryLogSchema = new mongoose.Schema(
 
     action: {
       type: String,
-      enum: ['create', 'update', 'archive', 'release'],
+      enum: ['create', 'update', 'archive', 'release', 'rollback'],
       required: true
     },
 

@@ -2639,6 +2639,13 @@
     flex-direction: column;
   }
 
+  .release-step-actions,
+  .release-submit-row,
+  .inventory-modal-actions,
+  .inventory-confirm-actions {
+    align-items: stretch;
+  }
+
   .release-step-actions .btn,
   .release-submit-row .btn {
     width: 100%;
@@ -2672,6 +2679,10 @@
     align-items: stretch;
   }
 
+  .inventory-toolbar-top {
+    gap: 12px;
+  }
+
   .inventory-toolbar-left-cluster {
     flex-direction: column;
     align-items: stretch;
@@ -2700,6 +2711,21 @@
 
   .inventory-meta-row {
     margin-left: 0;
+    width: 100%;
+  }
+
+  .inventory-display-switch,
+  .inventory-display-switch-right {
+    width: 100%;
+  }
+
+  .inventory-display-switch-right {
+    justify-self: stretch;
+  }
+
+  .inventory-display-switch button {
+    flex: 1 1 0;
+    min-width: 0;
   }
 
   .notification-stack {
@@ -2722,6 +2748,40 @@
 
   .template-add-btn {
     justify-self: start;
+  }
+
+  .release-journey-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .release-selection-head,
+  .release-footer-head,
+  .release-proof-review-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .release-selection-head .btn,
+  .release-proof-review-head .btn {
+    width: 100%;
+  }
+
+  .release-request-card,
+  .release-summary-card,
+  .release-footer-box {
+    padding: 12px;
+  }
+
+  .release-footer-card,
+  .release-proof-review-card,
+  .release-journey-card,
+  .release-panel,
+  .release-panel-nested {
+    border-radius: 16px;
+  }
+
+  .release-footer-sticky {
+    position: static;
   }
 
   .template-builder-modal {
@@ -2808,6 +2868,15 @@
     padding: 10px;
   }
 
+  .summary-card {
+    min-height: 0;
+    padding: 14px;
+  }
+
+  .summary-value {
+    font-size: 24px;
+  }
+
   .release-request-meta,
   .release-request-meta-compact,
   .release-selection-grid,
@@ -2831,19 +2900,82 @@
     flex-wrap: wrap;
   }
 
+  .row-actions .btn {
+    flex: 1 1 100%;
+  }
+
   .inventory-table th:last-child,
   .inventory-table td:last-child {
     min-width: 0;
   }
 
   .inventory-table td:last-child .row-actions .btn {
-    flex: 0 0 auto;
+    flex: 1 1 100%;
   }
 
   .release-submit-row .btn,
   .inventory-modal-actions .btn,
   .inventory-confirm-actions .btn {
     width: 100%;
+  }
+
+  .inventory-toolbar {
+    gap: 10px;
+  }
+
+  .inventory-toolbar-left-cluster-clean,
+  .inventory-meta-row,
+  .inventory-display-switch,
+  .inventory-display-switch-right {
+    width: 100%;
+  }
+
+  .inventory-display-switch {
+    gap: 6px;
+  }
+
+  .inventory-display-switch button {
+    flex: 1 1 100%;
+  }
+
+  .table-wrapper {
+    margin-inline: -4px;
+    border-radius: 16px;
+  }
+
+  .release-request-card {
+    padding: 12px;
+  }
+
+  .release-request-meta-compact,
+  .release-journey-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .release-summary-card strong,
+  .release-footer-box strong {
+    font-size: 18px;
+  }
+
+  .release-static-value {
+    min-height: 0;
+    align-items: flex-start;
+    padding-block: 12px;
+  }
+
+  .inventory-modal-head {
+    flex-direction: column;
+    margin-inline: -16px;
+    margin-top: -16px;
+    padding: 16px;
+  }
+
+  .inventory-modal-close {
+    align-self: flex-end;
+  }
+
+  .inventory-modal-grid {
+    grid-template-columns: 1fr;
   }
 
   .template-summary-card,

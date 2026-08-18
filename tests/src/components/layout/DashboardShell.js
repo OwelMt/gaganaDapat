@@ -104,25 +104,19 @@ export default function DashboardShell({ children, variant }) {
         mobileOpen ? "has-mobile-sidebar" : ""
       }`}
     >
-      <button
-        type="button"
-        className="mobile-sidebar-toggle"
-        onClick={() => setMobileOpen(true)}
-        aria-label="Open sidebar"
-      >
-        ☰
-      </button>
-
       {mobileOpen && (
         <button
           type="button"
-          className="sidebar-backdrop"
+          className="sidebar-backdrop is-open"
           onClick={() => setMobileOpen(false)}
           aria-label="Close sidebar overlay"
         />
       )}
 
-      <div className={`sidebar-shell ${mobileOpen ? "is-open" : ""}`}>
+      <div
+        id="dashboard-sidebar"
+        className={`sidebar-shell ${mobileOpen ? "is-open" : ""}`}
+      >
         <SidebarComp
           variant={resolved}
           collapsed={collapsed}
@@ -136,16 +130,30 @@ export default function DashboardShell({ children, variant }) {
 
       <main className="admin-main">
         <header className="dashboard-topbar">
-          <div className="shell-profile-inline">
-            <div className="shell-profile-meta">
-              <span className="shell-profile-kicker">Signed in as</span>
-              <strong className="shell-profile-name">
-                {username || "Unknown User"}
-              </strong>
-              <span className="shell-profile-role">{roleLabel}</span>
-            </div>
-            <div className="shell-profile-avatar">
-              {(username || roleLabel || "U").charAt(0).toUpperCase()}
+          <div className="shell-topbar-mobile">
+            <button
+              type="button"
+              className="mobile-sidebar-toggle"
+              onClick={() => setMobileOpen(true)}
+              aria-label="Open sidebar"
+              aria-controls="dashboard-sidebar"
+              aria-expanded={mobileOpen}
+            >
+              ☰
+            </button>
+          </div>
+          <div className="shell-topbar-actions">
+            <div className="shell-profile-inline">
+              <div className="shell-profile-meta">
+                <span className="shell-profile-kicker">Signed in as</span>
+                <strong className="shell-profile-name">
+                  {username || "Unknown User"}
+                </strong>
+                <span className="shell-profile-role">{roleLabel}</span>
+              </div>
+              <div className="shell-profile-avatar">
+                {(username || roleLabel || "U").charAt(0).toUpperCase()}
+              </div>
             </div>
           </div>
         </header>
