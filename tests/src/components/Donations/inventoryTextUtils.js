@@ -104,3 +104,53 @@ export const sanitizeTemplateDescription = (value = "") =>
   sanitizeInventoryNoteText(value, MAX_TEMPLATE_DESCRIPTION_LENGTH, {
     maxTokenLength: 36,
   });
+
+const INVENTORY_IDENTITY_PATTERN = /^[A-Za-z]+(?:[A-Za-z\s.'-]*[A-Za-z])?$/;
+const INVENTORY_NOTE_ALLOWED_PATTERN = /^[A-Za-z0-9\s.,()/#&:;!?'"%+$\n-]*$/;
+
+export const validateInventoryIdentityText = (
+  value = "",
+  fieldLabel = "Name"
+) => {
+  const normalized = String(value || "").trim();
+
+  if (!normalized) {
+    return "";
+  }
+
+  if (!INVENTORY_IDENTITY_PATTERN.test(normalized)) {
+    return `${fieldLabel} must use letters only and may include spaces, periods, apostrophes, or hyphens.`;
+  }
+
+  return "";
+};
+
+export const validateInventoryNoteCharacters = (
+  value = "",
+  fieldLabel = "Description"
+) => {
+  const normalized = String(value || "").normalize("NFKC");
+
+  if (!normalized.trim()) {
+    return "";
+  }
+
+  if (!INVENTORY_NOTE_ALLOWED_PATTERN.test(normalized)) {
+    return `${fieldLabel} contains unsupported characters.`;
+  }
+
+  return "";
+};
+
+export const shouldSuppressLockedInventoryEditToast = (error = {}) => {
+  const lockedFields = Array.isArray(error?.lockedFields) ? error.lockedFields : [];
+  const message = String(error?.message || "").trim();
+
+  if (lockedFields.length > 0) {
+    return true;
+  }
+
+  return /cannot be changed after this item has been used in a relief release/i.test(
+    message
+  );
+};

@@ -7,6 +7,7 @@ import {
   ANALYTICS_TAB_RELIEF,
   canAccessAnalyticsTab,
   canEditInventoryType,
+  canChangeInventoryItemType,
   canViewInventoryType,
   getAnalyticsPageTitle,
   getAnalyticsTabsForRole,
@@ -14,10 +15,12 @@ import {
   getDonationQueueOwnerLabel,
   getDonationQueueTypeForRole,
   getHomePathForRole,
+  getInventoryAddTypes,
   getInventoryEditableTypes,
   getInventoryViewTypes,
   getReliefBasePathForRole,
   getReliefReviewerLabel,
+  getSidebarPanelLabel,
 } from "./roleAccessUtils";
 
 describe("roleAccessUtils", () => {
@@ -38,17 +41,43 @@ describe("roleAccessUtils", () => {
     expect(getAnalyticsPageTitle("accountant")).toBe("Accountant Analytics");
   });
 
-  it("gives accountant view access to all inventory types but edit access only to monetary", () => {
+  it("limits inventory view access by role while keeping accountant edit access monetary-only", () => {
+    expect(getInventoryViewTypes("admin")).toEqual([
+      "goods",
+      "appliance",
+      "monetary",
+    ]);
+    expect(getInventoryViewTypes("drrmo")).toEqual([
+      "goods",
+      "appliance",
+    ]);
     expect(getInventoryViewTypes("accountant")).toEqual([
+      "monetary",
+    ]);
+    expect(getInventoryAddTypes("accountant")).toEqual(["monetary"]);
+    expect(getInventoryEditableTypes("admin")).toEqual([
       "goods",
       "appliance",
       "monetary",
     ]);
     expect(getInventoryEditableTypes("accountant")).toEqual(["monetary"]);
-    expect(canViewInventoryType("accountant", "goods")).toBe(true);
-    expect(canViewInventoryType("accountant", "appliance")).toBe(true);
+    expect(canViewInventoryType("admin", "goods")).toBe(true);
+    expect(canViewInventoryType("drrmo", "goods")).toBe(true);
+    expect(canViewInventoryType("drrmo", "monetary")).toBe(false);
+    expect(canViewInventoryType("accountant", "goods")).toBe(false);
+    expect(canViewInventoryType("accountant", "appliance")).toBe(false);
+    expect(canViewInventoryType("accountant", "monetary")).toBe(true);
+    expect(canEditInventoryType("admin", "goods")).toBe(true);
+    expect(canEditInventoryType("admin", "appliance")).toBe(true);
+    expect(canEditInventoryType("admin", "monetary")).toBe(true);
     expect(canEditInventoryType("accountant", "monetary")).toBe(true);
     expect(canEditInventoryType("accountant", "goods")).toBe(false);
+  });
+
+  it("does not allow inventory item type changes during edit for any role", () => {
+    expect(canChangeInventoryItemType("admin")).toBe(false);
+    expect(canChangeInventoryItemType("drrmo")).toBe(false);
+    expect(canChangeInventoryItemType("accountant")).toBe(false);
   });
 
   it("treats accountant like the monetary queue owner for donation and relief flows", () => {
@@ -56,5 +85,10 @@ describe("roleAccessUtils", () => {
     expect(getDonationQueueOwnerLabel("accountant")).toBe("Accountant");
     expect(getReliefBasePathForRole("accountant")).toBe("/accountant");
     expect(getReliefReviewerLabel("accountant")).toBe("Accountant");
+  });
+
+  it("uses the correct sidebar panel label for accountant accounts", () => {
+    expect(getSidebarPanelLabel("accountant")).toBe("Accountant Panel");
+    expect(getSidebarPanelLabel("admin")).toBe("Admin Panel");
   });
 });

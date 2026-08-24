@@ -8,7 +8,7 @@ import DashboardShell from "../layout/DashboardShell";
 import { useAuth } from "../../context/AuthContext";
 import {
   canEditInventoryType,
-  getInventoryViewTypes,
+  getInventoryAddTypes,
   normalizeRole,
 } from "../auth/roleAccessUtils";
 import {
@@ -23,6 +23,7 @@ import {
   FaFileInvoiceDollar,
   FaHistory,
   FaMoneyBillWave,
+  FaPen,
   FaPlus,
   FaRedo,
   FaSave,
@@ -45,12 +46,6 @@ import {
   getTodayInputDate,
   validateFutureOrTodayInventoryDate,
 } from "./inventoryExpiryUtils";
-import {
-  INVENTORY_HISTORY_MAX_DATE,
-  INVENTORY_HISTORY_MIN_DATE,
-  isInventoryHistoryActive,
-  resolveInventoryHistoryRequest,
-} from "./inventoryHistoryUtils";
 import { API_BASE_URL } from "../../config/api";
 import ProofDocumentPreview from "./ProofDocumentPreview";
 import {
@@ -69,9 +64,6 @@ import {
   sanitizeInventoryNoteText,
   sanitizeInventoryReferenceText,
   sanitizeInventorySearchText,
-  shouldSuppressLockedInventoryEditToast,
-  validateInventoryIdentityText,
-  validateInventoryNoteCharacters,
 } from "./inventoryTextUtils";
 
 const BASE_URL = API_BASE_URL;
@@ -162,7 +154,7 @@ const InventoryAdd = () => {
   const isAccountant = role === "accountant";
   const canReviewMobileDonations = isAdmin || isAccountant;
   const allowedDonationTypes = useMemo(
-    () => getInventoryViewTypes(role),
+    () => getInventoryAddTypes(role),
     [role]
   );
   const defaultDonationType = isAccountant ? "monetary" : allowedDonationTypes[0] || "goods";
@@ -175,7 +167,6 @@ const InventoryAdd = () => {
   const [items, setItems] = useState([]);
   const [archivedItems, setArchivedItems] = useState([]);
   const [proofFiles, setProofFiles] = useState([]);
-  const [existingProofFiles, setExistingProofFiles] = useState([]);
   const [proofPreview, setProofPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
@@ -185,10 +176,6 @@ const InventoryAdd = () => {
   const canEditSelectedType = canEditInventoryType(role, donationType);
   const [editingItemId, setEditingItemId] = useState("");
   const [existingProofCount, setExistingProofCount] = useState(0);
-  const [historyDraftDate, setHistoryDraftDate] = useState("");
-  const [historyAsOfDate, setHistoryAsOfDate] = useState("");
-  const [historyPayload, setHistoryPayload] = useState(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
   const fileInputRef = useRef(null);
   const importFileInputRef = useRef(null);
   const toastTimersRef = useRef({});
@@ -259,6 +246,7 @@ const InventoryAdd = () => {
     category: "",
     expiryStatus: "",
     addedBy: "",
+    date: ""
   });
 
   const [sortConfig, setSortConfig] = useState({
@@ -269,13 +257,6 @@ const InventoryAdd = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const minExpirationDate = useMemo(() => getTodayInputDate(), []);
-  const historyRequest = useMemo(
-    () => resolveInventoryHistoryRequest({ asOf: historyAsOfDate }),
-    [historyAsOfDate]
-  );
-  const historyActive = !showArchived && isInventoryHistoryActive({
-    asOf: historyAsOfDate,
-  });
 
   const pushToast = useCallback((message, type = "success") => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -407,57 +388,6 @@ const InventoryAdd = () => {
     }
   }, [showArchived, fetchArchivedInventory]);
 
-  useEffect(() => {
-    if (showArchived || !historyActive || !historyRequest.asOf) {
-      setHistoryPayload(null);
-      setHistoryLoading(false);
-      return undefined;
-    }
-
-    let ignore = false;
-
-    const fetchHistory = async () => {
-      try {
-        setHistoryLoading(true);
-        const response = await fetch(
-          `${BASE_URL}/api/inventory/history?asOf=${encodeURIComponent(historyRequest.asOf)}`,
-          {
-            credentials: "include",
-          }
-        );
-
-        const payload = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-          throw new Error(payload?.message || "Failed to load inventory history.");
-        }
-
-        if (!ignore) {
-          setHistoryPayload(payload);
-        }
-      } catch (err) {
-        console.error("Error fetching inventory history:", err);
-        if (!ignore) {
-          setHistoryPayload(null);
-          pushToast(
-            err?.message || "Failed to load inventory history snapshot.",
-            "error"
-          );
-        }
-      } finally {
-        if (!ignore) {
-          setHistoryLoading(false);
-        }
-      }
-    };
-
-    fetchHistory();
-
-    return () => {
-      ignore = true;
-    };
-  }, [historyActive, historyRequest.asOf, pushToast, showArchived]);
-
   const resetForm = () => {
     setForm({
       type: donationType,
@@ -477,7 +407,6 @@ const InventoryAdd = () => {
       sourceName: ""
     });
     setProofFiles([]);
-    setExistingProofFiles([]);
     setExistingProofCount(0);
     setFormErrors({});
     setEditingItemId("");
@@ -517,7 +446,6 @@ const InventoryAdd = () => {
       sourceName: ""
     });
     setProofFiles([]);
-    setExistingProofFiles([]);
     setExistingProofCount(0);
     setFormErrors({});
     setImportInfo({
@@ -582,7 +510,7 @@ const InventoryAdd = () => {
   const getPrimaryFieldLabel = () => {
     if (donationType === "goods") return "Item Name";
     if (donationType === "appliance") return "Appliance Name";
-    return "Donor Name";
+    return "Provider Name";
   };
 
   const getPrimaryFieldPlaceholder = () => {
@@ -698,62 +626,33 @@ const InventoryAdd = () => {
     return value === 0 ? "" : value;
   };
 
-  const getProofDisplayName = useCallback((value, index = 0) => {
-    if (typeof value === "object" && value?.name) {
-      return value.name;
-    }
-
-    const rawValue =
-      typeof value === "string"
-        ? value
-        : value?.filename || value?.fileName || value?.url || value?.path || "";
-
-    if (!rawValue) {
-      return `Proof ${index + 1}`;
-    }
-
-    const normalized = String(rawValue).split("?")[0].split("#")[0];
-    const fileName = normalized.split("/").pop() || normalized;
-
-    try {
-      return decodeURIComponent(fileName);
-    } catch (error) {
-      return fileName;
-    }
-  }, []);
-
   const validateProofFiles = useCallback(() => {
-    const selectedFiles = Array.isArray(proofFiles) ? proofFiles : [];
-    const retainedFiles = Array.isArray(existingProofFiles) ? existingProofFiles : [];
-    const combinedProofFiles = [...retainedFiles, ...selectedFiles];
+    const selectedFiles = proofFiles || [];
 
-    if (combinedProofFiles.length === 0 && existingProofCount > 0) {
+    if (selectedFiles.length === 0 && existingProofCount > 0) {
       return "";
     }
 
-    if (combinedProofFiles.length < 2) {
+    if (selectedFiles.length < 2) {
       return "Upload at least 2 proof files: 1 document proof and 1 picture proof.";
     }
 
-    const unsupportedFile = combinedProofFiles.find(
-      (file) =>
-        !ALLOWED_PROOF_EXTENSIONS.includes(
-          getFileExtension(typeof file === "string" ? file : file?.name)
-        )
+    const unsupportedFile = selectedFiles.find(
+      (file) => !ALLOWED_PROOF_EXTENSIONS.includes(getFileExtension(file?.name))
     );
     if (unsupportedFile) {
       return "Only PDF, DOC, DOCX, JPG, JPEG, PNG, and WEBP files are allowed for proof uploads.";
     }
 
-    const hasDocumentProof = combinedProofFiles.some((file) => isDocumentProofFile(file));
-    const hasImageProof = combinedProofFiles.some((file) => isImageProofFile(file));
+    const hasDocumentProof = selectedFiles.some((file) => isDocumentProofFile(file));
+    const hasImageProof = selectedFiles.some((file) => isImageProofFile(file));
 
     if (!hasDocumentProof || !hasImageProof) {
       return "Proof uploads must include at least 1 document proof and 1 picture proof.";
     }
 
     return "";
-  }, [existingProofCount, existingProofFiles, proofFiles]);
+  }, [existingProofCount, proofFiles]);
 
   const getFinalGoodsCategory = useCallback(() => {
     if (form.category === CUSTOM_CATEGORY_VALUE) {
@@ -772,7 +671,6 @@ const InventoryAdd = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    let nextInlineError = "";
 
     if (name === "quantity" || name === "amount") {
       if (value === "") {
@@ -785,16 +683,11 @@ const InventoryAdd = () => {
         }
       }
     } else if (name === "name") {
-      nextInlineError = validateInventoryIdentityText(
-        value,
-        donationType === "monetary" ? "Donor name" : "Name"
-      );
       setForm((prev) => ({
         ...prev,
         name: sanitizeInventoryCompactText(value, MAX_NAME_LENGTH),
       }));
     } else if (name === "sourceName") {
-      nextInlineError = validateInventoryIdentityText(value, "Provider name");
       setForm((prev) => ({
         ...prev,
         sourceName: sanitizeInventoryCompactText(value, MAX_SOURCE_NAME_LENGTH, {
@@ -802,10 +695,6 @@ const InventoryAdd = () => {
         }),
       }));
     } else if (name === "description") {
-      nextInlineError = validateInventoryNoteCharacters(
-        value,
-        "Description / Notes"
-      );
       setForm((prev) => ({
         ...prev,
         description: sanitizeInventoryNoteText(value, MAX_DESCRIPTION_LENGTH),
@@ -816,7 +705,6 @@ const InventoryAdd = () => {
         referenceNumber: sanitizeInventoryReferenceText(value),
       }));
     } else if (name === "customCategory") {
-      nextInlineError = validateInventoryIdentityText(value, "Custom category");
       setForm((prev) => ({
         ...prev,
         customCategory: sanitizeInventoryCompactText(
@@ -826,7 +714,6 @@ const InventoryAdd = () => {
         ).toLowerCase(),
       }));
     } else if (name === "unit") {
-      nextInlineError = validateInventoryIdentityText(value, "Unit");
       setForm((prev) => ({
         ...prev,
         unit: sanitizeInventoryCompactText(value, MAX_UNIT_LENGTH, {
@@ -860,10 +747,10 @@ const InventoryAdd = () => {
 
     setFormErrors((prev) => ({
       ...prev,
-      [name]: nextInlineError,
+      [name]: "",
       unitSelect: "",
       category: "",
-      customCategory: name === "customCategory" ? nextInlineError : "",
+      customCategory: "",
       expirationDate: "",
       usageDuration: "",
       condition: "",
@@ -873,63 +760,12 @@ const InventoryAdd = () => {
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || []);
-    setProofFiles((prev) => {
-      const mergedFiles = [...(Array.isArray(prev) ? prev : [])];
-
-      files.forEach((file) => {
-        const isDuplicate = mergedFiles.some(
-          (existingFile) =>
-            existingFile?.name === file?.name &&
-            existingFile?.size === file?.size &&
-            existingFile?.type === file?.type &&
-            existingFile?.lastModified === file?.lastModified
-        );
-
-        if (!isDuplicate) {
-          mergedFiles.push(file);
-        }
-      });
-
-      return mergedFiles;
-    });
+    setProofFiles(files);
     setFormErrors((prev) => ({
       ...prev,
       proofFiles: "",
     }));
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
   };
-
-  const handleRemoveSelectedProofFile = (targetIndex) => {
-    setProofFiles((prev) =>
-      (Array.isArray(prev) ? prev : []).filter((_, index) => index !== targetIndex)
-    );
-  };
-
-  const handleRemoveExistingProofFile = (targetIndex) => {
-    setExistingProofFiles((prev) =>
-      (Array.isArray(prev) ? prev : []).filter((_, index) => index !== targetIndex)
-    );
-  };
-
-  useEffect(() => {
-    if (!editingItemId) return;
-
-    const sourceItems = showArchived ? archivedItems : items;
-    const matchedItem = (Array.isArray(sourceItems) ? sourceItems : []).find(
-      (item) => item?._id === editingItemId
-    );
-
-    if (!matchedItem) return;
-
-    const savedProofFiles = Array.isArray(matchedItem.proofFiles)
-      ? matchedItem.proofFiles.filter(Boolean)
-      : [];
-
-    setExistingProofFiles(savedProofFiles);
-    setExistingProofCount(savedProofFiles.length);
-  }, [archivedItems, editingItemId, items, showArchived]);
 
   const handleImportFile = async (event) => {
     const file = event.target.files?.[0];
@@ -938,15 +774,6 @@ const InventoryAdd = () => {
     setImportingFile(true);
 
     try {
-      const proofFilesError = validateProofFiles();
-      if (proofFilesError) {
-        setFormErrors((prev) => ({
-          ...prev,
-          proofFiles: proofFilesError,
-        }));
-        throw new Error(proofFilesError);
-      }
-
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: "array" });
       const firstSheetName = workbook.SheetNames?.[0];
@@ -988,9 +815,6 @@ const InventoryAdd = () => {
       for (const payload of validPayloads) {
         const formData = new FormData();
         appendInventoryFormData(formData, config.mode, payload);
-        proofFiles.forEach((proofFile) => {
-          formData.append("proofFiles", proofFile);
-        });
         await axios.post(`${BASE_URL}/api/inventory`, formData, {
           withCredentials: true,
           headers: { "Content-Type": "multipart/form-data" },
@@ -1006,14 +830,11 @@ const InventoryAdd = () => {
       };
 
       setImportInfo(nextImportInfo);
-      setFormErrors({});
       pushToast(
         `${validPayloads.length} ${config.mode} row${validPayloads.length === 1 ? "" : "s"} imported successfully.`,
         "success"
       );
-      await fetchInventory();
-      resetForm();
-      setShowForm(false);
+      fetchInventory();
     } catch (err) {
       console.error("Error importing inventory file:", err);
       setImportInfo({
@@ -1074,16 +895,10 @@ const InventoryAdd = () => {
           : donationType === "appliance"
           ? "Appliance name is required."
           : "Donor name is required.";
-    } else if (form.name.trim().length > MAX_NAME_LENGTH) {
+    }
+
+    if (form.name.trim().length > MAX_NAME_LENGTH) {
       errors.name = `Name must be ${MAX_NAME_LENGTH} characters or less.`;
-    } else {
-      const nameFormatError = validateInventoryIdentityText(
-        form.name,
-        donationType === "monetary" ? "Donor name" : "Name"
-      );
-      if (nameFormatError) {
-        errors.name = nameFormatError;
-      }
     }
 
     if (donationType === "goods") {
@@ -1098,14 +913,6 @@ const InventoryAdd = () => {
         !normalizeCategoryValue(form.customCategory)
       ) {
         errors.customCategory = "Please enter a custom category.";
-      } else if (form.category === CUSTOM_CATEGORY_VALUE) {
-        const customCategoryFormatError = validateInventoryIdentityText(
-          form.customCategory,
-          "Custom category"
-        );
-        if (customCategoryFormatError) {
-          errors.customCategory = customCategoryFormatError;
-        }
       }
 
       if (form.quantity === "" || Number(form.quantity) <= 0) {
@@ -1118,11 +925,6 @@ const InventoryAdd = () => {
         errors.unit = "Unit is required for goods donations.";
       } else if (form.unit.trim().length > MAX_UNIT_LENGTH) {
         errors.unit = `Unit must be ${MAX_UNIT_LENGTH} characters or less.`;
-      } else {
-        const unitFormatError = validateInventoryIdentityText(form.unit, "Unit");
-        if (unitFormatError) {
-          errors.unit = unitFormatError;
-        }
       }
 
       if (form.expirationDate) {
@@ -1152,14 +954,6 @@ const InventoryAdd = () => {
         !normalizeCategoryValue(form.customCategory)
       ) {
         errors.customCategory = "Please enter a custom category.";
-      } else if (form.category === CUSTOM_CATEGORY_VALUE) {
-        const customCategoryFormatError = validateInventoryIdentityText(
-          form.customCategory,
-          "Custom category"
-        );
-        if (customCategoryFormatError) {
-          errors.customCategory = customCategoryFormatError;
-        }
       }
 
       if (form.quantity === "" || Number(form.quantity) <= 0) {
@@ -1193,32 +987,15 @@ const InventoryAdd = () => {
       errors.sourceType = "Source type is required.";
     }
 
-    if (donationType === "goods" || donationType === "appliance") {
-      if (!form.sourceName.trim()) {
-        errors.sourceName = "Provider name is required.";
-      } else if (form.sourceName.trim().length > MAX_SOURCE_NAME_LENGTH) {
-        errors.sourceName = `Source name must be ${MAX_SOURCE_NAME_LENGTH} characters or less.`;
-      } else {
-        const sourceNameFormatError = validateInventoryIdentityText(
-          form.sourceName,
-          "Provider name"
-        );
-        if (sourceNameFormatError) {
-          errors.sourceName = sourceNameFormatError;
-        }
-      }
+    if (
+      (donationType === "goods" || donationType === "appliance") &&
+      form.sourceName.trim().length > MAX_SOURCE_NAME_LENGTH
+    ) {
+      errors.sourceName = `Source name must be ${MAX_SOURCE_NAME_LENGTH} characters or less.`;
     }
 
     if (form.description.trim().length > MAX_DESCRIPTION_LENGTH) {
       errors.description = `Description must be ${MAX_DESCRIPTION_LENGTH} characters or less.`;
-    } else {
-      const descriptionFormatError = validateInventoryNoteCharacters(
-        form.description,
-        "Description / Notes"
-      );
-      if (descriptionFormatError) {
-        errors.description = descriptionFormatError;
-      }
     }
 
     const proofFilesError = validateProofFiles();
@@ -1228,6 +1005,62 @@ const InventoryAdd = () => {
 
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
+  };
+
+  const openEditForm = (item) => {
+    const itemType = resolveInventoryType(item);
+
+    setDonationType(itemType);
+    setEditingItemId(item._id);
+    setShowForm(true);
+    setFormErrors({});
+    setProofFiles([]);
+    setExistingProofCount(Array.isArray(item.proofFiles) ? item.proofFiles.length : 0);
+
+    setForm({
+      type: itemType,
+      name: item.name || "",
+      category:
+        itemType === "goods" || itemType === "appliance"
+          ? item.category || ""
+          : "",
+      customCategory: "",
+      requiresExpiration:
+        itemType === "goods" && item.requiresExpiration === false
+          ? "not_required"
+          : "required",
+      quantity:
+        (itemType === "goods" || itemType === "appliance") &&
+        item.quantity !== undefined
+          ? String(item.quantity)
+          : "",
+      unit: itemType === "goods" ? item.unit || "" : "",
+      amount:
+        itemType === "monetary" && item.amount !== undefined
+          ? String(item.amount)
+          : "",
+      referenceNumber:
+        itemType === "monetary"
+          ? item.referenceNumber || extractReferenceFromDescription(item.description)
+          : "",
+      expirationDate:
+        itemType === "goods" && item.expirationDate
+          ? new Date(item.expirationDate).toISOString().slice(0, 10)
+          : "",
+      condition: itemType === "appliance" ? item.condition || "brand_new" : "brand_new",
+      usageDuration:
+        itemType === "appliance" ? item.usageDuration || "" : "",
+      description:
+        itemType === "monetary"
+          ? stripReferenceFromDescription(item.description)
+          : item.description || "",
+      sourceType: item.sourceType || "external",
+      sourceName: item.sourceName || ""
+    });
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -1290,13 +1123,6 @@ const InventoryAdd = () => {
       }
 
       if (editingItemId) {
-        formData.append("syncProofFiles", "true");
-        existingProofFiles.forEach((file) => {
-          formData.append("retainedProofFiles", String(file || ""));
-        });
-      }
-
-      if (editingItemId) {
         await axios.put(`${BASE_URL}/api/inventory/${editingItemId}`, formData, {
           withCredentials: true,
           headers: { "Content-Type": "multipart/form-data" }
@@ -1324,29 +1150,10 @@ const InventoryAdd = () => {
         fetchInventory();
     } catch (err) {
       console.error("Error saving inventory:", err);
-      const errorPayload = err?.response?.data || {};
-      const errorMessage =
-        errorPayload?.message || "Failed to save inventory item.";
-
-      if (
-        donationType === "monetary" &&
-        /Reference number already exists for another monetary donation\./i.test(
-          errorMessage
-        )
-      ) {
-        setFormErrors((prev) => ({
-          ...prev,
-          referenceNumber:
-            "Reference number already exists for another monetary donation.",
-        }));
-      }
-
-      if (!shouldSuppressLockedInventoryEditToast(errorPayload)) {
-        pushToast(
-          errorMessage,
-          "error"
-        );
-      }
+      pushToast(
+        err?.response?.data?.message || "Failed to save inventory item.",
+        "error"
+      );
     } finally {
       setLoading(false);
     }
@@ -1448,9 +1255,8 @@ const InventoryAdd = () => {
       category: "",
       expiryStatus: "",
       addedBy: "",
+      date: ""
     });
-    setHistoryDraftDate("");
-    setHistoryAsOfDate("");
     setCurrentPage(1);
   };
 
@@ -1494,70 +1300,30 @@ const InventoryAdd = () => {
   }, [showArchived, donationType, pushToast]);
 
   const goodsItems = useMemo(
-    () =>
-      ((historyActive && historyPayload?.items
-        ? [
-            ...(Array.isArray(historyPayload.items.goods) ? historyPayload.items.goods : []),
-            ...(Array.isArray(historyPayload.items.appliance) ? historyPayload.items.appliance : []),
-            ...(Array.isArray(historyPayload.items.monetary) ? historyPayload.items.monetary : []),
-          ]
-        : items
-      ).filter((item) => resolveInventoryType(item) === "goods")),
-    [historyActive, historyPayload, items]
+    () => items.filter((item) => resolveInventoryType(item) === "goods"),
+    [items]
   );
 
   const monetaryItems = useMemo(
-    () =>
-      ((historyActive && historyPayload?.items
-        ? [
-            ...(Array.isArray(historyPayload.items.goods) ? historyPayload.items.goods : []),
-            ...(Array.isArray(historyPayload.items.appliance) ? historyPayload.items.appliance : []),
-            ...(Array.isArray(historyPayload.items.monetary) ? historyPayload.items.monetary : []),
-          ]
-        : items
-      ).filter((item) => resolveInventoryType(item) === "monetary")),
-    [historyActive, historyPayload, items]
+    () => items.filter((item) => resolveInventoryType(item) === "monetary"),
+    [items]
   );
 
   const applianceItems = useMemo(
-    () =>
-      ((historyActive && historyPayload?.items
-        ? [
-            ...(Array.isArray(historyPayload.items.goods) ? historyPayload.items.goods : []),
-            ...(Array.isArray(historyPayload.items.appliance) ? historyPayload.items.appliance : []),
-            ...(Array.isArray(historyPayload.items.monetary) ? historyPayload.items.monetary : []),
-          ]
-        : items
-      ).filter((item) => resolveInventoryType(item) === "appliance")),
-    [historyActive, historyPayload, items]
+    () => items.filter((item) => resolveInventoryType(item) === "appliance"),
+    [items]
   );
 
-  const effectiveActiveItems = useMemo(() => {
-    if (!historyActive || !historyPayload?.items) {
-      return items;
-    }
-
-    return [
-      ...(Array.isArray(historyPayload.items.goods) ? historyPayload.items.goods : []),
-      ...(Array.isArray(historyPayload.items.appliance) ? historyPayload.items.appliance : []),
-      ...(Array.isArray(historyPayload.items.monetary) ? historyPayload.items.monetary : []),
-    ];
-  }, [historyActive, historyPayload, items]);
-
   const currentTypeItems = useMemo(() => {
-    const sourceItems = showArchived ? archivedItems : effectiveActiveItems;
+    const sourceItems = showArchived ? archivedItems : items;
     return sourceItems.filter((item) => resolveInventoryType(item) === donationType);
-  }, [effectiveActiveItems, archivedItems, donationType, showArchived]);
+  }, [items, archivedItems, donationType, showArchived]);
 
   const allTypeItems = useMemo(() => {
-    const sourceItems = showArchived
-      ? archivedItems
-      : effectiveActiveItems;
-
-    return sourceItems.filter(
+    return [...items, ...archivedItems].filter(
       (item) => resolveInventoryType(item) === donationType
     );
-  }, [effectiveActiveItems, archivedItems, donationType, showArchived]);
+  }, [items, archivedItems, donationType]);
 
   const categories = useMemo(() => {
     if (donationType === "monetary") return [];
@@ -1630,7 +1396,7 @@ const InventoryAdd = () => {
       return sum + (Number.isNaN(qty) ? 0 : qty);
     }, 0);
 
-    const recentDonationsCount = effectiveActiveItems.filter((item) =>
+    const recentDonationsCount = items.filter((item) =>
       isRecentDonation(item.createdAt)
     ).length;
     const expiredItemsCount = goodsItems.filter(
@@ -1648,7 +1414,7 @@ const InventoryAdd = () => {
       recentDonationsCount,
       expiredItemsCount
     };
-  }, [effectiveActiveItems, goodsItems, monetaryItems, applianceItems, isAdmin]);
+  }, [items, goodsItems, monetaryItems, applianceItems, isAdmin]);
 
   const filteredItems = useMemo(() => {
     let filtered = [...currentTypeItems];
@@ -1691,6 +1457,14 @@ const InventoryAdd = () => {
         (item) =>
           (item.addedBy || "").toLowerCase() === filters.addedBy.toLowerCase()
       );
+    }
+
+    if (filters.date) {
+      filtered = filtered.filter((item) => {
+        if (!item.createdAt) return false;
+        const itemDate = new Date(item.createdAt).toISOString().slice(0, 10);
+        return itemDate === filters.date;
+      });
     }
 
     return filtered;
@@ -1827,15 +1601,10 @@ const InventoryAdd = () => {
                       <FaTimes />
                     </button>
 
-                    {!proofPreview.missing &&
-                    (proofPreview.directUrl ||
-                      proofPreview.candidates?.[proofPreview.index]) ? (
+                    {!proofPreview.missing && proofPreview.candidates?.[proofPreview.index] ? (
                       proofPreview.isImage ? (
                         <img
-                          src={
-                            proofPreview.directUrl ||
-                            proofPreview.candidates[proofPreview.index]
-                          }
+                          src={proofPreview.candidates[proofPreview.index]}
                           alt={proofPreview.label || "Proof preview"}
                           onError={() => {
                             setProofPreview((current) => {
@@ -1849,17 +1618,10 @@ const InventoryAdd = () => {
                           }}
                         />
                       ) : (
-                        proofPreview.directUrl ? (
-                          <iframe
-                            title={proofPreview.label || "Proof document"}
-                            src={proofPreview.directUrl}
-                          />
-                        ) : (
-                          <ProofDocumentPreview
-                            title={proofPreview.label || "Proof document"}
-                            candidates={proofPreview.candidates || []}
-                          />
-                        )
+                        <ProofDocumentPreview
+                          title={proofPreview.label || "Proof document"}
+                          candidates={proofPreview.candidates || []}
+                        />
                       )
                     ) : (
                       <div className="inventory-add-proof-modal-empty">
@@ -1942,101 +1704,133 @@ const InventoryAdd = () => {
               !showForm && !showArchived ? "inventory-header-with-summary" : ""
             }`}
           >
+            <div>
+              <h1 className="inventory-title">Add Donations to Inventory</h1>
+            </div>
+
+            {!showForm && (
+              <div className="inventory-header-actions">
+                <button
+                  className="btn btn-primary"
+                  onClick={exportInventoryPdf}
+                >
+                  <FaFilePdf className="btn-icon" />
+                  Export PDF
+                </button>
+
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setShowArchived((prev) => !prev);
+                    setCurrentPage(1);
+                    clearFilters();
+                  }}
+                >
+                  {showArchived ? (
+                    <FaUndo className="btn-icon" />
+                  ) : (
+                    <FaHistory className="btn-icon" />
+                  )}
+                  {showArchived ? "Back to Active Donations" : "View Archived Donations"}
+                </button>
+
+                <button
+                  className="btn btn-primary"
+                  disabled={!canEditSelectedType}
+                  onClick={() => {
+                    if (!canEditSelectedType) return;
+                    setEditingItemId("");
+                    setShowForm(true);
+                  }}
+                >
+                  <FaPlus className="btn-icon" />
+                  {canEditSelectedType
+                    ? `Add ${
+                        donationType === "goods"
+                          ? "Goods"
+                          : donationType === "appliance"
+                          ? "Appliance"
+                          : "Monetary"
+                      } Donation`
+                    : "View-only inventory"}
+                </button>
+              </div>
+            )}
+
             {!showForm && !showArchived && (
-              <>
-                <div className="inventory-header-summary-head">
-                  <div className="inventory-summary-title-group">
-                    <h1 className="inventory-title">Inventory Donations Overview</h1>
-                    <div className="inventory-summary-meta">
-                      <span className="inventory-top-pill subtle">Live inventory snapshot</span>
-                    </div>
+              <div className="summary-grid inventory-header-summary">
+                <div className="summary-card muted">
+                  <div className="summary-card-top">
+                    <p className="summary-label">Total Inventory Records</p>
+                    <span className="summary-icon"><FaArchive /></span>
                   </div>
-
-                  <div className="inventory-summary-actions">
-                    <button
-                      className="btn btn-primary"
-                      onClick={exportInventoryPdf}
-                    >
-                      <FaFilePdf className="btn-icon" />
-                      Export PDF
-                    </button>
-                  </div>
+                  <h3 className="summary-value">{summary.totalItems}</h3>
                 </div>
 
-                <div className="summary-grid inventory-header-summary">
-                  <div className="summary-card muted">
+                {allowedDonationTypes.includes("goods") ? (
+                  <div className="summary-card success">
                     <div className="summary-card-top">
-                      <p className="summary-label">Total Inventory Records</p>
-                      <span className="summary-icon"><FaArchive /></span>
+                      <p className="summary-label">Goods Donations</p>
+                      <span className="summary-icon"><FaBoxes /></span>
                     </div>
-                    <h3 className="summary-value">{summary.totalItems}</h3>
+                    <h3 className="summary-value">{summary.totalGoodsEntries}</h3>
+                    <span className="summary-note">
+                      Total quantity: {summary.totalGoodsQuantity}
+                    </span>
                   </div>
+                ) : null}
 
-                  {allowedDonationTypes.includes("goods") ? (
-                    <div className="summary-card success">
-                      <div className="summary-card-top">
-                        <p className="summary-label">Goods Donations</p>
-                        <span className="summary-icon"><FaBoxes /></span>
-                      </div>
-                      <h3 className="summary-value">{summary.totalGoodsEntries}</h3>
-                      <span className="summary-note">
-                        Total quantity: {summary.totalGoodsQuantity}
-                      </span>
-                    </div>
-                  ) : null}
-
-                  {allowedDonationTypes.includes("monetary") ? (
-                    <div className="summary-card info">
-                      <div className="summary-card-top">
-                        <p className="summary-label">Monetary Donations</p>
-                        <span className="summary-icon"><FaMoneyBillWave /></span>
-                      </div>
-                      <h3 className="summary-value">{summary.totalMonetaryEntries}</h3>
-                    </div>
-                  ) : null}
-
-                  {allowedDonationTypes.includes("monetary") ? (
-                    <div className="summary-card info">
-                      <div className="summary-card-top">
-                        <p className="summary-label">Total Monetary Amount</p>
-                        <span className="summary-icon"><FaMoneyBillWave /></span>
-                      </div>
-                      <h3 className="summary-value">
-                        PHP {summary.totalMonetaryAmount.toLocaleString()}
-                      </h3>
-                    </div>
-                  ) : null}
-
-                  {allowedDonationTypes.includes("appliance") ? (
-                    <div className="summary-card warning">
-                      <div className="summary-card-top">
-                        <p className="summary-label">Appliance Donations</p>
-                        <span className="summary-icon"><FaBlender /></span>
-                      </div>
-                      <h3 className="summary-value">{summary.totalApplianceEntries}</h3>
-                      <span className="summary-note">
-                        Total quantity: {summary.totalApplianceQuantity}
-                      </span>
-                    </div>
-                  ) : null}
-
-                  <div className="summary-card accent">
+                {allowedDonationTypes.includes("monetary") ? (
+                  <div className="summary-card info">
                     <div className="summary-card-top">
-                      <p className="summary-label">Recent Donations</p>
-                      <span className="summary-icon"><FaBell /></span>
+                      <p className="summary-label">Monetary Donations</p>
+                      <span className="summary-icon"><FaMoneyBillWave /></span>
                     </div>
-                    <h3 className="summary-value">{summary.recentDonationsCount}</h3>
+                    <h3 className="summary-value">{summary.totalMonetaryEntries}</h3>
                   </div>
+                ) : null}
 
-                  <div className="summary-card danger">
+                {allowedDonationTypes.includes("monetary") ? (
+                  <div className="summary-card info">
                     <div className="summary-card-top">
-                      <p className="summary-label">Expired Items</p>
-                      <span className="summary-icon"><FaExclamationTriangle /></span>
+                      <p className="summary-label">Total Monetary Amount</p>
+                      <span className="summary-icon"><FaMoneyBillWave /></span>
                     </div>
-                    <h3 className="summary-value">{summary.expiredItemsCount}</h3>
+                    <h3 className="summary-value">
+                      PHP {summary.totalMonetaryAmount.toLocaleString()}
+                    </h3>
                   </div>
+                ) : null}
+
+                {allowedDonationTypes.includes("appliance") ? (
+                  <div className="summary-card warning">
+                    <div className="summary-card-top">
+                      <p className="summary-label">Appliance Donations</p>
+                      <span className="summary-icon"><FaBlender /></span>
+                    </div>
+                    <h3 className="summary-value">{summary.totalApplianceEntries}</h3>
+                    <span className="summary-note">
+                      Total quantity: {summary.totalApplianceQuantity}
+                    </span>
+                  </div>
+                ) : null}
+
+                <div className="summary-card accent">
+                  <div className="summary-card-top">
+                    <p className="summary-label">Recent Donations</p>
+                    <span className="summary-icon"><FaBell /></span>
+                  </div>
+                  <h3 className="summary-value">{summary.recentDonationsCount}</h3>
                 </div>
-              </>
+
+                <div className="summary-card danger">
+                  <div className="summary-card-top">
+                    <p className="summary-label">Expired Items</p>
+                    <span className="summary-icon"><FaExclamationTriangle /></span>
+                  </div>
+                  <h3 className="summary-value">{summary.expiredItemsCount}</h3>
+                </div>
+              </div>
             )}
           </div>
 
@@ -2602,144 +2396,30 @@ const InventoryAdd = () => {
                               {getProofLabel()}
                             </span>
                             <span className="donation-upload-count">
-                              {existingProofFiles.length + proofFiles.length > 0
-                                ? `${existingProofFiles.length + proofFiles.length} file${
-                                    existingProofFiles.length + proofFiles.length > 1
-                                      ? "s"
-                                      : ""
+                              {proofFiles.length > 0
+                                ? `${proofFiles.length} file${
+                                    proofFiles.length > 1 ? "s" : ""
                                   } selected`
                                 : "No files selected"}
                             </span>
                           </div>
                         </div>
 
-                        {editingItemId && existingProofFiles.length > 0 ? (
-                          <div className="donation-proof-section">
-                            <div className="donation-proof-section-head">
-                              <strong>Saved proof files</strong>
-                              <span>
-                                {existingProofFiles.length} file
-                                {existingProofFiles.length > 1 ? "s" : ""}
-                              </span>
-                            </div>
-                            <div className="donation-selected-files donation-selected-files-grid">
-                              {existingProofFiles.map((file, index) => {
-                                const candidates = buildProofFileHrefCandidates(file, BASE_URL);
-                                const href = candidates[0] || buildProofFileHref(file, BASE_URL);
-                                const isImage = isImageProofFile(file);
-
-                                return (
-                                  <div
-                                    key={`existing-proof-${index}-${String(file)}`}
-                                    className="donation-file-chip donation-file-chip-card"
-                                  >
-                                    <button
-                                      type="button"
-                                      className="donation-proof-preview-button"
-                                      onClick={() =>
-                                        setProofPreview({
-                                          candidates: candidates.length
-                                            ? candidates
-                                            : [href].filter(Boolean),
-                                          index: 0,
-                                          isImage,
-                                          label: isImage
-                                            ? `Saved Image Proof ${index + 1}`
-                                            : `Saved Document Proof ${index + 1}`,
-                                          name: getProofDisplayName(file, index),
-                                          missing: !href,
-                                        })
-                                      }
-                                    >
-                                      {isImage ? (
-                                        <img
-                                          src={href}
-                                          alt={getProofDisplayName(file, index)}
-                                          className="proof-thumb"
-                                        />
-                                      ) : (
-                                        <div className="proof-doc-icon">
-                                          <FaFilePdf />
-                                        </div>
-                                      )}
-                                      <span className="proof-card-label">
-                                        {getProofDisplayName(file, index)}
-                                      </span>
-                                    </button>
-                                    <div className="donation-file-chip-meta">
-                                      <span>
-                                        {isImage ? "Image proof" : "Document proof"}
-                                      </span>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      className="donation-file-remove-btn"
-                                      onClick={() => handleRemoveExistingProofFile(index)}
-                                    >
-                                      Remove
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ) : null}
-
                         {proofFiles.length > 0 && (
-                          <div className="donation-proof-section">
-                            <div className="donation-proof-section-head">
-                              <strong>New proof files</strong>
-                              <span>
-                                {proofFiles.length} file{proofFiles.length > 1 ? "s" : ""}
-                              </span>
-                            </div>
-                          <div className="donation-selected-files donation-selected-files-grid">
+                          <div className="donation-selected-files">
                             {proofFiles.map((file, index) => (
-                              <div
-                                key={`${file.name}-${index}`}
-                                className="donation-file-chip donation-file-chip-card"
-                              >
-                                <button
-                                  type="button"
-                                  className="donation-proof-preview-button"
-                                  onClick={() => {
-                                    const previewUrl = URL.createObjectURL(file);
-                                    setProofPreview({
-                                      candidates: [previewUrl],
-                                      directUrl: previewUrl,
-                                      index: 0,
-                                      isImage: isImageProofFile(file),
-                                      label: isImageProofFile(file)
-                                        ? `New Image Proof ${index + 1}`
-                                        : `New Document Proof ${index + 1}`,
-                                      name: file.name,
-                                      missing: false,
-                                    });
-                                  }}
-                                >
-                                  <div className="proof-doc-icon">
-                                    <FaFilePdf />
-                                  </div>
-                                  <span className="proof-card-label">{file.name}</span>
-                                </button>
+                              <div key={`${file.name}-${index}`} className="donation-file-chip">
+                                <span className="donation-file-chip-name">{file.name}</span>
                                 <span className="donation-file-chip-size">
                                   {isImageProofFile(file) ? "Image proof" : "Document proof"} · {(file.size / 1024).toFixed(1)} KB
                                 </span>
-                                <button
-                                  type="button"
-                                  className="donation-file-remove-btn"
-                                  onClick={() => handleRemoveSelectedProofFile(index)}
-                                >
-                                  Remove
-                                </button>
                               </div>
                             ))}
                           </div>
-                          </div>
                         )}
-                        {editingItemId && existingProofCount > 0 ? (
+                        {editingItemId && existingProofCount > 0 && proofFiles.length === 0 ? (
                           <span className="helper-text">
-                            This record had {existingProofCount} saved proof file{existingProofCount > 1 ? "s" : ""}. Keep, remove, or add proof files before saving your update.
+                            This record already has {existingProofCount} saved proof file{existingProofCount > 1 ? "s" : ""}. Upload new files only if you want to replace or add proof.
                           </span>
                         ) : null}
                         {formErrors.proofFiles && (
@@ -2845,44 +2525,6 @@ const InventoryAdd = () => {
                         : "Monetary Donations"}
                     </h2>
                   </div>
-                  <div className="donation-section-actions">
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        setShowArchived((prev) => !prev);
-                        setCurrentPage(1);
-                        clearFilters();
-                      }}
-                    >
-                      {showArchived ? (
-                        <FaUndo className="btn-icon" />
-                      ) : (
-                        <FaHistory className="btn-icon" />
-                      )}
-                      {showArchived ? "Back to Active Donations" : "View Archived Donations"}
-                    </button>
-
-                    <button
-                      className="btn btn-primary"
-                      disabled={!canEditSelectedType}
-                      onClick={() => {
-                        if (!canEditSelectedType) return;
-                        setEditingItemId("");
-                        setShowForm(true);
-                      }}
-                    >
-                      <FaPlus className="btn-icon" />
-                      {canEditSelectedType
-                        ? `Add ${
-                            donationType === "goods"
-                              ? "Goods"
-                              : donationType === "appliance"
-                              ? "Appliance"
-                              : "Monetary"
-                          } Donation`
-                        : "View-only inventory"}
-                    </button>
-                  </div>
                 </div>
 
                 <div className="filter-toolbar inventory-filter-toolbar-5 inventory-filter-toolbar-inventory">
@@ -2904,45 +2546,6 @@ const InventoryAdd = () => {
                       className="input"
                     />
                   </div>
-
-                  {!showArchived ? (
-                    <div className="filter-group inventory-history-group">
-                      <label className="inventory-history-title" htmlFor="inventory-add-history-date">
-                        History
-                      </label>
-                      <div className="inventory-history-field-row">
-                        <input
-                          id="inventory-add-history-date"
-                          type="date"
-                          className="inventory-history-date"
-                          min={INVENTORY_HISTORY_MIN_DATE}
-                          max={INVENTORY_HISTORY_MAX_DATE}
-                          value={historyDraftDate}
-                          onChange={(event) => {
-                            const nextDate = event.target.value;
-                            setHistoryDraftDate(nextDate);
-                            setHistoryAsOfDate(nextDate);
-                            setCurrentPage(1);
-                          }}
-                        />
-                        {historyActive || historyDraftDate ? (
-                          <button
-                            type="button"
-                            className="btn btn-secondary inventory-history-clear"
-                            aria-label="Clear history date"
-                            title="Clear history date"
-                            onClick={() => {
-                              setHistoryDraftDate("");
-                              setHistoryAsOfDate("");
-                              setCurrentPage(1);
-                            }}
-                          >
-                            <FaTrash />
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
 
                   {(donationType === "goods" || donationType === "appliance") && (
                     <div className="filter-group">
@@ -2998,6 +2601,17 @@ const InventoryAdd = () => {
                     </select>
                   </div>
 
+                  <div className="filter-group">
+                    <label>Date</label>
+                    <input
+                      type="date"
+                      name="date"
+                      value={filters.date}
+                      onChange={handleFilterChange}
+                      className="input"
+                    />
+                  </div>
+
                   <div className="filter-actions">
                     <button className="btn btn-secondary" onClick={clearFilters}>
                       <FaTimes className="btn-icon" />
@@ -3005,12 +2619,6 @@ const InventoryAdd = () => {
                     </button>
                   </div>
                 </div>
-
-                {historyActive ? (
-                  <div className="release-feedback info inventory-history-feedback">
-                    Viewing inventory as of {historyPayload?.asOfDate || historyRequest.asOf}
-                  </div>
-                ) : null}
 
                 <div className="table-topbar inventory-table-topbar">
                   <div className="table-meta">
@@ -3100,16 +2708,12 @@ const InventoryAdd = () => {
                     </thead>
 
                     <tbody>
-                      {(fetching && !showArchived) || historyLoading ? (
+                      {fetching && !showArchived ? (
                         <tr>
                           <td colSpan={tableColSpan}>
                             <div className="table-empty">
                               <div className="spinner"></div>
-                              <p>
-                                {historyLoading
-                                  ? "Loading inventory history snapshot..."
-                                  : "Loading inventory records..."}
-                              </p>
+                              <p>Loading inventory records...</p>
                             </div>
                           </td>
                         </tr>
@@ -3132,10 +2736,7 @@ const InventoryAdd = () => {
                         paginatedItems.map((item) => (
                           <tr key={item._id}>
                             <td>
-                              <div className="table-main-cell">
-                                <strong>{item.name || "-"}</strong>
-                                <span>{formatDate(item.createdAt)}</span>
-                              </div>
+                              <div className="cell-main">{item.name || "-"}</div>
                             </td>
 
                             {(donationType === "goods" || donationType === "appliance") && (
@@ -3184,13 +2785,11 @@ const InventoryAdd = () => {
                             )}
 
                             <td>
-                              <div className="table-mini-stack source-cell-safe">
+                              <div className="source-cell">
                                 <strong>{getSourceTypeLabel(item.sourceType)}</strong>
-                                <span>
-                                  {donationType !== "monetary"
-                                    ? item.sourceName || "No provider name"
-                                    : item.sourceName || "-"}
-                                </span>
+                                {donationType !== "monetary" ? (
+                                  <small>{item.sourceName || "No provider name"}</small>
+                                ) : null}
                               </div>
                             </td>
 
@@ -3261,9 +2860,9 @@ const InventoryAdd = () => {
                             <td>{item.addedBy || "-"}</td>
 
                             <td>
-                              <div className="table-mini-stack">
-                                <strong>{formatShortDate(item.createdAt)}</strong>
-                                <span>{formatDate(item.createdAt)}</span>
+                              <div className="date-cell">
+                                <span>{formatShortDate(item.createdAt)}</span>
+                                <small>{formatDate(item.createdAt)}</small>
                               </div>
                             </td>
 
@@ -3296,6 +2895,13 @@ const InventoryAdd = () => {
                                   {canEditInventoryType(role, item.type) ? (
                                     <>
                                       <button
+                                        className="btn btn-outline btn-sm"
+                                        onClick={() => openEditForm(item)}
+                                      >
+                                        <FaPen className="btn-icon" />
+                                        Edit
+                                      </button>
+                                      <button
                                         className="btn btn-archive btn-sm"
                                         onClick={() => handleArchive(item._id, item.name)}
                                       >
@@ -3316,7 +2922,7 @@ const InventoryAdd = () => {
                   </table>
                 </div>
 
-                {!fetching && !historyLoading && sortedItems.length > 0 && (
+                {!fetching && sortedItems.length > 0 && (
                   <div className="pagination-bar">
                     <button
                       className="pagination-btn"

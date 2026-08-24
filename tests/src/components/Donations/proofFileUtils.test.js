@@ -44,7 +44,6 @@ describe("proof file url handling", () => {
   test("builds multiple fallback candidates for proof-prefixed paths", () => {
     expect(buildProofFileHrefCandidates("proofs/receipt-1.jpg", baseUrl)).toEqual([
       "https://example.test/uploads/proofs/receipt-1.jpg",
-      "https://example.test/proofs/receipt-1.jpg",
     ]);
   });
 });

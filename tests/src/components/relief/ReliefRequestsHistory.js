@@ -36,6 +36,7 @@ import {
   mapSpreadsheetRow,
   parseSafeNumber
 } from '../shared/spreadsheetImportUtils';
+import { getReliefPopulationValidationError } from './reliefRequestValidation';
 import '../css/ReliefRequestForm.css';
 import { API_BASE_URL } from "../../config/api";
 import { getTodayInputDate } from "../Donations/inventoryExpiryUtils";
@@ -788,7 +789,7 @@ export default function ReliefRequestForm() {
     const enabledRows = preparedRows.filter((row) => row.isActiveRow);
     if (!enabledRows.length) return true;
 
-    return enabledRows.some((row) => {
+    const hasInvalidNumbers = enabledRows.some((row) => {
       if (!String(row.evacuationCenterName || '').trim()) return true;
 
       return numberFields.some((field) => {
@@ -796,6 +797,10 @@ export default function ReliefRequestForm() {
         return Number.isNaN(value) || value < 0;
       });
     });
+
+    if (hasInvalidNumbers) return true;
+
+    return Boolean(getReliefPopulationValidationError(preparedRows));
   }, [preparedRows]);
 
   const requestedMonetaryValue = useMemo(
@@ -848,6 +853,11 @@ export default function ReliefRequestForm() {
       errors.requestedFoodPacks = 'Add requested food packs in at least one active row.';
     }
 
+    const populationError = getReliefPopulationValidationError(preparedRows);
+    if (populationError) {
+      errors.rows = populationError;
+    }
+
     if (includesAppliance) {
       if (!normalizedRequestedAppliances.length) {
         errors.requestedAppliances = 'Add at least one appliance request item.';
@@ -880,6 +890,7 @@ export default function ReliefRequestForm() {
     remarks,
     includesFoodPacks,
     totals.requestedFoodPacks,
+    preparedRows,
     includesAppliance,
     normalizedRequestedAppliances,
     validRequestedAppliances.length
@@ -1779,6 +1790,10 @@ export default function ReliefRequestForm() {
       }
       if (includesFoodPacks && Number(totals.requestedFoodPacks || 0) <= 0) {
         setErrorFeedback('Enter the requested food packs for this request type.');
+        return;
+      }
+      if (inlineErrors.rows) {
+        setErrorFeedback(inlineErrors.rows);
         return;
       }
       if (includesAppliance && inlineErrors.requestedAppliances) {
@@ -2793,9 +2808,9 @@ export default function ReliefRequestForm() {
                             </tfoot>
                           </table>
                         </div>
-                        {inlineErrors.requestedFoodPacks ? (
+                        {inlineErrors.requestedFoodPacks || inlineErrors.rows ? (
                           <small className="rrf-inline-error rrf-inline-error-block">
-                            {inlineErrors.requestedFoodPacks}
+                            {inlineErrors.rows || inlineErrors.requestedFoodPacks}
                           </small>
                         ) : null}
                       </div>

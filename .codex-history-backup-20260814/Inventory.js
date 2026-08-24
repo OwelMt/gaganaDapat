@@ -6,6 +6,7 @@ import { useAuth } from "../../context/AuthContext";
 import DashboardShell from "../layout/DashboardShell";
 import "../css/Inventory.css";
 import {
+  canChangeInventoryItemType,
   canEditInventoryType,
   getInventoryViewTypes,
   getReliefReviewerLabel,
@@ -37,12 +38,6 @@ import {
   validateFutureOrTodayInventoryDate,
 } from "./inventoryExpiryUtils";
 import {
-  INVENTORY_HISTORY_MAX_DATE,
-  INVENTORY_HISTORY_MIN_DATE,
-  isInventoryHistoryActive,
-  resolveInventoryHistoryRequest,
-} from "./inventoryHistoryUtils";
-import {
   buildInventoryItemLookup,
   summarizeTemplateHealth,
 } from "./foodPackTemplateHealthUtils";
@@ -63,7 +58,6 @@ import {
   MAX_TEMPLATE_DESCRIPTION_LENGTH,
   MAX_TEMPLATE_NAME_LENGTH,
   sanitizeInventoryCompactText,
-  validateInventoryIdentityText,
   sanitizeInventoryNoteText,
   sanitizeInventoryReferenceText,
   sanitizeInventorySearchText,
@@ -175,15 +169,12 @@ export default function Inventory() {
   const [mode, setMode] = useState("active");
   const [viewType, setViewType] = useState(defaultViewType);
   const canUseReleasePlanner = canRelease && mode === "active";
-  const [historyDraftDate, setHistoryDraftDate] = useState("");
-  const [historyAsOfDate, setHistoryAsOfDate] = useState("");
-  const [historyPayload, setHistoryPayload] = useState(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
 
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [expiryStatusFilter, setExpiryStatusFilter] = useState("");
   const [addedByFilter, setAddedByFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState("");
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder, setSortOrder] = useState("desc");
 
@@ -239,7 +230,6 @@ export default function Inventory() {
   const [templateDescription, setTemplateDescription] = useState("");
   const [templateBuilderSearch, setTemplateBuilderSearch] = useState("");
   const [templateItems, setTemplateItems] = useState([]);
-  const [templateFormErrors, setTemplateFormErrors] = useState({});
   const [selectedTemplateCardId, setSelectedTemplateCardId] = useState("");
   const [templatePage, setTemplatePage] = useState(1);
 
@@ -256,13 +246,9 @@ export default function Inventory() {
   const minExpirationDate = useMemo(() => getTodayInputDate(), []);
   const itemEditLocks = editingItemLocks || {};
   const isItemClassificationLocked = Boolean(itemEditLocks.classificationLocked);
+  const canEditItemType = canChangeInventoryItemType(role);
 
   const normalize = useCallback((val) => (val || "").toString().trim().toLowerCase(), []);
-  const historyRequest = useMemo(
-    () => resolveInventoryHistoryRequest({ asOf: historyAsOfDate }),
-    [historyAsOfDate]
-  );
-  const historyActive = isInventoryHistoryActive({ asOf: historyAsOfDate });
 
   const isExpiryRequiredCategory = (value) => {
     const v = normalize(value);
@@ -316,18 +302,6 @@ export default function Inventory() {
   const formatDate = (date) => {
     if (!date) return "-";
     return new Date(date).toLocaleString();
-  };
-
-  const formatHistoryDateLabel = (date) => {
-    if (!date) return "";
-    const parsed = new Date(`${String(date).slice(0, 10)}T00:00:00`);
-    if (Number.isNaN(parsed.getTime())) return String(date);
-
-    return parsed.toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    });
   };
 
   const formatExpiryDate = (date) => {
@@ -637,58 +611,6 @@ export default function Inventory() {
   }, [canSeeCentralInventory, refreshAll]);
 
   useEffect(() => {
-    if (!historyActive) {
-      setHistoryPayload(null);
-      setHistoryLoading(false);
-      setError("");
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadHistory = async () => {
-      setHistoryLoading(true);
-      try {
-        const params = new URLSearchParams({
-          type: viewType,
-          asOf: historyRequest.asOf,
-          includeItems: "true",
-        });
-        const response = await fetch(`${API_BASE_URL}/api/inventory/history?${params.toString()}`, {
-          credentials: "include",
-        });
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data?.message || "Failed to load inventory history.");
-        }
-
-        if (!cancelled) {
-          setHistoryPayload(data);
-          setError("");
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error("Fetch inventory history error:", err);
-          setHistoryPayload(null);
-          setError(err.message || "Failed to load inventory history.");
-          pushNotification(err.message || "Failed to load inventory history.", "error");
-        }
-      } finally {
-        if (!cancelled) {
-          setHistoryLoading(false);
-        }
-      }
-    };
-
-    loadHistory();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [historyActive, historyRequest.asOf, viewType, pushNotification]);
-
-  useEffect(() => {
     setTablePage(1);
     setArchivePage(1);
   }, [
@@ -698,6 +620,7 @@ export default function Inventory() {
     categoryFilter,
     expiryStatusFilter,
     addedByFilter,
+    dateFilter,
     sortBy,
     sortOrder,
     goodsDisplayMode,
@@ -740,44 +663,17 @@ export default function Inventory() {
     }
   }, [location.state, canRelease, navigate, location.pathname, defaultViewType]);
 
-  const currentActiveItems = useMemo(() => {
-    if (!historyActive || !historyPayload?.items) {
-      return activeItems;
-    }
-
-    return [
-      ...(Array.isArray(historyPayload.items.goods) ? historyPayload.items.goods : []),
-      ...(Array.isArray(historyPayload.items.appliance) ? historyPayload.items.appliance : []),
-      ...(Array.isArray(historyPayload.items.monetary) ? historyPayload.items.monetary : []),
-    ];
-  }, [activeItems, historyActive, historyPayload]);
-
   const activeGoods = useMemo(() => {
-    return currentActiveItems.filter((item) => resolveInventoryType(item) === "goods");
-  }, [currentActiveItems]);
+    return activeItems.filter((item) => resolveInventoryType(item) === "goods");
+  }, [activeItems]);
 
   const activeAppliances = useMemo(() => {
-    return currentActiveItems.filter((item) => resolveInventoryType(item) === "appliance");
-  }, [currentActiveItems]);
+    return activeItems.filter((item) => resolveInventoryType(item) === "appliance");
+  }, [activeItems]);
 
   const activeMonetary = useMemo(() => {
-    return currentActiveItems.filter((item) => resolveInventoryType(item) === "monetary");
-  }, [currentActiveItems]);
-
-  const liveGoodsSource = useMemo(
-    () => activeItems.filter((item) => resolveInventoryType(item) === "goods"),
-    [activeItems]
-  );
-
-  const liveApplianceSource = useMemo(
-    () => activeItems.filter((item) => resolveInventoryType(item) === "appliance"),
-    [activeItems]
-  );
-
-  const liveMonetarySource = useMemo(
-    () => activeItems.filter((item) => resolveInventoryType(item) === "monetary"),
-    [activeItems]
-  );
+    return activeItems.filter((item) => resolveInventoryType(item) === "monetary");
+  }, [activeItems]);
 
   const mergedActiveGoods = useMemo(() => {
     const grouped = new Map();
@@ -857,28 +753,6 @@ export default function Inventory() {
     return activeAppliances;
   }, [activeAppliances]);
 
-  const historyBaseItems = useMemo(() => {
-    if (viewType === "monetary") return liveMonetarySource;
-    if (viewType === "appliance") return liveApplianceSource;
-    return liveGoodsSource;
-  }, [liveApplianceSource, liveGoodsSource, liveMonetarySource, viewType]);
-
-  const historyBaseLabel = useMemo(() => {
-    if (viewType === "monetary") return "monetary";
-    if (viewType === "appliance") return "appliance";
-    return "goods";
-  }, [viewType]);
-
-  const earliestHistoryBaseDate = useMemo(() => {
-    return historyBaseItems.reduce((earliest, item) => {
-      if (!item?.createdAt) return earliest;
-      const time = new Date(item.createdAt).getTime();
-      if (Number.isNaN(time)) return earliest;
-      if (earliest === null || time < earliest) return time;
-      return earliest;
-    }, null);
-  }, [historyBaseItems]);
-
   const archivedGoods = useMemo(() => {
     return archivedItems.filter((item) => resolveInventoryType(item) === "goods");
   }, [archivedItems]);
@@ -925,7 +799,7 @@ export default function Inventory() {
     ).length;
 
     return {
-      totalRecords: currentActiveItems.length,
+      totalRecords: activeItems.length,
       goodsCount: mergedActiveGoods.length,
       monetaryCount: activeMonetary.length,
       applianceCount: activeAppliances.length,
@@ -938,7 +812,7 @@ export default function Inventory() {
       expiredCount,
       expiringSoonCount
     };
-  }, [currentActiveItems, mergedActiveGoods, activeMonetary, activeAppliances, activeFoodGoods]);
+  }, [activeItems, mergedActiveGoods, activeMonetary, activeAppliances, activeFoodGoods]);
 
   const archivedSummary = useMemo(() => {
     return {
@@ -1074,6 +948,13 @@ export default function Inventory() {
       );
     }
 
+    if (dateFilter) {
+      items = items.filter((item) => {
+        if (!item.createdAt) return false;
+        return new Date(item.createdAt).toISOString().slice(0, 10) === dateFilter;
+      });
+    }
+
     items.sort((a, b) => {
       let valA = a[sortBy];
       let valB = b[sortBy];
@@ -1101,6 +982,7 @@ export default function Inventory() {
     categoryFilter,
     expiryStatusFilter,
     addedByFilter,
+    dateFilter,
     sortBy,
     sortOrder,
     normalize
@@ -1129,6 +1011,13 @@ export default function Inventory() {
       );
     }
 
+    if (dateFilter) {
+      items = items.filter((item) => {
+        if (!item.createdAt) return false;
+        return new Date(item.createdAt).toISOString().slice(0, 10) === dateFilter;
+      });
+    }
+
     items.sort((a, b) => {
       let valA = a[sortBy];
       let valB = b[sortBy];
@@ -1154,6 +1043,7 @@ export default function Inventory() {
     activeMonetary,
     search,
     addedByFilter,
+    dateFilter,
     sortBy,
     sortOrder,
     normalize,
@@ -1191,6 +1081,13 @@ export default function Inventory() {
       );
     }
 
+    if (dateFilter) {
+      items = items.filter((item) => {
+        if (!item.createdAt) return false;
+        return new Date(item.createdAt).toISOString().slice(0, 10) === dateFilter;
+      });
+    }
+
     items.sort((a, b) => {
       let valA = a[sortBy];
       let valB = b[sortBy];
@@ -1217,6 +1114,7 @@ export default function Inventory() {
     search,
     categoryFilter,
     addedByFilter,
+    dateFilter,
     sortBy,
     sortOrder,
     normalize
@@ -1264,6 +1162,13 @@ export default function Inventory() {
       );
     }
 
+    if (dateFilter) {
+      items = items.filter((item) => {
+        if (!item.createdAt) return false;
+        return new Date(item.createdAt).toISOString().slice(0, 10) === dateFilter;
+      });
+    }
+
     items.sort((a, b) => {
       let valA = a[sortBy];
       let valB = b[sortBy];
@@ -1294,6 +1199,7 @@ export default function Inventory() {
     categoryFilter,
     expiryStatusFilter,
     addedByFilter,
+    dateFilter,
     sortBy,
     sortOrder,
     normalize,
@@ -1339,44 +1245,6 @@ export default function Inventory() {
         ? activeApplianceRows
         : activeMonetaryRows
       : archivedRows;
-
-  const historyEmptyState = useMemo(() => {
-    if (!historyActive || tableRows.length > 0) {
-      return null;
-    }
-
-    const asOfDate = historyPayload?.asOfDate || historyRequest.asOf;
-    const asOfLabel = formatHistoryDateLabel(asOfDate);
-    const earliestLabel =
-      earliestHistoryBaseDate !== null
-        ? formatHistoryDateLabel(
-            new Date(earliestHistoryBaseDate).toISOString().slice(0, 10)
-          )
-        : "";
-
-    if (earliestHistoryBaseDate !== null) {
-      const asOfTime = new Date(`${String(asOfDate).slice(0, 10)}T00:00:00`).getTime();
-
-      if (!Number.isNaN(asOfTime) && earliestHistoryBaseDate > asOfTime) {
-        return {
-          title: "No records existed yet.",
-          message: `No ${historyBaseLabel} inventory records existed on or before ${asOfLabel}. The earliest available ${historyBaseLabel} record is dated ${earliestLabel}.`,
-        };
-      }
-    }
-
-    return {
-      title: "No records found.",
-      message: `No ${historyBaseLabel} inventory records matched your filters for ${asOfLabel}.`,
-    };
-  }, [
-    earliestHistoryBaseDate,
-    historyActive,
-    historyBaseLabel,
-    historyPayload?.asOfDate,
-    historyRequest.asOf,
-    tableRows.length,
-  ]);
 
   const tablePageCount = Math.max(1, Math.ceil(tableRows.length / rowsPerPage));
 
@@ -1846,8 +1714,7 @@ export default function Inventory() {
     setCategoryFilter("");
     setExpiryStatusFilter("");
     setAddedByFilter("");
-    setHistoryDraftDate("");
-    setHistoryAsOfDate("");
+    setDateFilter("");
     setSortBy("createdAt");
     setSortOrder("desc");
     setTablePage(1);
@@ -1994,7 +1861,6 @@ export default function Inventory() {
     setTemplateDescription("");
     setTemplateBuilderSearch("");
     setTemplateItems([]);
-    setTemplateFormErrors({});
     setTemplateModalOpen(true);
   };
 
@@ -2014,7 +1880,6 @@ export default function Inventory() {
           }))
         : []
     );
-    setTemplateFormErrors({});
     setTemplateModalOpen(true);
   };
 
@@ -2026,11 +1891,9 @@ export default function Inventory() {
     setTemplateDescription("");
     setTemplateBuilderSearch("");
     setTemplateItems([]);
-    setTemplateFormErrors({});
   };
 
   const addTemplateItem = (inventoryItem) => {
-    setTemplateFormErrors((prev) => ({ ...prev, items: "" }));
     setTemplateItems((prev) => {
       const exists = prev.some(
         (item) => String(item.inventoryItemId) === String(inventoryItem._id)
@@ -2051,7 +1914,6 @@ export default function Inventory() {
   };
 
   const updateTemplateItem = (inventoryItemId, field, value) => {
-    setTemplateFormErrors((prev) => ({ ...prev, items: "" }));
     setTemplateItems((prev) =>
       prev.map((item) =>
         String(item.inventoryItemId) === String(inventoryItemId)
@@ -2227,15 +2089,6 @@ useEffect(() => {
       errors.name = "Name is required.";
     } else if (itemForm.name.trim().length > MAX_NAME_LENGTH) {
       errors.name = `Name must be ${MAX_NAME_LENGTH} characters or less.`;
-    } else {
-      const nameFormatError = validateInventoryIdentityText(itemForm.name, "Name");
-      if (nameFormatError) {
-        errors.name = nameFormatError;
-      }
-    }
-
-    if (!String(itemForm.sourceType || "").trim()) {
-      errors.sourceType = "Provider is required.";
     }
 
     if (itemForm.type === "goods") {
@@ -2326,22 +2179,11 @@ useEffect(() => {
       }
     }
 
-    if (itemForm.type === "goods" || itemForm.type === "appliance") {
-      if (!String(itemForm.sourceName || "").trim()) {
-        errors.sourceName = "Provider name is required.";
-      } else if (
-        String(itemForm.sourceName || "").trim().length > MAX_SOURCE_NAME_LENGTH
-      ) {
-        errors.sourceName = `Source name must be ${MAX_SOURCE_NAME_LENGTH} characters or less.`;
-      } else {
-        const sourceNameFormatError = validateInventoryIdentityText(
-          itemForm.sourceName,
-          "Provider name"
-        );
-        if (sourceNameFormatError) {
-          errors.sourceName = sourceNameFormatError;
-        }
-      }
+    if (
+      (itemForm.type === "goods" || itemForm.type === "appliance") &&
+      String(itemForm.sourceName || "").trim().length > MAX_SOURCE_NAME_LENGTH
+    ) {
+      errors.sourceName = `Source name must be ${MAX_SOURCE_NAME_LENGTH} characters or less.`;
     }
 
     if (String(itemForm.description || "").trim().length > MAX_DESCRIPTION_LENGTH) {
@@ -2457,7 +2299,6 @@ useEffect(() => {
 
       const formData = new FormData();
 
-      formData.append("type", itemForm.type);
       formData.append("name", itemForm.name.trim());
       formData.append("description", itemForm.description.trim());
       formData.append("sourceType", itemForm.sourceType);
@@ -2509,18 +2350,10 @@ useEffect(() => {
   const saveTemplate = async () => {
     const cleanName = sanitizeTemplateName(templateName).trim();
     const cleanDescription = sanitizeTemplateDescription(templateDescription).trim();
-    const errors = {};
 
     if (!cleanName) {
-      errors.name = "Template name is required.";
-    } else {
-      const templateNameError = validateInventoryIdentityText(
-        cleanName,
-        "Template name"
-      );
-      if (templateNameError) {
-        errors.name = templateNameError;
-      }
+      pushNotification("Template name is required.", "error");
+      return;
     }
 
     const preparedItems = templateItems
@@ -2534,7 +2367,8 @@ useEffect(() => {
       .filter((item) => item.inventoryItemId);
 
     if (!preparedItems.length) {
-      errors.items = "Add at least one food item to the template.";
+      pushNotification("Add at least one food item to the template.", "error");
+      return;
     }
 
     const invalidItem = preparedItems.find(
@@ -2546,15 +2380,12 @@ useEffect(() => {
     );
 
     if (invalidItem) {
-      errors.items = `Complete all required fields for "${invalidItem.itemName || "item"}".`;
-    }
-
-    if (Object.keys(errors).length > 0) {
-      setTemplateFormErrors(errors);
+      pushNotification(
+        `Complete all required fields for "${invalidItem.itemName || "item"}".`,
+        "error"
+      );
       return;
     }
-
-    setTemplateFormErrors({});
 
     try {
       setTemplateSubmitting(true);
@@ -2969,7 +2800,7 @@ useEffect(() => {
   };
 
   const loadingCurrent =
-    (mode === "active" && (loadingActive || historyLoading)) ||
+    (mode === "active" && loadingActive) ||
     (mode === "archived" && loadingArchived);
   
     return (
@@ -3338,7 +3169,7 @@ useEffect(() => {
                           className="input"
                           value={itemForm.type}
                           onChange={handleItemFormChange}
-                          disabled={isItemClassificationLocked}
+                          disabled
                         >
                           {allowedViewTypes.includes("goods") ? (
                             <option value="goods">Goods</option>
@@ -3350,6 +3181,11 @@ useEffect(() => {
                             <option value="monetary">Monetary</option>
                           ) : null}
                         </select>
+                        {!canEditItemType ? (
+                          <span className="helper-text">
+                            Item type is fixed after creation.
+                          </span>
+                        ) : null}
                       </div>
 
                       {itemForm.type === "goods" ? (
@@ -4950,43 +4786,8 @@ useEffect(() => {
                       />
                     </div>
 
-                    <div className="filter-group inventory-history-group">
-                      <label className="inventory-history-title" htmlFor="inventory-history-date">
-                        History
-                      </label>
-                      <div className="inventory-history-field-row">
-                        <input
-                          id="inventory-history-date"
-                          type="date"
-                          className="inventory-history-date"
-                          min={INVENTORY_HISTORY_MIN_DATE}
-                          max={INVENTORY_HISTORY_MAX_DATE}
-                          value={historyDraftDate}
-                          onChange={(event) => {
-                            const nextDate = event.target.value;
-                            setHistoryDraftDate(nextDate);
-                            setHistoryAsOfDate(nextDate);
-                          }}
-                        />
-                        {historyActive || historyDraftDate ? (
-                          <button
-                            type="button"
-                            className="btn btn-secondary inventory-history-clear"
-                            aria-label="Clear history date"
-                            title="Clear history date"
-                            onClick={() => {
-                              setHistoryDraftDate("");
-                              setHistoryAsOfDate("");
-                            }}
-                          >
-                            <FaTrash />
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-
                     {(viewType === "goods" || viewType === "appliance") && (
-                      <div className="filter-group inventory-filter-category">
+                      <div className="filter-group">
                         <label>Category</label>
                         <select
                           className="input"
@@ -5007,7 +4808,7 @@ useEffect(() => {
                     )}
 
                     {viewType === "goods" && (
-                      <div className="filter-group inventory-filter-expiry">
+                      <div className="filter-group">
                         <label>Expiry Status</label>
                         <select
                           className="input"
@@ -5023,7 +4824,7 @@ useEffect(() => {
                       </div>
                     )}
 
-                    <div className="filter-group inventory-filter-added-by">
+                    <div className="filter-group">
                       <label>Added By</label>
                       <select
                         className="input"
@@ -5039,7 +4840,17 @@ useEffect(() => {
                       </select>
                     </div>
 
-                    <div className="filter-actions inventory-filter-actions">
+                    <div className="filter-group">
+                      <label>Date</label>
+                      <input
+                        type="date"
+                        className="input"
+                        value={dateFilter}
+                        onChange={(e) => setDateFilter(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="filter-actions">
                       <button
                         type="button"
                         className="btn btn-secondary"
@@ -5051,12 +4862,6 @@ useEffect(() => {
                     </div>
                   </div>
                 </div>
-
-                {historyActive ? (
-                  <div className="release-feedback info">
-                    Viewing inventory as of {historyPayload?.asOfDate || historyRequest.asOf}
-                  </div>
-                ) : null}
 
                 {!(mode === "active" &&
                   viewType === "goods" &&
@@ -5095,11 +4900,8 @@ useEffect(() => {
                   <div className="release-feedback error">{error}</div>
                 ) : tableRows.length === 0 ? (
                   <div className="inventory-empty-surface table-empty">
-                    <h4>{historyEmptyState?.title || "No records found."}</h4>
-                    <p>
-                      {historyEmptyState?.message ||
-                        "Try adjusting your filters or search keyword."}
-                    </p>
+                    <h4>No records found.</h4>
+                    <p>Try adjusting your filters or search keyword.</p>
                   </div>
                 ) : mode === "active" &&
                   viewType === "goods" &&
@@ -5704,18 +5506,14 @@ useEffect(() => {
                           <label>Template Name</label>
                           <input
                             type="text"
-                            className={`input ${templateFormErrors.name ? "input-error" : ""}`}
+                            className="input"
                             placeholder="Enter template name"
                             value={templateName}
-                            onChange={(e) => {
-                              setTemplateName(sanitizeTemplateName(e.target.value));
-                              setTemplateFormErrors((prev) => ({ ...prev, name: "" }));
-                            }}
+                            onChange={(e) =>
+                              setTemplateName(sanitizeTemplateName(e.target.value))
+                            }
                             maxLength={MAX_TEMPLATE_NAME_LENGTH}
                           />
-                          {templateFormErrors.name ? (
-                            <span className="error-text">{templateFormErrors.name}</span>
-                          ) : null}
                         </div>
 
                         <div className="release-selection-field">
@@ -5802,11 +5600,6 @@ useEffect(() => {
                               <span>{templateItems.length} item(s)</span>
                             </div>
                           </div>
-                          {templateFormErrors.items ? (
-                            <span className="error-text template-builder-error">
-                              {templateFormErrors.items}
-                            </span>
-                          ) : null}
 
                           {templateItems.length === 0 ? (
                             <div className="release-empty release-empty-compact">

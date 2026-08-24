@@ -281,7 +281,10 @@ export default function Register() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.message || 'Registration failed');
+        const serverError = new Error(data.message || 'Registration failed');
+        serverError.field = data?.field || '';
+        serverError.code = data?.error || '';
+        throw serverError;
       }
 
       if (role === 'barangay') {
@@ -310,6 +313,12 @@ export default function Register() {
       setShowConfirmPassword(false);
     } catch (err) {
       console.error(err);
+      if (err?.field === 'username' || err?.code === 'USERNAME_EXISTS') {
+        setErrors((prev) => ({
+          ...prev,
+          username: err.message || 'Username already exists'
+        }));
+      }
       showNotification(err.message || 'Registration failed', 'error');
     } finally {
       setIsSubmitting(false);

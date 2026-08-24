@@ -33,6 +33,7 @@ import {
   normalizeImportedRequestType,
   shouldShowConfirmReceivedAction
 } from './reliefImportUtils';
+import { getReliefPopulationValidationError } from './reliefRequestValidation';
 import {
   mapSpreadsheetRow,
   parseSafeNumber
@@ -1005,7 +1006,7 @@ export default function ReliefRequestForm() {
     const enabledRows = preparedRows.filter((row) => row.isActiveRow);
     if (!enabledRows.length) return true;
 
-    return enabledRows.some((row) => {
+    const hasInvalidNumbers = enabledRows.some((row) => {
       if (!String(row.evacuationCenterName || '').trim()) return true;
 
       return numberFields.some((field) => {
@@ -1013,6 +1014,10 @@ export default function ReliefRequestForm() {
         return Number.isNaN(value) || value < 0;
       });
     });
+
+    if (hasInvalidNumbers) return true;
+
+    return Boolean(getReliefPopulationValidationError(preparedRows));
   }, [preparedRows]);
 
   const requestedMonetaryValue = useMemo(
@@ -1067,6 +1072,11 @@ export default function ReliefRequestForm() {
       errors.requestedFoodPacks = 'Add requested food packs in at least one active row.';
     }
 
+    const populationError = getReliefPopulationValidationError(preparedRows);
+    if (populationError) {
+      errors.rows = populationError;
+    }
+
     if (includesAppliance) {
       if (!normalizedRequestedAppliances.length) {
         errors.requestedAppliances = 'Add at least one appliance request item.';
@@ -1099,6 +1109,7 @@ export default function ReliefRequestForm() {
     remarks,
     includesFoodPacks,
     totals.requestedFoodPacks,
+    preparedRows,
     includesAppliance,
     normalizedRequestedAppliances,
     validRequestedAppliances.length
@@ -1752,7 +1763,8 @@ export default function ReliefRequestForm() {
         .filter(Boolean)
         .map((proofPath, proofIndex) => ({
           key: `${release?._id || releaseIndex}-${proofIndex}`,
-          url: `${BASE_URL}/${String(proofPath).replace(/^\/+/, '')}`,
+          url: buildProofFileHref(proofPath, BASE_URL),
+          sourceValue: proofPath,
           label: `Receipt Proof ${proofIndex + 1}`
         }))
     );
@@ -2333,6 +2345,14 @@ export default function ReliefRequestForm() {
       throw new Error('Distribution date cannot be in the past.');
     }
 
+    if (!payload.signOff.familyHeadPrintedName) {
+      throw new Error('Family head printed name is required.');
+    }
+
+    if (!payload.signOff.barangayOfficerPrintedName) {
+      throw new Error('Barangay officer printed name is required.');
+    }
+
     if (dafacAidVisibility.showsFoodPacks && payload.distribution.foodPacksReceived <= 0) {
       throw new Error('Enter how many food packs this family received.');
     }
@@ -2598,6 +2618,10 @@ export default function ReliefRequestForm() {
       }
       if (includesFoodPacks && Number(totals.requestedFoodPacks || 0) <= 0) {
         setErrorFeedback('Enter the requested food packs for this request type.');
+        return;
+      }
+      if (inlineErrors.rows) {
+        setErrorFeedback(inlineErrors.rows);
         return;
       }
       if (includesAppliance && inlineErrors.requestedAppliances) {
@@ -3819,9 +3843,9 @@ export default function ReliefRequestForm() {
                             </tfoot>
                           </table>
                         </div>
-                        {inlineErrors.requestedFoodPacks ? (
+                        {inlineErrors.requestedFoodPacks || inlineErrors.rows ? (
                           <small className="rrf-inline-error rrf-inline-error-block">
-                            {inlineErrors.requestedFoodPacks}
+                            {inlineErrors.rows || inlineErrors.requestedFoodPacks}
                           </small>
                         ) : null}
                       </div>

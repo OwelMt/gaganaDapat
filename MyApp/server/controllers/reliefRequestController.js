@@ -29,6 +29,9 @@ const {
   hasSupportType,
   getSupportTypeLabel,
 } = require("../utils/reliefSupportTypes");
+const {
+  getReliefPopulationValidationError,
+} = require("../utils/reliefRequestValidation");
 const ACTIVE_REQUEST_STATUSES = ["pending", "approved", "partially_released", "released"];
 const VIEWABLE_REQUEST_STATUSES = [
   "pending",
@@ -1275,6 +1278,11 @@ const validateRows = (rows) => {
         return `Invalid value for ${field} in one of the rows.`;
       }
     }
+  }
+
+  const populationError = getReliefPopulationValidationError(rows);
+  if (populationError) {
+    return populationError;
   }
 
   return null;

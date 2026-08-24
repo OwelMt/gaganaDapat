@@ -4,6 +4,7 @@ import "../css/DigitalTwin.css";
 import { API_BASE_URL } from "../../config/api";
 import {
   DEFAULT_CAMERA_ID,
+  canDeleteDailyHistoryRecord,
   formatDateTime,
   formatLevel,
   getRecordExplanation,
@@ -357,7 +358,7 @@ export default function UnityDigitalTwin() {
   };
 
   const handleDelete = async (record) => {
-    if (!record?.id) {
+    if (!canDeleteDailyHistoryRecord(record)) {
       setError("Only daily records can be deleted.");
       return;
     }
@@ -641,7 +642,7 @@ export default function UnityDigitalTwin() {
                       <td>{getRecordExplanation(record)}</td>
                       <td>{formatDateTime(record.latestTimestamp)}</td>
                       <td>
-                        {isDailyMode && record.id ? (
+                        {isDailyMode && canDeleteDailyHistoryRecord(record) ? (
                           <button
                             type="button"
                             className="digital-twin-row-delete"

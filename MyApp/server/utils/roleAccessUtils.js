@@ -37,6 +37,25 @@ const canManageInventoryType = (role, type) => {
   return false;
 };
 
+const canViewInventoryType = (role, type) => {
+  const normalizedRole = normalizeRole(role);
+  const normalizedType = String(type || "").trim().toLowerCase();
+
+  if (normalizedRole === ROLE_ADMIN) {
+    return ["goods", "appliance", "monetary"].includes(normalizedType);
+  }
+
+  if (normalizedRole === ROLE_ACCOUNTANT) {
+    return normalizedType === "monetary";
+  }
+
+  if (normalizedRole === ROLE_DRRMO) {
+    return normalizedType === "goods" || normalizedType === "appliance";
+  }
+
+  return false;
+};
+
 const getInventoryAccessError = (role, type) => {
   if (canManageInventoryType(role, type)) return "";
   if (isAdminRole(role)) {
@@ -137,6 +156,7 @@ module.exports = {
   isBarangayRole,
   isPrivilegedStaffRole,
   canManageInventoryType,
+  canViewInventoryType,
   getInventoryAccessError,
   canManageDonationType,
   getDonationAccessError,

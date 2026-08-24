@@ -590,7 +590,6 @@ export default function EditAccount() {
           <section className="ea-editor-card" ref={editorCardRef}>
             {!selected || !selectedForm ? (
               <div className="ea-placeholder ea-placeholder--centered">
-                <div className="ea-empty-illustration">ID</div>
                 <div className="ea-empty-title">Select an account</div>
               </div>
             ) : (

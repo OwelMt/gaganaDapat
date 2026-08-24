@@ -140,6 +140,21 @@ async function findPendingApprovalByBarangay(barangayName) {
   return markExpiredApprovalRequest(pending);
 }
 
+async function findExistingAccountByUsername(username) {
+  if (!username) return null;
+
+  const usernameRegex = new RegExp(`^${username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
+
+  const [staffAccount, barangayAccount, archivedAccount, pendingApproval] = await Promise.all([
+    User.findOne({ username: usernameRegex }),
+    Barangay.findOne({ username: usernameRegex }),
+    ArchivedAccount.findOne({ username: usernameRegex }),
+    AccountApprovalRequest.findOne({ username: usernameRegex, status: "pending" }),
+  ]);
+
+  return staffAccount || barangayAccount || archivedAccount || pendingApproval || null;
+}
+
 async function markExpiredUpdateApprovalRequest(doc) {
   if (!doc) return null;
 
@@ -346,6 +361,16 @@ const register = async (req, res) => {
 
     if (existingStaffEmail || existingBarangayEmail) {
       return res.status(400).json({ message: 'Email already exists' });
+    }
+
+    const existingUsername = await findExistingAccountByUsername(cleanUsername);
+
+    if (existingUsername) {
+      return res.status(400).json({
+        error: "USERNAME_EXISTS",
+        field: "username",
+        message: "Username already exists"
+      });
     }
 
     const pendingEmailRequest = await findPendingApprovalByEmail(cleanEmail);

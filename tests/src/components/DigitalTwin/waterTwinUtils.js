@@ -146,6 +146,7 @@ export function normalizeDailyHistory(items) {
   return Array.isArray(items)
     ? items.map((item, index) => ({
         id: makeHistoryId(item, index),
+        deletable: Boolean(item?._id || item?.id),
         mode: "daily",
         camera_id: item?.camera_id || DEFAULT_CAMERA_ID,
         date: item?.date || "",
@@ -171,6 +172,7 @@ export function normalizeAnalyticsHistory(items) {
   return Array.isArray(items)
     ? items.map((item, index) => ({
         id: makeHistoryId(item, index),
+        deletable: false,
         mode: String(item?.period || "monthly"),
         camera_id: item?.camera_id || DEFAULT_CAMERA_ID,
         date: item?.label || "",
@@ -296,6 +298,7 @@ export function groupRawHistoryByDay(items) {
     if (!grouped.has(dateKey)) {
       grouped.set(dateKey, {
         id: `${dateKey}-${index}`,
+        deletable: false,
         mode: "daily",
         camera_id: item?.camera_id || DEFAULT_CAMERA_ID,
         date: dateKey,
@@ -353,4 +356,8 @@ export function groupRawHistoryByDay(items) {
           : 0,
     }))
     .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export function canDeleteDailyHistoryRecord(record) {
+  return Boolean(record?.deletable && record?.id);
 }

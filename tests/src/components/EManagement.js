@@ -41,6 +41,23 @@ import DashboardShell from "./layout/DashboardShell";
 import EvacMap from "./map/Map";
 import "../components/css/EManagement.css";
 import { API_BASE_URL } from "../config/api";
+import {
+  getCapacityFieldError,
+  getEvacuationLocationErrors,
+} from "./evacuationFormValidation";
+import {
+  getLiveEvacuationNumericErrors,
+  MAX_FLOOR_AREA_VALUE,
+  toEditableNumericFieldValue,
+} from "./evacuationFormState";
+import {
+  canIncrementFamilies,
+  canIncrementOccupants,
+  clampBedsToCapacity,
+  clampFamiliesToCapacity,
+  clampOccupantsToCapacity,
+  getOccupancyCapacityLimit,
+} from "./evacuationOccupancyUtils";
 
 const BASE_URL = API_BASE_URL;
 
@@ -50,9 +67,6 @@ const MAX_SEARCH_LENGTH = 80;
 const MAX_EVAC_NAME_LENGTH = 60;
 const MAX_LOCATION_LENGTH = 90;
 const MAX_REMARKS_LENGTH = 280;
-const MAX_CAPACITY_VALUE = 1000000;
-const MAX_FLOOR_AREA_VALUE = 1000000;
-
 const initialFormState = {
   name: "",
   location: "",
@@ -1213,21 +1227,71 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
   const handleNumericFieldChange = useCallback(
     (e) => {
       const { name, value } = e.target;
-      clearFormError(name);
       if (value === "") {
+        clearFormError(name);
         updateFormField(name, "");
         return;
       }
 
       if (name === "floorArea") {
+        clearFormError(name);
         updateFormField(name, sanitizeDecimalValue(value));
         return;
       }
 
-      updateFormField(name, sanitizeDigitsOnly(value));
+      const nextValue = sanitizeDigitsOnly(value);
+      const nextError = getCapacityFieldError(name, nextValue);
+
+      setFormErrors((prev) => {
+        if (nextError) {
+          if (prev[name] === nextError) return prev;
+          return { ...prev, [name]: nextError };
+        }
+
+        if (!prev[name]) return prev;
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+      updateFormField(name, nextValue);
     },
     [clearFormError, updateFormField]
   );
+
+  useEffect(() => {
+    if (!showAddForm && !showEditForm) return;
+
+    const liveNumericErrors = getLiveEvacuationNumericErrors(formData);
+    setFormErrors((prev) => {
+      const next = { ...prev };
+      let changed = false;
+
+      ["capacityIndividual", "capacityFamily", "bedCapacity", "floorArea"].forEach(
+        (fieldName) => {
+          const nextError = liveNumericErrors[fieldName];
+          if (nextError) {
+            if (next[fieldName] !== nextError) {
+              next[fieldName] = nextError;
+              changed = true;
+            }
+            return;
+          }
+
+          const fieldValue = String(formData?.[fieldName] ?? "");
+          if (fieldValue !== "" || !next[fieldName]) return;
+
+          delete next[fieldName];
+          changed = true;
+        }
+      );
+
+      return changed ? next : prev;
+    });
+  }, [
+    formData,
+    showAddForm,
+    showEditForm,
+  ]);
 
   const resolveBarangayForCoordinates = useCallback(
     (lat, lng) => {
@@ -1422,10 +1486,12 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
         selectedPlace.longitude === null || selectedPlace.longitude === undefined
           ? null
           : Number(selectedPlace.longitude),
-      capacityIndividual: String(selectedPlace.capacityIndividual || ""),
-      capacityFamily: String(selectedPlace.capacityFamily || ""),
-      bedCapacity: String(selectedPlace.bedCapacity || ""),
-      floorArea: String(selectedPlace.floorArea || ""),
+      capacityIndividual: toEditableNumericFieldValue(
+        selectedPlace.capacityIndividual
+      ),
+      capacityFamily: toEditableNumericFieldValue(selectedPlace.capacityFamily),
+      bedCapacity: toEditableNumericFieldValue(selectedPlace.bedCapacity),
+      floorArea: toEditableNumericFieldValue(selectedPlace.floorArea),
       femaleCR: Boolean(selectedPlace.femaleCR),
       maleCR: Boolean(selectedPlace.maleCR),
       commonCR: Boolean(selectedPlace.commonCR),
@@ -1570,51 +1636,44 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
       formData.remarks,
       MAX_REMARKS_LENGTH
     ).trim();
-    const capacityIndividual = Number(formData.capacityIndividual || 0);
-    const capacityFamily = Number(formData.capacityFamily || 0);
-    const bedCapacity = Number(formData.bedCapacity || 0);
     const floorArea = Number(formData.floorArea || 0);
 
     const nextErrors = {};
 
     if (!cleanName) nextErrors.name = "Evacuation area name is required.";
     if (!cleanLocation) nextErrors.location = "Location is required.";
-    if (!formData.barangayId && !sanitizeText(formData.barangayName)) {
-      nextErrors.barangay = "Barangay is required.";
+    Object.assign(
+      nextErrors,
+      getEvacuationLocationErrors({
+        barangayId: formData.barangayId,
+        barangayName: sanitizeText(formData.barangayName),
+        latitude: formData.latitude,
+        longitude: formData.longitude,
+      })
+    );
+
+    const capacityIndividualError = getCapacityFieldError(
+      "capacityIndividual",
+      formData.capacityIndividual
+    );
+    if (capacityIndividualError) {
+      nextErrors.capacityIndividual = capacityIndividualError;
     }
 
-    if (formData.latitude === null || formData.longitude === null) {
-      nextErrors.latitude = "Latitude and longitude are required.";
-      nextErrors.longitude = "Latitude and longitude are required.";
-    } else {
-      if (Number(formData.latitude) < -90 || Number(formData.latitude) > 90) {
-        nextErrors.latitude = "Latitude must be between -90 and 90.";
-      }
-
-      if (Number(formData.longitude) < -180 || Number(formData.longitude) > 180) {
-        nextErrors.longitude = "Longitude must be between -180 and 180.";
-      }
+    const capacityFamilyError = getCapacityFieldError(
+      "capacityFamily",
+      formData.capacityFamily
+    );
+    if (capacityFamilyError) {
+      nextErrors.capacityFamily = capacityFamilyError;
     }
 
-    if (
-      formData.capacityIndividual !== "" &&
-      (capacityIndividual <= 0 || capacityIndividual > MAX_CAPACITY_VALUE)
-    ) {
-      nextErrors.capacityIndividual = `Individual capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`;
-    }
-
-    if (
-      formData.capacityFamily !== "" &&
-      (capacityFamily <= 0 || capacityFamily > MAX_CAPACITY_VALUE)
-    ) {
-      nextErrors.capacityFamily = `Family capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`;
-    }
-
-    if (
-      formData.bedCapacity !== "" &&
-      (bedCapacity <= 0 || bedCapacity > MAX_CAPACITY_VALUE)
-    ) {
-      nextErrors.bedCapacity = `Bed capacity must be between 1 and ${formatNumber(MAX_CAPACITY_VALUE)}.`;
+    const bedCapacityError = getCapacityFieldError(
+      "bedCapacity",
+      formData.bedCapacity
+    );
+    if (bedCapacityError) {
+      nextErrors.bedCapacity = bedCapacityError;
     }
 
     if (
@@ -1979,20 +2038,22 @@ const updatePlaceInLocalState = useCallback((updatedPlace) => {
 
 const getDerivedOccupiedBeds = useCallback(
   (peopleValue) => {
-    const currentPeople = Math.max(0, Number(peopleValue || 0));
-    const bedCapacity = Number(selectedPlace?.bedCapacity || 0);
-    return bedCapacity > 0 ? Math.min(currentPeople, bedCapacity) : currentPeople;
+    return clampBedsToCapacity(
+      peopleValue,
+      peopleValue,
+      selectedPlace?.bedCapacity
+    );
   },
   [selectedPlace?.bedCapacity]
 );
 
 const getFamilyLimit = useCallback(
   (peopleValue) => {
-    const currentPeople = Math.max(0, Number(peopleValue || 0));
-    const familyCapacity = Number(selectedPlace?.capacityFamily || 0);
-    return familyCapacity > 0
-      ? Math.min(familyCapacity, currentPeople)
-      : currentPeople;
+    return clampFamiliesToCapacity(
+      peopleValue,
+      peopleValue,
+      selectedPlace?.capacityFamily
+    );
   },
   [selectedPlace?.capacityFamily]
 );
@@ -2007,11 +2068,14 @@ useEffect(() => {
     return;
   }
 
-  const currentOccupants = Number(selectedPlace.currentOccupants || 0);
-  const familyLimit = getFamilyLimit(currentOccupants);
-  const currentFamilies = Math.min(
-    Number(selectedPlace.currentFamilies || 0),
-    familyLimit
+  const currentOccupants = clampOccupantsToCapacity(
+    selectedPlace.currentOccupants,
+    selectedPlace.capacityIndividual
+  );
+  const currentFamilies = clampFamiliesToCapacity(
+    selectedPlace.currentFamilies,
+    currentOccupants,
+    selectedPlace.capacityFamily
   );
 
   setOccupancyDraft({
@@ -2039,15 +2103,15 @@ const handleOccupancyDraftChange = useCallback((field, value) => {
     ...prev,
     ...(field === "currentOccupants"
       ? (() => {
-          const maxIndividuals = Number(selectedPlace?.capacityIndividual || 0);
-          const nextPeople =
-            maxIndividuals > 0
-              ? Math.min(nextNumber, maxIndividuals)
-              : nextNumber;
+          const nextPeople = clampOccupantsToCapacity(
+            nextNumber,
+            selectedPlace?.capacityIndividual
+          );
           const nextFamilyLimit = getFamilyLimit(nextPeople);
-          const nextFamilies = Math.min(
-            Number(prev.currentFamilies || 0),
-            nextFamilyLimit
+          const nextFamilies = clampFamiliesToCapacity(
+            prev.currentFamilies,
+            nextPeople,
+            selectedPlace?.capacityFamily
           );
 
           return {
@@ -2057,8 +2121,11 @@ const handleOccupancyDraftChange = useCallback((field, value) => {
           };
         })()
       : (() => {
-          const familyLimit = getFamilyLimit(prev.currentOccupants);
-          const nextFamilies = Math.min(nextNumber, familyLimit);
+          const nextFamilies = clampFamiliesToCapacity(
+            nextNumber,
+            prev.currentOccupants,
+            selectedPlace?.capacityFamily
+          );
 
           return {
             currentFamilies: cleaned === "" ? "" : String(nextFamilies),
@@ -2066,7 +2133,12 @@ const handleOccupancyDraftChange = useCallback((field, value) => {
           };
         })()),
   }));
-}, [getDerivedOccupiedBeds, getFamilyLimit, selectedPlace?.capacityIndividual]);
+}, [
+  getDerivedOccupiedBeds,
+  getFamilyLimit,
+  selectedPlace?.capacityFamily,
+  selectedPlace?.capacityIndividual,
+]);
 
 const handleOccupancyStep = useCallback(
   (field, delta) => {
@@ -2076,12 +2148,12 @@ const handleOccupancyStep = useCallback(
       const currentValue = Number(prev[field] || 0);
       const maxValue =
         field === "currentOccupants"
-          ? Number(selectedPlace.capacityIndividual || 0)
+          ? getOccupancyCapacityLimit(selectedPlace.capacityIndividual)
           : getFamilyLimit(prev.currentOccupants);
       let nextValue = currentValue + delta;
 
       if (nextValue < 0) nextValue = 0;
-      if (maxValue > 0 && nextValue > maxValue) nextValue = maxValue;
+      if (nextValue > maxValue) nextValue = maxValue;
 
       if (field === "currentOccupants") {
         const nextFamilyLimit = getFamilyLimit(nextValue);
@@ -2118,22 +2190,6 @@ const hasOccupancyChanges = useMemo(() => {
   );
 }, [occupancyDraft, selectedPlace]);
 
-const handleResetOccupancyDraft = useCallback(() => {
-  if (!selectedPlace) return;
-
-  const currentOccupants = Number(selectedPlace.currentOccupants || 0);
-  const currentFamilies = Math.min(
-    Number(selectedPlace.currentFamilies || 0),
-    getFamilyLimit(currentOccupants)
-  );
-
-  setOccupancyDraft({
-    currentOccupants: String(currentOccupants),
-    currentFamilies: String(currentFamilies),
-    occupiedBeds: String(getDerivedOccupiedBeds(currentOccupants)),
-  });
-}, [getDerivedOccupiedBeds, getFamilyLimit, selectedPlace]);
-
 const handleSaveOccupancy = useCallback(async ({ silent = false } = {}) => {
   if (!selectedPlace?._id || savingOccupancy) return;
 
@@ -2144,14 +2200,16 @@ const handleSaveOccupancy = useCallback(async ({ silent = false } = {}) => {
     familyLimit
   );
   const nextBeds = getDerivedOccupiedBeds(nextOccupants);
-  const maxIndividuals = Number(selectedPlace.capacityIndividual || 0);
+  const maxIndividuals = getOccupancyCapacityLimit(
+    selectedPlace.capacityIndividual
+  );
 
   if (nextOccupants < 0 || nextFamilies < 0 || nextBeds < 0) {
     pushNotification("Occupancy values cannot be negative.", "error");
     return;
   }
 
-  if (maxIndividuals > 0 && nextOccupants > maxIndividuals) {
+  if (nextOccupants > maxIndividuals) {
     pushNotification(
       `Individuals cannot exceed capacity of ${formatNumber(maxIndividuals)}.`,
       "error"
@@ -2653,7 +2711,7 @@ useEffect(() => {
                 </div>
 
                 <div className="field">
-                  <span>Floor Area</span>
+                  <span>Floor Area (sq. m.)</span>
                   <input
                     className={formErrors.floorArea ? "input-error" : ""}
                     type="text"
@@ -3863,7 +3921,7 @@ useEffect(() => {
                 id="currentOccupantsInput"
                 type="number"
                 min="0"
-                max={selectedPlace.capacityIndividual || undefined}
+                max={getOccupancyCapacityLimit(selectedPlace.capacityIndividual)}
                 value={occupancyDraft.currentOccupants}
                 onChange={(e) =>
                   handleOccupancyDraftChange("currentOccupants", e.target.value)
@@ -3876,9 +3934,10 @@ useEffect(() => {
               className="occupancy-step-btn add"
               onClick={() => handleOccupancyStep("currentOccupants", 1)}
               disabled={
-                Number(selectedPlace.capacityIndividual || 0) > 0 &&
-                Number(occupancyDraft.currentOccupants || 0) >=
-                  Number(selectedPlace.capacityIndividual || 0)
+                !canIncrementOccupants(
+                  occupancyDraft.currentOccupants,
+                  selectedPlace.capacityIndividual
+                )
               }
               title="Add one person"
             >
@@ -3903,7 +3962,7 @@ useEffect(() => {
                 id="currentFamiliesInput"
                 type="number"
                 min="0"
-                max={maxCurrentFamilies || undefined}
+                max={maxCurrentFamilies}
                 value={occupancyDraft.currentFamilies}
                 onChange={(e) =>
                   handleOccupancyDraftChange("currentFamilies", e.target.value)
@@ -3916,9 +3975,11 @@ useEffect(() => {
               className="occupancy-step-btn add"
               onClick={() => handleOccupancyStep("currentFamilies", 1)}
               disabled={
-                maxCurrentFamilies > 0 &&
-                Number(occupancyDraft.currentFamilies || 0) >=
-                  maxCurrentFamilies
+                !canIncrementFamilies(
+                  occupancyDraft.currentFamilies,
+                  occupancyDraft.currentOccupants,
+                  selectedPlace.capacityFamily
+                )
               }
               title="Add one family"
             >
@@ -3998,15 +4059,6 @@ useEffect(() => {
         </div>
 
         <div className="occupancy-save-row occupancy-autosave-row">
-          <button
-            type="button"
-            className="ghost-btn"
-            onClick={handleResetOccupancyDraft}
-            disabled={!hasOccupancyChanges || savingOccupancy}
-          >
-            Reset
-          </button>
-
           <span className="occupancy-autosave-status">
             {savingOccupancy
               ? "Saving..."

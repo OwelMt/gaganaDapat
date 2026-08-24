@@ -356,10 +356,92 @@
 
 .inventory-filter-toolbar-inventory {
   margin-bottom: 0;
+  grid-template-columns:
+    minmax(200px, 1.25fr)
+    minmax(150px, 0.6fr)
+    minmax(170px, 0.76fr)
+    minmax(150px, 0.62fr)
+    minmax(150px, 0.62fr)
+    minmax(150px, 0.62fr);
+  grid-template-areas:
+    "search history category expiry addedby actions";
+  align-items: end;
+}
+
+.inventory-filter-toolbar-inventory .search-group {
+  grid-area: search;
+  align-self: end;
+  min-width: 0;
 }
 
 .filter-group {
   min-width: 0;
+}
+
+.inventory-history-group {
+  min-width: 0;
+}
+
+.inventory-filter-toolbar-inventory .inventory-history-group {
+  grid-area: history;
+  justify-self: stretch;
+  align-self: end;
+  min-width: 0;
+}
+
+.inventory-filter-category {
+  grid-area: category;
+}
+
+.inventory-filter-expiry {
+  grid-area: expiry;
+}
+
+.inventory-filter-added-by {
+  grid-area: addedby;
+}
+
+.inventory-filter-actions {
+  grid-area: actions;
+  align-self: end;
+  justify-self: stretch;
+  min-width: 0;
+}
+
+.inventory-history-title {
+  display: block;
+  margin: 0 0 8px;
+  color: var(--inv-text-soft);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.inventory-history-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.inventory-history-date {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--inv-border-strong);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--inv-text);
+  flex: 1 1 auto;
+}
+
+.inventory-history-clear {
+  min-width: 40px;
+  width: 40px;
+  min-height: 42px;
+  padding: 0;
+  border-radius: 12px;
+  flex: 0 0 auto;
 }
 
 .filter-group label,
@@ -374,12 +456,17 @@
 
 .filter-actions {
   display: flex;
-  justify-content: flex-end;
-  align-items: end;
+  justify-content: stretch;
+  align-items: flex-end;
+  min-width: 0;
+  padding-top: 0;
 }
 
-.search-group {
-  min-width: 220px;
+.inventory-filter-actions .btn {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 12px;
 }
 
 .table-topbar {
@@ -2867,6 +2954,26 @@
 
   .filter-toolbar {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .inventory-filter-toolbar-inventory {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "search history"
+      "category expiry"
+      "addedby actions";
+    align-items: start;
+  }
+
+  .inventory-filter-toolbar-inventory .search-group,
+  .inventory-filter-toolbar-inventory .inventory-history-group,
+  .inventory-filter-category,
+  .inventory-filter-expiry,
+  .inventory-filter-added-by,
+  .inventory-filter-actions {
+    grid-column: auto;
+    grid-area: auto;
+    align-self: start;
   }
 
   .release-layout,

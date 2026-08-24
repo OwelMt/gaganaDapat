@@ -21,6 +21,9 @@ const {
   getSupportTypeLabel,
   getSupportTypesFromRequest,
 } = require("../utils/reliefSupportTypes");
+const {
+  getDistributionSignOffValidationError,
+} = require("../utils/reliefDistributionValidation");
 const createNotification = require("../utils/createNotification");
 const createAuditEvent = require("../utils/createAuditEvent");
 
@@ -379,6 +382,11 @@ const buildDistributionRecordPayload = ({
 
   if (!serialNo) {
     throw createHttpError(400, "Serial number is required.");
+  }
+
+  const signOffValidationError = getDistributionSignOffValidationError(signOffSource);
+  if (signOffValidationError) {
+    throw createHttpError(400, signOffValidationError);
   }
 
   return {

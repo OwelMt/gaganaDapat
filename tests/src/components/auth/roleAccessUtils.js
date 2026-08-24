@@ -81,10 +81,22 @@ export function getAnalyticsPageTitle(role) {
   return "Admin Analytics";
 }
 
+export function getSidebarPanelLabel(role) {
+  const normalizedRole = normalizeRole(role);
+  if (normalizedRole === ROLE_ACCOUNTANT) return "Accountant Panel";
+  if (normalizedRole === ROLE_DRRMO) return "DRRMO Panel";
+  if (normalizedRole === ROLE_BARANGAY) return "Barangay Panel";
+  return "Admin Panel";
+}
+
 export function getInventoryEditableTypes(role) {
   const normalizedRole = normalizeRole(role);
 
-  if (normalizedRole === ROLE_ADMIN || normalizedRole === ROLE_ACCOUNTANT) {
+  if (normalizedRole === ROLE_ADMIN) {
+    return ["goods", "appliance", "monetary"];
+  }
+
+  if (normalizedRole === ROLE_ACCOUNTANT) {
     return ["monetary"];
   }
 
@@ -95,11 +107,19 @@ export function getInventoryEditableTypes(role) {
   return [];
 }
 
+export function getInventoryAddTypes(role) {
+  return getInventoryEditableTypes(role);
+}
+
 export function getInventoryViewTypes(role) {
   const normalizedRole = normalizeRole(role);
 
-  if (normalizedRole === ROLE_ADMIN || normalizedRole === ROLE_ACCOUNTANT) {
+  if (normalizedRole === ROLE_ADMIN) {
     return ["goods", "appliance", "monetary"];
+  }
+
+  if (normalizedRole === ROLE_ACCOUNTANT) {
+    return ["monetary"];
   }
 
   if (normalizedRole === ROLE_DRRMO) {
@@ -115,6 +135,10 @@ export function canEditInventoryType(role, type) {
 
 export function canViewInventoryType(role, type) {
   return getInventoryViewTypes(role).includes(String(type || "").toLowerCase());
+}
+
+export function canChangeInventoryItemType() {
+  return false;
 }
 
 export function getDonationQueueTypeForRole(role) {

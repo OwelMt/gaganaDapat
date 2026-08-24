@@ -182,13 +182,9 @@ body,
   gap: 12px;
 }
 
-.admin-logs-toolbar--top {
-  grid-template-columns: 1fr 220px;
-  margin-bottom: 12px;
-}
-
-.admin-logs-toolbar--bottom {
-  grid-template-columns: 220px 220px;
+.admin-logs-toolbar--filters {
+  grid-template-columns: minmax(320px, 1.7fr) repeat(3, minmax(180px, 0.72fr));
+  align-items: center;
   margin-bottom: 12px;
 }
 
@@ -537,9 +533,8 @@ body,
     font-size: 28px;
   }
 
-  .admin-logs-toolbar--top,
-  .admin-logs-toolbar--bottom {
-    grid-template-columns: 1fr;
+  .admin-logs-toolbar--filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .admin-logs-toolbar-meta,
@@ -570,6 +565,10 @@ body,
 
   .admin-logs-shell {
     gap: 16px;
+  }
+
+  .admin-logs-toolbar--filters {
+    grid-template-columns: 1fr;
   }
 
   .admin-logs-title {

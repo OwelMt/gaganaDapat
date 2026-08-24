@@ -15,6 +15,14 @@ const {
   validateInventoryExpirationDate,
 } = require("../utils/inventoryExpiryValidation");
 const {
+  INVENTORY_HISTORY_MAX_DATE,
+  INVENTORY_HISTORY_YEAR_START,
+  buildInventoryHistoryMonths,
+  normalizeInventoryHistoryDateInput,
+  reconstructInventoryStateAsOf,
+} = require("../utils/inventoryHistoryUtils");
+const {
+  canViewInventoryType,
   getInventoryAccessError,
   normalizeRole,
 } = require("../utils/roleAccessUtils");
@@ -63,6 +71,15 @@ const VALID_REPORT_TYPES = [
 const normalizeString = (value) => {
   if (value === undefined || value === null) return "";
   return String(value).trim();
+};
+
+const normalizeStringArrayInput = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeString(item)).filter(Boolean);
+  }
+
+  const normalized = normalizeString(value);
+  return normalized ? [normalized] : [];
 };
 
 const getProofContentType = (fileUrl = "", fallback = "") => {
@@ -351,6 +368,54 @@ const uploadInventoryProofFiles = async (files = []) => {
   return uploaded.filter(Boolean);
 };
 
+const filterInventoryHistoryByType = (reconstruction, requestedType) => {
+  if (!VALID_TYPES.includes(requestedType)) {
+    return reconstruction;
+  }
+
+  const emptyItems = {
+    goods: [],
+    monetary: [],
+    appliance: [],
+  };
+  const item = {
+    goods: "quantity",
+    appliance: "quantity",
+    monetary: "amount",
+  };
+  const count = {
+    goods: "goodsCount",
+    appliance: "applianceCount",
+    monetary: "monetaryCount",
+  };
+  const total = {
+    goods: "totalGoodsQuantity",
+    appliance: "totalApplianceQuantity",
+    monetary: "totalMonetaryAmount",
+  };
+  const items = reconstruction?.items?.[requestedType] || [];
+
+  emptyItems[requestedType] = items;
+
+  return {
+    ...reconstruction,
+    summary: {
+      totalGoodsQuantity: 0,
+      totalApplianceQuantity: 0,
+      totalMonetaryAmount: 0,
+      goodsCount: 0,
+      applianceCount: 0,
+      monetaryCount: 0,
+      [count[requestedType]]: items.length,
+      [total[requestedType]]: items.reduce(
+        (sum, current) => sum + toNumber(current?.[item[requestedType]]),
+        0
+      ),
+    },
+    items: emptyItems,
+  };
+};
+
 const normalizeLower = (value, fallback) => {
   if (value === undefined || value === null || value === "") return fallback;
   return String(value).trim().toLowerCase();
@@ -362,6 +427,67 @@ const getInventoryRoleAccessError = (req, type) => {
   const role = getSessionRole(req);
   if (!role) return "Not authenticated.";
   return getInventoryAccessError(role, type);
+};
+
+const filterInventoryItemsForRole = (req, itemsByType = {}) => {
+  const role = getSessionRole(req);
+  const safeItemsByType = {
+    goods: Array.isArray(itemsByType.goods) ? itemsByType.goods : [],
+    appliance: Array.isArray(itemsByType.appliance) ? itemsByType.appliance : [],
+    monetary: Array.isArray(itemsByType.monetary) ? itemsByType.monetary : [],
+  };
+
+  if (!role) {
+    return {
+      goods: [],
+      appliance: [],
+      monetary: [],
+    };
+  }
+
+  return {
+    goods: canViewInventoryType(role, "goods") ? safeItemsByType.goods : [],
+    appliance: canViewInventoryType(role, "appliance") ? safeItemsByType.appliance : [],
+    monetary: canViewInventoryType(role, "monetary") ? safeItemsByType.monetary : [],
+  };
+};
+
+const buildInventoryHistorySummary = (itemsByType = {}) => ({
+  totalGoodsQuantity: (Array.isArray(itemsByType.goods) ? itemsByType.goods : []).reduce(
+    (sum, current) => sum + Number(current?.quantity || 0),
+    0
+  ),
+  totalApplianceQuantity: (Array.isArray(itemsByType.appliance)
+    ? itemsByType.appliance
+    : []
+  ).reduce((sum, current) => sum + Number(current?.quantity || 0), 0),
+  totalMonetaryAmount: (Array.isArray(itemsByType.monetary) ? itemsByType.monetary : []).reduce(
+    (sum, current) => sum + Number(current?.amount || 0),
+    0
+  ),
+  goodsCount: Array.isArray(itemsByType.goods) ? itemsByType.goods.length : 0,
+  applianceCount: Array.isArray(itemsByType.appliance) ? itemsByType.appliance.length : 0,
+  monetaryCount: Array.isArray(itemsByType.monetary) ? itemsByType.monetary.length : 0,
+});
+
+const hasDuplicateMonetaryReferenceNumber = async (referenceNumber, excludeId = "") => {
+  const normalizedReferenceNumber = normalizeString(referenceNumber).toLowerCase();
+
+  if (!normalizedReferenceNumber) return false;
+
+  const monetaryItems = await InventoryItem.find(
+    { type: "monetary" },
+    { _id: 1, referenceNumber: 1 }
+  ).lean();
+
+  return monetaryItems.some((item) => {
+    const itemId = normalizeString(item?._id);
+    if (excludeId && itemId === normalizeString(excludeId)) {
+      return false;
+    }
+
+    return normalizeString(item?.referenceNumber).toLowerCase() === normalizedReferenceNumber;
+  });
 };
 
 const resolveInventoryType = (item = {}) => {
@@ -2706,6 +2832,12 @@ const addInventory = async (req, res) => {
         });
       }
 
+      if (await hasDuplicateMonetaryReferenceNumber(data.referenceNumber)) {
+        return res.status(400).json({
+          message: "Reference number already exists for another monetary donation.",
+        });
+      }
+
       itemData.amount = data.amount;
       itemData.referenceNumber = data.referenceNumber;
     }
@@ -2739,6 +2871,73 @@ const getInventory = async (req, res) => {
   } catch (err) {
     console.error("Get Inventory Error:", err);
     res.status(500).json({ message: err.message });
+  }
+};
+
+const getInventoryHistory = async (req, res) => {
+  try {
+    const requestedType = normalizeLower(req?.query?.type, "all");
+
+    if (!getSessionRole(req)) {
+      return res.status(403).json({ message: "Not authenticated." });
+    }
+
+    if (requestedType !== "all" && !VALID_TYPES.includes(requestedType)) {
+      return res.status(400).json({
+        message: "Invalid inventory history type.",
+      });
+    }
+
+    if (requestedType !== "all") {
+      const sessionRole = getSessionRole(req);
+      if (!canViewInventoryType(sessionRole, requestedType)) {
+        return res.status(403).json({
+          message: getInventoryAccessError(sessionRole, requestedType),
+        });
+      }
+    }
+
+    const { asOfDate, historyMode } = normalizeInventoryHistoryDateInput(
+      req?.query?.asOf,
+      req?.query?.month
+    );
+    const asOfLimit = new Date(`${asOfDate}T23:59:59.999Z`);
+    const reconstruction = reconstructInventoryStateAsOf({
+      items: await InventoryItem.find({ createdAt: { $lte: asOfLimit } }).lean(),
+      logs: await InventoryLog.find({ createdAt: { $lte: asOfLimit } }).lean(),
+      asOfDate,
+    });
+    const filteredReconstruction =
+      requestedType === "all"
+        ? {
+            ...reconstruction,
+            items: filterInventoryItemsForRole(req, reconstruction?.items),
+          }
+        : reconstruction;
+    const responsePayload = filterInventoryHistoryByType(
+      filteredReconstruction,
+      requestedType
+    );
+
+    return res.json({
+      yearWindow: {
+        start: INVENTORY_HISTORY_YEAR_START,
+        end: `${INVENTORY_HISTORY_YEAR_START.slice(0, 4)}-12-31`,
+        maxSelectableDate: INVENTORY_HISTORY_MAX_DATE,
+      },
+      historyMode,
+      months: buildInventoryHistoryMonths(),
+      ...responsePayload,
+      summary: buildInventoryHistorySummary(responsePayload.items),
+    });
+  } catch (error) {
+    const message = error?.message || "Failed to load inventory history.";
+    const isClientError =
+      message === "Invalid inventory history type." ||
+      /Inventory history is limited to the 2026 calendar year\./.test(message) ||
+      /Future inventory history dates are not allowed\./.test(message);
+
+    return res.status(isClientError ? 400 : 500).json({ message });
   }
 };
 
@@ -2887,6 +3086,14 @@ const updateInventory = async (req, res) => {
     }
 
     if (item.type === "monetary") {
+      if (
+        await hasDuplicateMonetaryReferenceNumber(data.referenceNumber, item._id)
+      ) {
+        return res.status(400).json({
+          message: "Reference number already exists for another monetary donation.",
+        });
+      }
+
       item.amount = data.amount;
       item.referenceNumber = data.referenceNumber;
 
@@ -2897,6 +3104,13 @@ const updateInventory = async (req, res) => {
       item.requiresExpiration = undefined;
       item.condition = undefined;
       item.usageDuration = undefined;
+    }
+
+    if (String(req.body.syncProofFiles || "").toLowerCase() === "true") {
+      const retainedProofFiles = normalizeStringArrayInput(req.body.retainedProofFiles);
+      item.proofFiles = (Array.isArray(item.proofFiles) ? item.proofFiles : []).filter(
+        (file) => retainedProofFiles.includes(String(file || ""))
+      );
     }
 
     if (req.files && req.files.length > 0) {
@@ -3209,6 +3423,7 @@ ${JSON.stringify(facts)}
 module.exports = {
   addInventory,
   getInventory,
+  getInventoryHistory,
   updateInventory,
   deleteInventory,
   getArchivedInventory,

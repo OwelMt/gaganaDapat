@@ -19,6 +19,7 @@ import {
 
 import logo from "../../assets/images/sagipbayanlogo.png";
 import { API_BASE_URL } from "../../config/api";
+import { getSidebarPanelLabel } from "../auth/roleAccessUtils";
 
 const BASE_URL = API_BASE_URL;
 const SIDEBAR_COUNT_CACHE_KEY = "sidebar:admin:counts";
@@ -108,6 +109,7 @@ export default function Sidebar({
   const isAdmin = variant === "admin";
   const isAccountant = variant === "accountant";
   const basePath = isAccountant ? "/accountant" : "/admin";
+  const panelLabel = getSidebarPanelLabel(variant);
   const SIDEBAR_SCROLL_KEY = `sidebar:${variant}:scrollTop`;
   const PAGE_SCROLL_KEY = `sidebar:${variant}:pageScrollY`;
   const cachedCountsRef = useRef(readCachedCounts());
@@ -437,7 +439,7 @@ export default function Sidebar({
         {!collapsed && (
           <div className="sidebar-brand">
             <h1 className="sidebar-title">SAGIP BAYAN</h1>
-            <p className="sidebar-subtitle">Admin Panel</p>
+            <p className="sidebar-subtitle">{panelLabel}</p>
           </div>
         )}
 

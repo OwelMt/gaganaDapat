@@ -828,7 +828,7 @@ export default function DonationValidationQueue() {
 
                         <div className="rrl-readiness-compact">
                           <div className="rrl-readiness-compact-row">
-                            <span>Donor Name</span>
+                            <span>Provider Name</span>
                             <strong>{displayedDonation.donorName || "-"}</strong>
                           </div>
                           <div className="rrl-readiness-compact-row">

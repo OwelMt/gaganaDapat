@@ -86,10 +86,9 @@ export const buildProofFileHrefCandidates = (value = "", baseUrl = "") => {
       : hasDirectorySegments
       ? `uploads/proofs/${fileName}`
       : `uploads/proofs/${normalizedWithoutLeadingSlash}`,
-    hasDirectorySegments ? normalizedWithoutLeadingSlash : "",
-    normalizedWithoutLeadingSlash.startsWith("proofs/")
-      ? `uploads/${normalizedWithoutLeadingSlash}`
-      : `proofs/${fileName}`,
+    hasDirectorySegments && !normalizedWithoutLeadingSlash.startsWith("proofs/")
+      ? normalizedWithoutLeadingSlash
+      : "",
     `uploads/proofs/${fileName}`,
   ]
     .filter(Boolean)

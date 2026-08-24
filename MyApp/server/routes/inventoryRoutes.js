@@ -5,6 +5,7 @@ const { uploadProof } = require("../middleware/upload");
 const { requireLogin, requireAdminOrDrrmo } = require("../middleware/adminMiddleware");
 
 router.get("/categories", inventoryController.getInventoryCategories);
+router.get("/history", requireAdminOrDrrmo, inventoryController.getInventoryHistory);
 
 // =========================
 // ANALYTICS

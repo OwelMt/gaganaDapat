@@ -200,7 +200,7 @@ export default function AdminLogs() {
         </section>
 
         <section className="admin-logs-panel">
-          <div className="admin-logs-toolbar admin-logs-toolbar--top">
+          <div className="admin-logs-toolbar admin-logs-toolbar--filters">
             <input
               className="admin-logs-search"
               type="text"
@@ -220,9 +220,6 @@ export default function AdminLogs() {
               <option value="archive">Archive</option>
               <option value="restore">Restore</option>
             </select>
-          </div>
-
-          <div className="admin-logs-toolbar admin-logs-toolbar--bottom">
             <select
               className="admin-logs-filter"
               value={dateFilter}

@@ -118,6 +118,121 @@ const DEFAULT_SITE_CONTENT = {
   incidentFeedMode: "all",
 };
 
+const HOTLINE_FORMAT_HINT = {
+  call: "Use digits and optional +, spaces, parentheses, or dashes.",
+  sms: "Use digits and optional +, spaces, parentheses, or dashes.",
+  email: "Use a valid email address.",
+  link: "Use a full link starting with http:// or https://.",
+};
+
+const PHONE_PATTERN = /^[0-9+\-\s()]+$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+const URL_PATTERN = /^https?:\/\/\S+$/i;
+
+function validateOfficeDraft(office = {}) {
+  const errors = {};
+
+  if (!String(office.name || "").trim()) {
+    errors.name = "Office name is required.";
+  }
+  if (!String(office.address || "").trim()) {
+    errors.address = "Office address is required.";
+  }
+  if (!String(office.hours || "").trim()) {
+    errors.hours = "Office hours are required.";
+  }
+
+  const emailValue = String(office.email || "").trim();
+  if (!emailValue) {
+    errors.email = "Office email is required.";
+  } else if (!EMAIL_PATTERN.test(emailValue)) {
+    errors.email = "Enter a valid email address.";
+  }
+
+  const facebookValue = String(office.facebook || "").trim();
+  if (!facebookValue) {
+    errors.facebook = "Facebook page link is required.";
+  } else if (!URL_PATTERN.test(facebookValue)) {
+    errors.facebook = "Enter a valid link starting with http:// or https://.";
+  }
+
+  return errors;
+}
+
+function validateHotlineDraftItem(item = {}) {
+  const errors = {};
+  const labelValue = String(item.label || "").trim();
+  const numberValue = String(item.number || "").trim();
+  const typeValue = String(item.type || "call").trim();
+
+  if (!labelValue) {
+    errors.label = "Contact label is required.";
+  }
+
+  if (!numberValue) {
+    errors.number = "Contact detail is required.";
+    return errors;
+  }
+
+  if (typeValue === "email") {
+    if (!EMAIL_PATTERN.test(numberValue)) {
+      errors.number = "Enter a valid email address.";
+    }
+    return errors;
+  }
+
+  if (typeValue === "link") {
+    if (!URL_PATTERN.test(numberValue)) {
+      errors.number = "Enter a valid link starting with http:// or https://.";
+    }
+    return errors;
+  }
+
+  const digitCount = numberValue.replace(/\D/g, "").length;
+  if (!PHONE_PATTERN.test(numberValue) || digitCount < 7) {
+    errors.number = "Enter a valid hotline number with at least 7 digits.";
+  }
+
+  return errors;
+}
+
+function getLandingInfoValidationErrors(sourceDraft = {}) {
+  return {
+    office: validateOfficeDraft(sourceDraft.office || {}),
+    hotlines: (sourceDraft.hotlines || []).map((item) =>
+      validateHotlineDraftItem(item)
+    ),
+  };
+}
+
+function hasValidationEntries(value) {
+  if (!value) return false;
+  if (Array.isArray(value)) {
+    return value.some((entry) => hasValidationEntries(entry));
+  }
+  if (typeof value === "object") {
+    return Object.values(value).some((entry) => hasValidationEntries(entry));
+  }
+  return Boolean(value);
+}
+
+function getFirstValidationMessage(errors) {
+  if (!errors) return "";
+  if (typeof errors === "string") return errors;
+  if (Array.isArray(errors)) {
+    for (const entry of errors) {
+      const nested = getFirstValidationMessage(entry);
+      if (nested) return nested;
+    }
+    return "";
+  }
+  for (const entry of Object.values(errors)) {
+    const nested = getFirstValidationMessage(entry);
+    if (nested) return nested;
+  }
+  return "";
+}
+
 const LIMITS = {
   announcements: 5,
   tips: 6,
@@ -341,8 +456,13 @@ export default function Dashboard() {
 
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [savingInlineItemKey, setSavingInlineItemKey] = useState("");
   const [isUploadingHeroImage, setIsUploadingHeroImage] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [landingInfoErrors, setLandingInfoErrors] = useState({
+    office: {},
+    hotlines: [],
+  });
   const [userRole, setUserRole] = useState("");
   const [isVisitorMode, setIsVisitorMode] = useState(false);
 
@@ -1070,54 +1190,58 @@ export default function Dashboard() {
     setSaveMessage("Draft reset to current saved content.");
   }
 
-  async function saveSiteContent() {
-    if (!canEdit) return;
+  useEffect(() => {
+    if (!isInlineEditing) {
+      setLandingInfoErrors({ office: {}, hotlines: [] });
+      return;
+    }
 
-    setIsSaving(true);
-    setSaveMessage("");
+    setLandingInfoErrors(getLandingInfoValidationErrors(draftContent));
+  }, [draftContent, isInlineEditing]);
 
-    const trimmedPayload = normalizeSitePayload({
-      ...draftContent,
-      announcements: (draftContent.announcements || []).map((item) => ({
+  function buildNormalizedDraftPayload(sourceDraft) {
+    return normalizeSitePayload({
+      ...sourceDraft,
+      announcements: (sourceDraft.announcements || []).map((item) => ({
         ...item,
         title: item.title?.slice(0, 80) || "",
         body: item.body?.slice(0, 180) || "",
         tag: item.tag?.slice(0, 32) || "",
       })),
-      tips: (draftContent.tips || []).map((item) => ({
+      tips: (sourceDraft.tips || []).map((item) => ({
         ...item,
         text: item.text?.slice(0, 120) || "",
       })),
-      hotlines: (draftContent.hotlines || []).map((item) => ({
+      hotlines: (sourceDraft.hotlines || []).map((item) => ({
         ...item,
         label: item.label?.slice(0, 40) || "",
         number: item.number?.slice(0, 120) || "",
         type: item.type || "call",
       })),
       hero: {
-        ...draftContent.hero,
-        title: draftContent.hero?.title?.slice(0, 90) || "",
-        subtitle: draftContent.hero?.subtitle?.slice(0, 180) || "",
+        ...sourceDraft.hero,
+        title: sourceDraft.hero?.title?.slice(0, 90) || "",
+        subtitle: sourceDraft.hero?.subtitle?.slice(0, 180) || "",
         primaryCtaLabel:
-          draftContent.hero?.primaryCtaLabel?.slice(0, 24) || "",
+          sourceDraft.hero?.primaryCtaLabel?.slice(0, 24) || "",
         secondaryCtaLabel:
-          draftContent.hero?.secondaryCtaLabel?.slice(0, 24) || "",
+          sourceDraft.hero?.secondaryCtaLabel?.slice(0, 24) || "",
       },
       alert: {
-        ...draftContent.alert,
-        level: draftContent.alert?.level?.slice(0, 20) || "",
-        text: draftContent.alert?.text?.slice(0, 180) || "",
-        enabled: Boolean(draftContent.alert?.enabled),
+        ...sourceDraft.alert,
+        level: sourceDraft.alert?.level?.slice(0, 20) || "",
+        text: sourceDraft.alert?.text?.slice(0, 180) || "",
+        enabled: Boolean(sourceDraft.alert?.enabled),
       },
       office: {
-        ...draftContent.office,
-        name: draftContent.office?.name?.slice(0, 50) || "",
-        address: draftContent.office?.address?.slice(0, 120) || "",
-        hours: draftContent.office?.hours?.slice(0, 120) || "",
-        email: draftContent.office?.email?.slice(0, 80) || "",
-        facebook: draftContent.office?.facebook?.slice(0, 120) || "",
+        ...sourceDraft.office,
+        name: sourceDraft.office?.name?.slice(0, 50) || "",
+        address: sourceDraft.office?.address?.slice(0, 120) || "",
+        hours: sourceDraft.office?.hours?.slice(0, 120) || "",
+        email: sourceDraft.office?.email?.slice(0, 80) || "",
+        facebook: sourceDraft.office?.facebook?.slice(0, 120) || "",
       },
-      heroImages: (draftContent.heroImages || []).map((item) => ({
+      heroImages: (sourceDraft.heroImages || []).map((item) => ({
         _id: item?._id,
         fileName: item?.fileName?.slice(0, 200) || "",
         fileUrl: item?.fileUrl || "",
@@ -1125,6 +1249,49 @@ export default function Dashboard() {
         caption: item?.caption?.slice(0, 80) || "",
       })),
     });
+  }
+
+  async function persistSiteContent(nextDraft, options = {}) {
+    if (!canEdit) return false;
+
+    const {
+      successMessage = "Landing page updated.",
+      fallbackMessage = "Saved locally. Check API if database save is unavailable.",
+      closeEditor = false,
+      savingState = "page",
+      validationScope = "all",
+    } = options;
+
+    const validationErrors = getLandingInfoValidationErrors(nextDraft);
+    const scopedValidationErrors =
+      validationScope === "none"
+        ? null
+        :
+      validationScope === "office"
+        ? { office: validationErrors.office }
+        : validationScope === "hotlines"
+        ? { hotlines: validationErrors.hotlines }
+        : validationScope === "hotline"
+        ? { hotlines: [validationErrors.hotlines[options.itemIndex] || {}] }
+        : validationErrors;
+
+    if (hasValidationEntries(scopedValidationErrors)) {
+      setLandingInfoErrors(validationErrors);
+      setSaveMessage(getFirstValidationMessage(scopedValidationErrors));
+      return false;
+    }
+
+    if (savingState === "page") {
+      setIsSaving(true);
+    }
+
+    if (savingState !== "page") {
+      setSavingInlineItemKey(options.itemId || "");
+    }
+
+    setSaveMessage("");
+
+    const trimmedPayload = buildNormalizedDraftPayload(nextDraft);
 
     try {
       const res = await fetch(`${BASE_URL}/api/public-site`, {
@@ -1144,17 +1311,143 @@ export default function Dashboard() {
       setSiteContent(normalized);
       setDraftContent(normalized);
       localStorage.setItem("publicSiteContent", JSON.stringify(normalized));
-      setSaveMessage("Landing page updated.");
-      setIsEditorOpen(false);
+      setSaveMessage(successMessage);
+      if (closeEditor) {
+        setIsEditorOpen(false);
+      }
+      return true;
     } catch (err) {
       localStorage.setItem("publicSiteContent", JSON.stringify(trimmedPayload));
       setSiteContent(trimmedPayload);
       setDraftContent(trimmedPayload);
-      setSaveMessage("Saved locally. Check API if database save is unavailable.");
-      setIsEditorOpen(false);
+      setSaveMessage(fallbackMessage);
+      if (closeEditor) {
+        setIsEditorOpen(false);
+      }
+      return true;
     } finally {
-      setIsSaving(false);
+      if (savingState === "page") {
+        setIsSaving(false);
+      }
+      if (savingState !== "page") {
+        setSavingInlineItemKey("");
+      }
     }
+  }
+
+  async function saveSiteContent() {
+    await persistSiteContent(draftContent, {
+      successMessage: "Landing page updated.",
+      fallbackMessage: "Saved locally. Check API if database save is unavailable.",
+      closeEditor: true,
+      savingState: "page",
+      validationScope: "all",
+    });
+  }
+
+  function isAnnouncementDirty(index) {
+    const currentItem = draftContent.announcements?.[index] || null;
+    const savedItem = siteContent.announcements?.find(
+      (item) => item.id === currentItem?.id
+    );
+
+    if (!currentItem) return false;
+    if (!savedItem) return true;
+
+    return (
+      (currentItem.tag || "") !== (savedItem.tag || "") ||
+      (currentItem.title || "") !== (savedItem.title || "") ||
+      (currentItem.body || "") !== (savedItem.body || "")
+    );
+  }
+
+  async function saveAnnouncementItem(index) {
+    const currentItem = draftContent.announcements?.[index];
+    if (!currentItem || !canEdit) return;
+
+    await persistSiteContent(draftContent, {
+      successMessage: "Official update saved.",
+      fallbackMessage:
+        "Official update saved locally. Check API if database save is unavailable.",
+      closeEditor: false,
+      savingState: "announcement",
+      itemId: currentItem.id || `announcement-${index}`,
+      validationScope: "none",
+    });
+  }
+
+  async function saveOfficeInfo() {
+    await persistSiteContent(draftContent, {
+      successMessage: "Office information saved.",
+      fallbackMessage:
+        "Office information saved locally. Check API if database save is unavailable.",
+      closeEditor: false,
+      savingState: "office",
+      itemId: "office-info",
+      validationScope: "office",
+    });
+  }
+
+  async function saveHotlineItem(index) {
+    const currentItem = draftContent.hotlines?.[index];
+    if (!currentItem || !canEdit) return;
+
+    await persistSiteContent(draftContent, {
+      successMessage: "Emergency contact saved.",
+      fallbackMessage:
+        "Emergency contact saved locally. Check API if database save is unavailable.",
+      closeEditor: false,
+      savingState: "hotline",
+      itemId: currentItem.id || `hotline-${index}`,
+      itemIndex: index,
+      validationScope: "hotline",
+    });
+  }
+
+  async function removeHotlineItem(index) {
+    const currentItems = draftContent.hotlines || [];
+    if (currentItems.length <= 1) return;
+
+    const nextDraft = {
+      ...draftContent,
+      hotlines: currentItems.filter((_, itemIndex) => itemIndex !== index),
+    };
+
+    setDraftContent(nextDraft);
+
+    await persistSiteContent(nextDraft, {
+      successMessage: "Emergency contact removed.",
+      fallbackMessage:
+        "Emergency contact removed locally. Check API if database save is unavailable.",
+      closeEditor: false,
+      savingState: "hotline",
+      itemId: `remove-hotline-${index}`,
+      validationScope: "hotlines",
+    });
+  }
+
+  function isHotlineDirty(index) {
+    const currentItem = draftContent.hotlines?.[index] || null;
+    const savedItem = siteContent.hotlines?.find((item) => item.id === currentItem?.id);
+
+    if (!currentItem) return false;
+    if (!savedItem) return true;
+
+    return (
+      (currentItem.label || "") !== (savedItem.label || "") ||
+      (currentItem.number || "") !== (savedItem.number || "") ||
+      (currentItem.type || "call") !== (savedItem.type || "call")
+    );
+  }
+
+  function isOfficeDirty() {
+    return (
+      (draftContent.office?.name || "") !== (siteContent.office?.name || "") ||
+      (draftContent.office?.address || "") !== (siteContent.office?.address || "") ||
+      (draftContent.office?.hours || "") !== (siteContent.office?.hours || "") ||
+      (draftContent.office?.email || "") !== (siteContent.office?.email || "") ||
+      (draftContent.office?.facebook || "") !== (siteContent.office?.facebook || "")
+    );
   }
 
   function applyPublicSiteUpdate(nextContent, message) {
@@ -2328,6 +2621,27 @@ export default function Dashboard() {
 
                             <button
                               type="button"
+                              className="inline-save-btn"
+                              onClick={() => saveAnnouncementItem(index)}
+                              disabled={
+                                isSaving ||
+                                Boolean(savingInlineItemKey) ||
+                                !isAnnouncementDirty(index)
+                              }
+                              title="Save this official update"
+                            >
+                              <FaSave />
+                              <span>
+                                {savingInlineItemKey ===
+                                (draftContent.announcements[index]?.id ||
+                                  `announcement-${index}`)
+                                  ? "Saving..."
+                                  : "Save"}
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
                               className="inline-delete-btn"
                               onClick={() =>
                                 removeItem(
@@ -2494,7 +2808,9 @@ export default function Dashboard() {
                             <span>Office Name</span>
                             <input
                               type="text"
-                              className="landing-inline-input"
+                              className={`landing-inline-input ${
+                                landingInfoErrors.office?.name ? "landing-inline-input-error" : ""
+                              }`}
                               value={draftContent.office.name}
                               maxLength={50}
                               onChange={(e) =>
@@ -2502,13 +2818,23 @@ export default function Dashboard() {
                               }
                               placeholder="Office name"
                             />
+                            <small className="landing-inline-meta">
+                              {(draftContent.office.name || "").length}/50 characters
+                            </small>
+                            {landingInfoErrors.office?.name && (
+                              <small className="landing-inline-error">
+                                {landingInfoErrors.office.name}
+                              </small>
+                            )}
                           </label>
 
                           <label className="footer-inline-field">
                             <span>Address</span>
                             <input
                               type="text"
-                              className="landing-inline-input"
+                              className={`landing-inline-input ${
+                                landingInfoErrors.office?.address ? "landing-inline-input-error" : ""
+                              }`}
                               value={draftContent.office.address}
                               maxLength={120}
                               onChange={(e) =>
@@ -2516,6 +2842,14 @@ export default function Dashboard() {
                               }
                               placeholder="Office address"
                             />
+                            <small className="landing-inline-meta">
+                              {(draftContent.office.address || "").length}/120 characters
+                            </small>
+                            {landingInfoErrors.office?.address && (
+                              <small className="landing-inline-error">
+                                {landingInfoErrors.office.address}
+                              </small>
+                            )}
                           </label>
                         </>
                       ) : (
@@ -2578,7 +2912,11 @@ export default function Dashboard() {
                                     <span>Label</span>
                                     <input
                                       type="text"
-                                      className="landing-inline-input"
+                                      className={`landing-inline-input ${
+                                        landingInfoErrors.hotlines?.[index]?.label
+                                          ? "landing-inline-input-error"
+                                          : ""
+                                      }`}
                                       value={
                                         draftContent.hotlines[index]?.label || ""
                                       }
@@ -2593,6 +2931,14 @@ export default function Dashboard() {
                                       }
                                       placeholder="Contact label"
                                     />
+                                    <small className="landing-inline-meta">
+                                      {(draftContent.hotlines[index]?.label || "").length}/40 characters
+                                    </small>
+                                    {landingInfoErrors.hotlines?.[index]?.label && (
+                                      <small className="landing-inline-error">
+                                        {landingInfoErrors.hotlines[index].label}
+                                      </small>
+                                    )}
                                   </label>
 
                                   <label className="footer-inline-field">
@@ -2621,15 +2967,31 @@ export default function Dashboard() {
 
                                   <button
                                     type="button"
-                                    className="inline-delete-btn footer-delete-btn"
-                                    onClick={() =>
-                                      removeItem(
-                                        "hotlines",
-                                        draftContent.hotlines[index]?.id
-                                      )
-                                    }
+                                    className="inline-save-btn footer-save-btn"
+                                    onClick={() => saveHotlineItem(index)}
                                     disabled={
-                                      (draftContent.hotlines || []).length <= 1
+                                      isSaving ||
+                                      Boolean(savingInlineItemKey) ||
+                                      !isHotlineDirty(index)
+                                    }
+                                    title="Save this contact"
+                                  >
+                                    <FaSave />
+                                    <span>
+                                      {savingInlineItemKey ===
+                                      (draftContent.hotlines[index]?.id || `hotline-${index}`)
+                                        ? "Saving..."
+                                        : "Save"}
+                                    </span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    className="inline-delete-btn footer-delete-btn"
+                                    onClick={() => removeHotlineItem(index)}
+                                    disabled={
+                                      (draftContent.hotlines || []).length <= 1 ||
+                                      Boolean(savingInlineItemKey)
                                     }
                                     title="Remove contact"
                                   >
@@ -2641,7 +3003,11 @@ export default function Dashboard() {
                                   <span>Contact Detail</span>
                                   <input
                                     type="text"
-                                    className="landing-inline-input"
+                                    className={`landing-inline-input ${
+                                      landingInfoErrors.hotlines?.[index]?.number
+                                        ? "landing-inline-input-error"
+                                        : ""
+                                    }`}
                                     value={
                                       draftContent.hotlines[index]?.number || ""
                                     }
@@ -2656,6 +3022,19 @@ export default function Dashboard() {
                                     }
                                     placeholder="Phone, SMS, email, or link"
                                   />
+                                  <small className="landing-inline-meta">
+                                    {(draftContent.hotlines[index]?.number || "").length}/120 characters
+                                  </small>
+                                  <small className="landing-inline-hint">
+                                    {HOTLINE_FORMAT_HINT[
+                                      draftContent.hotlines[index]?.type || "call"
+                                    ]}
+                                  </small>
+                                  {landingInfoErrors.hotlines?.[index]?.number && (
+                                    <small className="landing-inline-error">
+                                      {landingInfoErrors.hotlines[index].number}
+                                    </small>
+                                  )}
                                 </label>
                               </>
                             ) : (
@@ -2672,7 +3051,26 @@ export default function Dashboard() {
                 </div>
 
                 <div className="site-footer-right">
-                  <h3>Office Information</h3>
+                  <div className="site-footer-section-head">
+                    <h3>Office Information</h3>
+                    {isInlineEditing && (
+                      <button
+                        type="button"
+                        className="inline-save-btn footer-section-save-btn"
+                        onClick={saveOfficeInfo}
+                        disabled={
+                          isSaving ||
+                          Boolean(savingInlineItemKey) ||
+                          !isOfficeDirty()
+                        }
+                      >
+                        <FaSave />
+                        <span>
+                          {savingInlineItemKey === "office-info" ? "Saving..." : "Save Office Info"}
+                        </span>
+                      </button>
+                    )}
+                  </div>
 
                   <div className="site-office-list compact">
                     <div className="site-office-row">
@@ -2683,7 +3081,9 @@ export default function Dashboard() {
                           <span>Office Address</span>
                           <input
                             type="text"
-                            className="landing-inline-input"
+                            className={`landing-inline-input ${
+                              landingInfoErrors.office?.address ? "landing-inline-input-error" : ""
+                            }`}
                             value={draftContent.office.address}
                             maxLength={120}
                             onChange={(e) =>
@@ -2691,6 +3091,14 @@ export default function Dashboard() {
                             }
                             placeholder="Office address"
                           />
+                          <small className="landing-inline-meta">
+                            {(draftContent.office.address || "").length}/120 characters
+                          </small>
+                          {landingInfoErrors.office?.address && (
+                            <small className="landing-inline-error">
+                              {landingInfoErrors.office.address}
+                            </small>
+                          )}
                         </label>
                       ) : (
                         <span>{pageContent.office.address}</span>
@@ -2705,7 +3113,9 @@ export default function Dashboard() {
                           <span>Office Hours</span>
                           <input
                             type="text"
-                            className="landing-inline-input"
+                            className={`landing-inline-input ${
+                              landingInfoErrors.office?.hours ? "landing-inline-input-error" : ""
+                            }`}
                             value={draftContent.office.hours}
                             maxLength={120}
                             onChange={(e) =>
@@ -2713,6 +3123,14 @@ export default function Dashboard() {
                             }
                             placeholder="Office hours"
                           />
+                          <small className="landing-inline-meta">
+                            {(draftContent.office.hours || "").length}/120 characters
+                          </small>
+                          {landingInfoErrors.office?.hours && (
+                            <small className="landing-inline-error">
+                              {landingInfoErrors.office.hours}
+                            </small>
+                          )}
                         </label>
                       ) : (
                         <span>{pageContent.office.hours}</span>
@@ -2727,7 +3145,9 @@ export default function Dashboard() {
                           <span>Email Address</span>
                           <input
                             type="text"
-                            className="landing-inline-input"
+                            className={`landing-inline-input ${
+                              landingInfoErrors.office?.email ? "landing-inline-input-error" : ""
+                            }`}
                             value={draftContent.office.email}
                             maxLength={80}
                             onChange={(e) =>
@@ -2735,6 +3155,14 @@ export default function Dashboard() {
                             }
                             placeholder="Office email"
                           />
+                          <small className="landing-inline-meta">
+                            {(draftContent.office.email || "").length}/80 characters
+                          </small>
+                          {landingInfoErrors.office?.email && (
+                            <small className="landing-inline-error">
+                              {landingInfoErrors.office.email}
+                            </small>
+                          )}
                         </label>
                       ) : (
                         <span>{pageContent.office.email}</span>
@@ -2749,7 +3177,9 @@ export default function Dashboard() {
                           <span>Facebook Page</span>
                           <input
                             type="text"
-                            className="landing-inline-input"
+                            className={`landing-inline-input ${
+                              landingInfoErrors.office?.facebook ? "landing-inline-input-error" : ""
+                            }`}
                             value={draftContent.office.facebook}
                             maxLength={120}
                             onChange={(e) =>
@@ -2757,6 +3187,14 @@ export default function Dashboard() {
                             }
                             placeholder="Facebook page link"
                           />
+                          <small className="landing-inline-meta">
+                            {(draftContent.office.facebook || "").length}/120 characters
+                          </small>
+                          {landingInfoErrors.office?.facebook && (
+                            <small className="landing-inline-error">
+                              {landingInfoErrors.office.facebook}
+                            </small>
+                          )}
                         </label>
                       ) : (
                         <span>{pageContent.office.facebook}</span>
