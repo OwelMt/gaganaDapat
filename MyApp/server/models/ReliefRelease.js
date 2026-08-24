@@ -58,6 +58,29 @@ const releaseItemSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const monetaryAllocationSchema = new mongoose.Schema(
+  {
+    inventoryItemId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "InventoryItem",
+      required: true,
+    },
+
+    itemName: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    amountReleased: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+  },
+  { _id: false }
+);
+
 const reliefReleaseSchema = new mongoose.Schema(
   {
     reliefRequestId: {
@@ -127,6 +150,16 @@ const reliefReleaseSchema = new mongoose.Schema(
       type: Number,
       default: 0,
       min: 0,
+    },
+
+    monetaryAllocations: {
+      type: [monetaryAllocationSchema],
+      default: [],
+    },
+
+    inventoryRestored: {
+      type: Boolean,
+      default: false,
     },
 
     items: {
@@ -240,6 +273,35 @@ reliefReleaseSchema.pre("validate", function () {
 
     return normalizedItem;
   });
+
+  const monetaryAllocations = Array.isArray(this.monetaryAllocations)
+    ? this.monetaryAllocations
+        .map((allocation) => {
+          if (!allocation) return null;
+
+          const normalizedAllocation = {
+            ...(allocation.toObject?.() ? allocation.toObject() : allocation),
+          };
+
+          normalizedAllocation.itemName = String(
+            normalizedAllocation.itemName || ""
+          ).trim();
+          normalizedAllocation.amountReleased = Number(
+            normalizedAllocation.amountReleased
+          );
+
+          return normalizedAllocation;
+        })
+        .filter(
+          (allocation) =>
+            allocation &&
+            mongoose.isValidObjectId(allocation.inventoryItemId) &&
+            Number.isFinite(allocation.amountReleased) &&
+            allocation.amountReleased > 0
+        )
+    : [];
+
+  this.monetaryAllocations = monetaryAllocations;
 
   if (this.foodPackTemplateName) {
     this.foodPackTemplateName = String(this.foodPackTemplateName).trim();

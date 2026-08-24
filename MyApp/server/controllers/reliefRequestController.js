@@ -1,8 +1,11 @@
+const mongoose = require("mongoose");
 const path = require("path");
 const Barangay = require("../models/Barangay");
 const EvacPlace = require("../models/EvacPlace");
 const ReliefRequest = require("../models/ReliefRequest");
 const ReliefRelease = require("../models/ReliefRelease");
+const InventoryItem = require("../models/InventoryItem");
+const InventoryLog = require("../models/InventoryLog");
 const sendReliefRequestEmail = require("../utils/sendReliefRequestEmail");
 const createNotification = require("../utils/createNotification");
 const createAuditEvent = require("../utils/createAuditEvent");
@@ -82,6 +85,10 @@ const toNumber = (value) => {
   const parsed = Number(value);
   return Number.isNaN(parsed) ? 0 : parsed;
 };
+
+const toMoneyUnits = (value) => Math.round(toNumber(value) * 100);
+
+const amountsMatch = (left, right) => toMoneyUnits(left) === toMoneyUnits(right);
 
 const resolveProofLocalPath = (proofFile = "") => {
   const normalized = normalizeString(proofFile).replace(/\\/g, "/");
@@ -1325,14 +1332,17 @@ const computePrioritySnapshotFromRows = (rows = []) => {
 };
 
 const buildFulfillmentFromReleases = (releases = [], currentFulfillment = {}) => {
-  const totalReleases = releases.length;
+  const activeReleases = releases.filter(
+    (release) => normalizeStatus(release.releaseStatus) !== "cancelled"
+  );
+  const totalReleases = activeReleases.length;
 
-  const releasedFoodPacks = releases.reduce(
+  const releasedFoodPacks = activeReleases.reduce(
     (sum, release) => sum + toNumber(release.foodPacksReleased),
     0
   );
 
-  const releasedApplianceQuantity = releases.reduce(
+  const releasedApplianceQuantity = activeReleases.reduce(
     (sum, release) =>
       sum +
       (Array.isArray(release.items)
@@ -1362,7 +1372,7 @@ const buildFulfillmentFromReleases = (releases = [], currentFulfillment = {}) =>
       0
     );
 
-  const releasedMonetaryAmount = releases.reduce(
+  const releasedMonetaryAmount = activeReleases.reduce(
     (sum, release) => sum + toNumber(release.releasedMonetaryAmount),
     0
   );
@@ -1386,7 +1396,7 @@ const buildFulfillmentFromReleases = (releases = [], currentFulfillment = {}) =>
     (release) => release.releaseStatus === "released"
   ).length;
 
-  const lastRelease = releases
+  const lastRelease = activeReleases
     .slice()
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
 
@@ -1396,14 +1406,8 @@ const buildFulfillmentFromReleases = (releases = [], currentFulfillment = {}) =>
     releasedApplianceQuantity,
     receivedFoodPacks,
     receivedApplianceQuantity,
-    releasedMonetaryAmount:
-      releasedMonetaryAmount > 0
-        ? releasedMonetaryAmount
-        : toNumber(currentFulfillment.releasedMonetaryAmount),
-    receivedMonetaryAmount:
-      receivedMonetaryAmount > 0
-        ? receivedMonetaryAmount
-        : toNumber(currentFulfillment.receivedMonetaryAmount),
+    releasedMonetaryAmount,
+    receivedMonetaryAmount,
     receivedReleases,
     pendingReleases,
     lastReleaseAt: lastRelease?.releasedAt || lastRelease?.createdAt || null,
@@ -1496,8 +1500,11 @@ const findBlockingActiveRequest = async (barangayId) => {
   return null;
 };
 
-const refreshRequestProgress = async (requestId) => {
-  const request = await ReliefRequest.findById(requestId);
+const refreshRequestProgress = async (requestId, session = null) => {
+  const requestQuery = ReliefRequest.findById(requestId);
+  const request = session
+    ? await requestQuery.session(session)
+    : await requestQuery;
   if (!request || request.isArchived) return null;
 
   const currentStatus = normalizeStatus(request.status);
@@ -1513,14 +1520,17 @@ const refreshRequestProgress = async (requestId) => {
       request.currentStage = "completed";
     }
 
-    await request.save();
+    await request.save(session ? { session } : undefined);
     return request;
   }
 
-  const releases = await ReliefRelease.find({
+  const releasesQuery = ReliefRelease.find({
     reliefRequestId: request._id,
     isArchived: false,
   }).sort({ createdAt: -1 });
+  const releases = session
+    ? await releasesQuery.session(session)
+    : await releasesQuery;
 
   request.supportTypes = getSupportTypesFromRequest(request);
   request.requestType = deriveLegacyRequestType(request.supportTypes);
@@ -1532,7 +1542,13 @@ const refreshRequestProgress = async (requestId) => {
   const releasedMonetaryAmount = toNumber(fulfillment.releasedMonetaryAmount);
   const receivedMonetaryAmount = toNumber(fulfillment.receivedMonetaryAmount);
   const hasAnyFulfillment =
-    releases.length > 0 || releasedMonetaryAmount > 0 || receivedMonetaryAmount > 0;
+    fulfillment.totalReleases > 0 ||
+    releasedFoodPacks > 0 ||
+    toNumber(fulfillment.releasedApplianceQuantity) > 0 ||
+    releasedMonetaryAmount > 0 ||
+    receivedFoodPacks > 0 ||
+    toNumber(fulfillment.receivedApplianceQuantity) > 0 ||
+    receivedMonetaryAmount > 0;
   const hasQuantifiedDemand =
     demand.requestedFoodPacks > 0 ||
     demand.requestedMonetaryAmount > 0 ||
@@ -1598,7 +1614,7 @@ const refreshRequestProgress = async (requestId) => {
     request.currentStage = deriveCurrentStage(request, releases);
   }
 
-  await request.save();
+  await request.save(session ? { session } : undefined);
   return request;
 };
 
@@ -2934,65 +2950,202 @@ const markReliefRequestReceived = async (req, res) => {
 };
 
 const reportReliefRequestNotReceived = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
     if (!req.session?.userId) {
       return res.status(401).json({ message: "Not logged in" });
     }
 
+    session.startTransaction();
+
     const request = await ReliefRequest.findOne({
       _id: req.params.id,
       barangayId: req.session.userId,
       isArchived: false,
-    });
+    }).session(session);
 
     if (!request) {
+      await session.abortTransaction();
       return res.status(404).json({ message: "Relief request not found" });
     }
 
-    const updatedRequest = await refreshRequestProgress(request._id);
+    const targetReleaseId = normalizeString(req.body?.releaseId);
+    if (!targetReleaseId) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        message:
+          "Release ID is required when reporting a relief delivery as not received.",
+      });
+    }
 
-    await createAuditEvent({
-      module: "relief",
-      type: "relief_request_not_received",
-      priority: "high",
-      title: "Relief delivery not received",
-      message: `${request.barangayName} reported that relief request ${request.requestNo} was not received.`,
-      actorId: request.barangayId,
-      actorName: request.barangayName,
-      actorRole: "barangay",
-      barangayId: request.barangayId,
-      barangayName: request.barangayName,
-      requestNo: request.requestNo,
-      disaster: request.disaster,
-      status: updatedRequest?.status || request.status,
-      referenceId: request._id,
-      referenceModel: "ReliefRequest",
-      targetLabel: request.requestNo,
-      metadata: {
-        requestType: request.requestType,
-      },
-    });
+    const release = await ReliefRelease.findOne({
+      _id: targetReleaseId,
+      reliefRequestId: request._id,
+      isArchived: false,
+    }).session(session);
 
-    await createNotification({
-      recipientRole: getRequestOwnerRole(request),
-      senderUser: request.barangayId,
-      senderRole: "barangay",
-      senderName: request.barangayName,
-      module: "relief",
-      type: "relief_request_not_received",
-      priority: "high",
-      title: "Relief delivery not received",
-      message: `${request.barangayName} reported that relief request ${request.requestNo} was not received.`,
-      link: getRequestQueueLink(request),
-      referenceId: request._id,
-      referenceModel: "ReliefRequest",
-      audit: false,
-      metadata: {
-        requestNo: request.requestNo,
+    if (!release) {
+      await session.abortTransaction();
+      return res.status(404).json({ message: "Relief release not found." });
+    }
+
+    if (normalizeStatus(release.releaseStatus) !== "released") {
+      await session.abortTransaction();
+      return res.status(400).json({
+        message: "Only active released deliveries can be reported as not received.",
+      });
+    }
+
+    if (release.inventoryRestored !== false) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        message: "This release was already restored to inventory.",
+      });
+    }
+
+    const releasedFoodPacks = toNumber(release.foodPacksReleased);
+    const releasedItemQuantity = Array.isArray(release.items)
+      ? release.items.reduce(
+          (sum, item) => sum + toNumber(item?.quantityReleased),
+          0
+        )
+      : 0;
+    if (releasedFoodPacks > 0 || releasedItemQuantity > 0) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        message:
+          "Only monetary releases can be rolled back from the not received flow.",
+      });
+    }
+
+    const username = String(req.session?.username || req.session?.userId || "");
+    const monetaryAllocations = Array.isArray(release.monetaryAllocations)
+      ? release.monetaryAllocations.filter(
+          (allocation) =>
+            allocation?.inventoryItemId && toNumber(allocation?.amountReleased) > 0
+        )
+      : [];
+    const totalAllocatedMonetary = monetaryAllocations.reduce(
+      (sum, allocation) => sum + toNumber(allocation.amountReleased),
+      0
+    );
+
+    if (
+      toNumber(release.releasedMonetaryAmount) > 0 &&
+      (monetaryAllocations.length === 0 ||
+        !amountsMatch(
+          totalAllocatedMonetary,
+          toNumber(release.releasedMonetaryAmount)
+        ))
+    ) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        message:
+          "This release does not have a complete monetary allocation breakdown for rollback.",
+      });
+    }
+
+    for (const allocation of monetaryAllocations) {
+      const amountReleased = toNumber(allocation?.amountReleased);
+      if (!allocation?.inventoryItemId || amountReleased <= 0) continue;
+
+      const inventoryDoc = await InventoryItem.findById(
+        allocation.inventoryItemId
+      ).session(session);
+      if (!inventoryDoc) {
+        throw new Error(
+          `Monetary inventory source ${allocation.inventoryItemId} was not found for rollback.`
+        );
+      }
+      if (normalizeString(inventoryDoc.type).toLowerCase() !== "monetary") {
+        throw new Error(
+          `Inventory source ${allocation.inventoryItemId} is not a monetary inventory record.`
+        );
+      }
+
+      inventoryDoc.amount = toNumber(inventoryDoc.amount) + amountReleased;
+      await inventoryDoc.save();
+
+      await InventoryLog.create([
+        {
+          inventoryItem: inventoryDoc._id,
+          itemName: inventoryDoc.name,
+          itemType: inventoryDoc.type,
+          action: "rollback",
+          quantity: undefined,
+          amount: amountReleased,
+          performedBy: username,
+          remarks: `Rolled back monetary release ${release.releaseNo} for relief request ${request.requestNo}`,
+        },
+      ], { session });
+    }
+
+    release.releaseStatus = "cancelled";
+    release.inventoryRestored = true;
+    release.receivedMonetaryAmount = 0;
+    release.receivedAt = null;
+    release.receivedBy = "";
+    release.receiptProofFiles = [];
+    await release.save({ session });
+
+    const updatedRequest = await refreshRequestProgress(request._id, session);
+    await session.commitTransaction();
+
+    const postCommitResults = await Promise.allSettled([
+      createAuditEvent({
+        module: "relief",
+        type: "relief_request_not_received",
+        priority: "high",
+        title: "Relief delivery not received",
+        message: `${request.barangayName} reported that relief request ${request.requestNo} was not received.`,
+        actorId: request.barangayId,
+        actorName: request.barangayName,
+        actorRole: "barangay",
+        barangayId: request.barangayId,
         barangayName: request.barangayName,
+        requestNo: request.requestNo,
         disaster: request.disaster,
         status: updatedRequest?.status || request.status,
-      },
+        referenceId: request._id,
+        referenceModel: "ReliefRequest",
+        targetLabel: request.requestNo,
+        metadata: {
+          requestType: request.requestType,
+          releaseNo: release.releaseNo,
+          releaseId: release._id,
+        },
+      }),
+      createNotification({
+        recipientRole: getRequestOwnerRole(request),
+        senderUser: request.barangayId,
+        senderRole: "barangay",
+        senderName: request.barangayName,
+        module: "relief",
+        type: "relief_request_not_received",
+        priority: "high",
+        title: "Relief delivery not received",
+        message: `${request.barangayName} reported that relief request ${request.requestNo} was not received.`,
+        link: getRequestQueueLink(request),
+        referenceId: request._id,
+        referenceModel: "ReliefRequest",
+        audit: false,
+        metadata: {
+          requestNo: request.requestNo,
+          barangayName: request.barangayName,
+          disaster: request.disaster,
+          status: updatedRequest?.status || request.status,
+          releaseNo: release.releaseNo,
+          releaseId: release._id,
+        },
+      }),
+    ]);
+    postCommitResults.forEach((result, index) => {
+      if (result.status !== "rejected") return;
+      const target = index === 0 ? "audit" : "notification";
+      console.error(
+        `Relief request not received ${target} side effect failed after rollback commit:`,
+        result.reason
+      );
     });
 
     return res.json({
@@ -3000,8 +3153,13 @@ const reportReliefRequestNotReceived = async (req, res) => {
       request: shapeReliefRequestResponse(updatedRequest || request),
     });
   } catch (err) {
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
     console.error("Report Relief Request Not Received Error:", err);
     res.status(500).json({ message: err.message });
+  } finally {
+    await session.endSession();
   }
 };
 

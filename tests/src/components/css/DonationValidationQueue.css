@@ -350,6 +350,18 @@
 }
 
 @media (max-width: 1080px) {
+  .dqv-page .rrl-queue-item {
+    min-height: 0;
+  }
+
+  .dqv-page .rrl-queue-bottom {
+    gap: 10px;
+  }
+
+  .dqv-page .rrl-queue-datetime {
+    min-width: 0;
+  }
+
   .dqv-detail-grid,
   .dqv-proof-grid {
     grid-template-columns: 1fr;
@@ -382,6 +394,58 @@
   }
 }
 
+@media (max-width: 768px) {
+  .dqv-page .rrl-totals-row {
+    grid-template-columns: 1fr;
+  }
+
+  .dqv-page .rrl-toolbar-top {
+    align-items: flex-start;
+  }
+
+  .dqv-page .rrl-queue-item {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .dqv-page .rrl-queue-item::after {
+    border-radius: 17px;
+  }
+
+  .dqv-page .rrl-queue-item::before {
+    border-radius: 18px 0 0 18px;
+  }
+
+  .dqv-page .rrl-meta-strip,
+  .dqv-page .rrl-balance-strip-request-only,
+  .dqv-detail-grid,
+  .dqv-proof-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dqv-page .rrl-panel {
+    padding: 14px;
+  }
+
+  .dqv-page .rrl-readiness-compact-row {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .dqv-page .rrl-readiness-compact-row strong {
+    text-align: left;
+  }
+
+  .dqv-image-modal {
+    padding: 12px;
+  }
+
+  .dqv-image-modal-card {
+    width: 100%;
+    border-radius: 16px;
+  }
+}
+
 
 .dqv-modal-backdrop {
   position: fixed !important;
@@ -399,4 +463,53 @@
   margin: 0 !important;
   width: min(560px, calc(100vw - 32px)) !important;
   max-width: calc(100vw - 32px) !important;
+}
+
+@media (max-width: 640px) {
+  .dqv-page .rrl-queue-top,
+  .dqv-page .rrl-queue-bottom {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dqv-page .rrl-queue-inline-meta {
+    width: 100%;
+  }
+
+  .dqv-page .rrl-queue-inline-meta span {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .dqv-page .rrl-queue-datetime {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .dqv-page .rrl-details-head-compact {
+    gap: 10px;
+  }
+
+  .dqv-page .rrl-status-banner {
+    width: 100%;
+  }
+
+  .dqv-page .rrl-decision-actions,
+  .dqv-page .rrl-pdf-inline,
+  .dqv-modal-card .rrl-modal-actions {
+    flex-direction: column;
+  }
+
+  .dqv-page .rrl-decision-actions .rrl-btn,
+  .dqv-page .rrl-pdf-inline .rrl-btn,
+  .dqv-modal-card .rrl-modal-actions .rrl-btn {
+    width: 100%;
+  }
+
+  .dqv-modal-card {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    box-sizing: border-box;
+    padding: 20px !important;
+  }
 }
