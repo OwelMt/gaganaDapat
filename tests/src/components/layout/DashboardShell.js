@@ -142,8 +142,18 @@ export default function DashboardShell({ children, variant }) {
               ☰
             </button>
           </div>
+          <div className="shell-system-brand" aria-label="System identity">
+            <strong className="shell-system-title">
+              Jaen Disaster Information and Management System.
+            </strong>
+          </div>
           <div className="shell-topbar-actions">
-            <div className="shell-profile-inline">
+            <button
+              type="button"
+              className="shell-profile-inline shell-profile-trigger"
+              onClick={requestLogout}
+              aria-label="Log out"
+            >
               <div className="shell-profile-meta">
                 <span className="shell-profile-kicker">Signed in as</span>
                 <strong className="shell-profile-name">
@@ -154,7 +164,7 @@ export default function DashboardShell({ children, variant }) {
               <div className="shell-profile-avatar">
                 {(username || roleLabel || "U").charAt(0).toUpperCase()}
               </div>
-            </div>
+            </button>
           </div>
         </header>
         <section className="admin-content">

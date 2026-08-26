@@ -27,12 +27,6 @@ if (process.env.NODE_ENV !== "production") {
 
 mongoose.set("bufferCommands", false);
 
-function resolveRouteModule(routeModule) {
-  return routeModule && typeof routeModule === "object" && routeModule.default
-    ? routeModule.default
-    : routeModule;
-}
-
 // --------------------
 // Routes
 // --------------------
@@ -45,8 +39,6 @@ const barangayRoutes = require("./routes/barangayRoutes");
 const drrmoRoutes = require("./routes/drrmoRoutes");
 const reliefTrackingRoutes = require("./routes/reliefTrackingRoutes");
 const auditRoutes = require("./routes/auditRoutes");
-const { exportAuditLogsPdf } = require("./controllers/auditController");
-const { requireLogin, requireAdmin } = require("./middleware/adminMiddleware");
 const guidelineRoutes = require("./routes/GuidelineRoutes");
 const announcementRoutes = require("./routes/AnnouncementRoutes");
 const connectionRoutes = require("./routes/connectionRoutes");
@@ -71,29 +63,13 @@ const overviewAnalyticsRoutes = require("./routes/overviewAnalysticsRoutes");
 const reliefAnalyticsRoutes = require("./routes/reliefAnalyticsRoutes");
 const incidentAnalyticsRoutes = require("./routes/incidentAnalyticsRoutes");
 const evacAnalyticsRoutes = require("./routes/EvacAnalyticsRoutes");
-const waterLevelRoutes = resolveRouteModule(
-  require("./routes/waterLevelRoutes")
-);
+const waterLevelRoutesModule = require("./routes/waterLevelRoutes");
+const waterLevelRoutes =
+  waterLevelRoutesModule.default || waterLevelRoutesModule;
 const yoloRoutes = require("./routes/yoloRoutes");
 
 const app = express();
 const server = http.createServer(app);
-
-const hazardLayerFiles = {
-  safe: path.join(__dirname, "..", "screens", "data", "Safe.json"),
-  medium: path.join(__dirname, "..", "screens", "data", "Medium.json"),
-  susceptible: path.join(
-    __dirname,
-    "..",
-    "screens",
-    "data",
-    "Susceptible_clean.json"
-  ),
-};
-
-function readHazardLayer(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
-}
 
 app.set("trust proxy", 1);
 
@@ -206,10 +182,9 @@ const requestedSecureSessionCookie = parseBooleanEnv(
   process.env.SESSION_COOKIE_SECURE,
   isProd
 );
-
-// Local HTTP development cannot persist Secure cookies, so force them off
-// outside production even if the env file still has SESSION_COOKIE_SECURE=true.
-const useSecureSessionCookie = isProd ? requestedSecureSessionCookie : false;
+const useSecureSessionCookie = isProd
+  ? requestedSecureSessionCookie
+  : false;
 
 app.use(
   session({
@@ -226,21 +201,14 @@ app.use(
   })
 );
 
-const enableRequestLogs = parseBooleanEnv(
-  process.env.DEBUG_REQUEST_LOGS,
-  false
-);
-
 // --------------------
 // DEBUG middleware
 // --------------------
-if (enableRequestLogs) {
-  app.use((req, res, next) => {
-    console.log("REQUEST:", req.method, req.url);
-    console.log("SESSION:", req.session);
-    next();
-  });
-}
+app.use((req, res, next) => {
+  console.log("REQUEST:", req.method, req.url);
+  console.log("SESSION:", req.session);
+  next();
+});
 
 // --------------------
 // Health / Debug routes
@@ -374,42 +342,15 @@ app.get("/", (req, res) => {
 // --------------------
 // Serve uploads
 // --------------------
-const uploadStaticOptions = {
-  maxAge: "7d",
-  etag: true,
-  lastModified: true,
-};
-
-app.use("/uploads", express.static(uploadDir, uploadStaticOptions));
-app.use(
-  "/uploads/guidelines",
-  express.static(guidelinesDir, uploadStaticOptions)
-);
-app.use(
-  "/uploads/announcements",
-  express.static(announcementsDir, uploadStaticOptions)
-);
-app.use(
-  "/uploads/inventory",
-  express.static(inventoryDir, uploadStaticOptions)
-);
-app.use("/uploads/goods", express.static(goodsDir, uploadStaticOptions));
-app.use(
-  "/uploads/monetary",
-  express.static(monetaryDir, uploadStaticOptions)
-);
-app.use("/uploads/proofs", express.static(proofsDir, uploadStaticOptions));
-app.use(
-  "/uploads/relief-requests",
-  express.static(reliefRequestsDir, uploadStaticOptions)
-);
-app.use("/uploads/avatars", express.static(avatarsDir, uploadStaticOptions));
-app.use("/uploads", (req, res) => {
-  res.status(404).json({
-    message:
-      "Uploaded file not found. If this was an older local upload, it may no longer exist on the server.",
-  });
-});
+app.use("/uploads", express.static(uploadDir));
+app.use("/uploads/guidelines", express.static(guidelinesDir));
+app.use("/uploads/announcements", express.static(announcementsDir));
+app.use("/uploads/inventory", express.static(inventoryDir));
+app.use("/uploads/goods", express.static(goodsDir));
+app.use("/uploads/monetary", express.static(monetaryDir));
+app.use("/uploads/proofs", express.static(proofsDir));
+app.use("/uploads/relief-requests", express.static(reliefRequestsDir));
+app.use("/uploads/avatars", express.static(avatarsDir));
 
 // --------------------
 // API Routes
@@ -434,8 +375,6 @@ app.use("/api/drrmo", drrmoRoutes);
 
 app.use("/api/relief-tracking", reliefTrackingRoutes);
 
-app.get("/api/audit/export-pdf", requireLogin, requireAdmin, exportAuditLogsPdf);
-app.get("/api/audit-trail/export-pdf", requireLogin, requireAdmin, exportAuditLogsPdf);
 app.use("/api/audit", auditRoutes);
 
 app.use("/connection", connectionRoutes);
@@ -486,21 +425,6 @@ if (process.env.NODE_ENV !== "production") {
 // --------------------
 // Hazard proxy
 // --------------------
-app.get("/api/hazard-layers", (req, res) => {
-  try {
-    res.json({
-      safe: readHazardLayer(hazardLayerFiles.safe),
-      medium: readHazardLayer(hazardLayerFiles.medium),
-      susceptible: readHazardLayer(hazardLayerFiles.susceptible),
-    });
-  } catch (err) {
-    res.status(500).json({
-      message: "Failed to load hazard layers.",
-      error: err.message,
-    });
-  }
-});
-
 app.get("/hazards", async (req, res) => {
   try {
     const citiesRes = await fetch("https://api.mapakalamidad.ph/cities");
@@ -544,18 +468,7 @@ app.get("/hazards", async (req, res) => {
 if (process.env.NODE_ENV === "production") {
   const buildPath = path.join(__dirname, "..", "tests", "build");
 
-  app.use(
-    express.static(buildPath, {
-      maxAge: "30d",
-      etag: true,
-      lastModified: true,
-      setHeaders: (res, filePath) => {
-        if (filePath.includes(`${path.sep}static${path.sep}`)) {
-          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-        }
-      },
-    })
-  );
+  app.use(express.static(buildPath));
 
   app.get(/^\/(?!api).*/, (req, res) => {
     res.sendFile(path.join(buildPath, "index.html"));

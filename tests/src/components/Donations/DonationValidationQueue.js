@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   FaBell,
@@ -174,6 +174,9 @@ export default function DonationValidationQueue() {
   const notificationTimeoutsRef = useRef({});
   const recentNotificationRef = useRef({});
   const lastSelectedDonationRef = useRef(null);
+  const queueCardRef = useRef(null);
+  const detailsCardRef = useRef(null);
+  const [queueCardHeight, setQueueCardHeight] = useState(null);
   const portalRoot = typeof document !== "undefined" ? document.body : null;
 
   useEffect(() => {
@@ -480,6 +483,31 @@ export default function DonationValidationQueue() {
     ? displayedDonation.photos
     : [];
 
+  useLayoutEffect(() => {
+    if (!detailsCardRef.current || typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+
+    const updateHeights = () => {
+      const nextHeight = detailsCardRef.current?.offsetHeight || 0;
+      setQueueCardHeight(nextHeight > 0 ? nextHeight : null);
+    };
+
+    updateHeights();
+
+    const observer = new ResizeObserver(() => {
+      updateHeights();
+    });
+
+    observer.observe(detailsCardRef.current);
+    window.addEventListener("resize", updateHeights);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateHeights);
+    };
+  }, [displayedDonation, loadingDetails, filteredRows.length]);
+
   return (
     <DashboardShell>
       <div className="rrl-page dqv-page">
@@ -530,7 +558,19 @@ export default function DonationValidationQueue() {
 
           <section className="rrl-board">
             <div className="rrl-board-left">
-              <section className="rrl-card rrl-queue-card">
+              <section
+                ref={queueCardRef}
+                className="rrl-card rrl-queue-card"
+                style={
+                  queueCardHeight
+                    ? {
+                        height: `${queueCardHeight}px`,
+                        minHeight: `${queueCardHeight}px`,
+                        maxHeight: `${queueCardHeight}px`,
+                      }
+                    : undefined
+                }
+              >
                 <div className="rrl-toolbar dqv-toolbar-simple">
                   <div className="rrl-toolbar-top">
                     <div className="rrl-toolbar-title">
@@ -628,13 +668,19 @@ export default function DonationValidationQueue() {
 
             <div className="rrl-board-right">
               {!displayedDonation ? (
-                <section className="rrl-card rrl-placeholder-card">
+                <section
+                  ref={detailsCardRef}
+                  className="rrl-card rrl-placeholder-card"
+                >
                   <div className="rrl-placeholder-inner">
                     <h2>No selected donation</h2>
                   </div>
                 </section>
               ) : (
-                <section className="rrl-card rrl-details-card rrl-details-card-compact">
+                <section
+                  ref={detailsCardRef}
+                  className="rrl-card rrl-details-card rrl-details-card-compact"
+                >
                   <div className="rrl-details-head rrl-details-head-compact">
                     <div className="rrl-details-heading">
                       <div className="rrl-details-barangay">

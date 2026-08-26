@@ -40,6 +40,53 @@ describe("DonationValidationQueue", () => {
     jest.restoreAllMocks();
   });
 
+  it("keeps the active queue card aligned to the right panel height", async () => {
+    const originalResizeObserver = global.ResizeObserver;
+
+    global.ResizeObserver = class {
+      observe() {}
+      disconnect() {}
+    };
+
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+      configurable: true,
+      get() {
+        return 480;
+      },
+    });
+
+    global.fetch = jest.fn((url) => {
+      if (
+        String(url).includes(
+          "/api/donations?limit=300&type=monetary&scope=validation_queue"
+        )
+      ) {
+        return createJsonResponse([receivedDonation]);
+      }
+
+      if (String(url).endsWith(`/api/donations/${receivedDonation._id}`)) {
+        throw new Error("Details should not load for non-active donations.");
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    render(<DonationValidationQueue />);
+
+    const queueCard = await screen.findByRole("heading", {
+      name: "Active Queue",
+    });
+    const queueSection = queueCard.closest("section");
+
+    expect(queueSection).toHaveStyle({
+      height: "480px",
+      minHeight: "480px",
+      maxHeight: "480px",
+    });
+
+    global.ResizeObserver = originalResizeObserver;
+  });
+
   it("keeps the right panel empty when the active queue is empty", async () => {
     global.fetch = jest.fn((url) => {
       if (
