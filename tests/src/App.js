@@ -1,51 +1,48 @@
 import './App.css';
-import './components/css/sidebar.css'; // ← add this
 import './components/css/ThemeTokens.css';
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext"; // ← add this
-import 'leaflet/dist/leaflet.css';
-
-import IncidentReport from './components/IncidentReport';
-import AuditTrails from './components/AuditTrails';
-import EManagement from './components/EManagement';
 import Login from "./components/auth/Login";
-import Register from "./components/auth/Register";
 import Dashboard from "./components/entry/Dashboard";
-import EditAccount from './components/auth/EditAccount';
-import ArchivedAccounts from './components/auth/ArchivedAccounts';
-import BarangayDashboard from "./components/dashboards/BarangayDashboard";
-import DRRMODashboard from "./components/dashboards/DRRMODashboard";
-import AdminDashboard from "./components/dashboards/AdminDashboard";
-import AccountantDashboard from "./components/dashboards/AccountantDashboard";
-import ReliefRequestForm from "./components/relief/ReliefRequestForm";
-import ReliefRequestsList from "./components/relief/ReliefRequestsList";
-import ReliefTracking from "./components/relief/ReliefTracking";
-import AuditTrail from './components/relief/AuditTrail';
-import HomeGuidelines from './components/guidelines/HomeGuidelines';
-import UpdateGuideline from './components/guidelines/UpdateGuidelines';
-import TimeInOut from './components/admin/timeInOut';
-import AdminLogs from './components/admin/AdminLogs';
-import EvacuationMap from './components/map/EvacuationMap';
-import AdminAccounts from './components/group/AdminAccounts';
-import AdminAnalytics from './components/group/AdminAnalytics';
-import Notification from './components/Notification';
-import Announcement from './components/Announcement';
-import UnityDigitalTwin from './components/DigitalTwin/UnityDigitalTwin';
-import YoloWaterMonitor from './components/YoloWaterMonitor';
-import UnityDigitalTwin1 from './components/DigitalTwin/UnityDigitalTwin1';
-import FloodVirtualTwin1 from './components/FloodVirtualTwin1';
-
-import Inventory from './components/Donations/Inventory';
-import InventoryAdd from './components/Donations/InventoryAdd';
-import DonationValidationQueue from './components/Donations/DonationValidationQueue';
 import SplashScreen from './components/splashscreen/SplashScreen';
 import {
   getHomePathForRole,
   normalizeRole,
 } from "./components/auth/roleAccessUtils";
 import './components/css/OverlayFixes.css';
+
+const IncidentReport = lazy(() => import("./components/IncidentReport"));
+const AuditTrails = lazy(() => import("./components/AuditTrails"));
+const EManagement = lazy(() => import("./components/EManagement"));
+const Register = lazy(() => import("./components/auth/Register"));
+const EditAccount = lazy(() => import("./components/auth/EditAccount"));
+const ArchivedAccounts = lazy(() => import("./components/auth/ArchivedAccounts"));
+const BarangayDashboard = lazy(() => import("./components/dashboards/BarangayDashboard"));
+const DRRMODashboard = lazy(() => import("./components/dashboards/DRRMODashboard"));
+const AdminDashboard = lazy(() => import("./components/dashboards/AdminDashboard"));
+const AccountantDashboard = lazy(() => import("./components/dashboards/AccountantDashboard"));
+const ReliefRequestForm = lazy(() => import("./components/relief/ReliefRequestForm"));
+const ReliefRequestsList = lazy(() => import("./components/relief/ReliefRequestsList"));
+const ReliefTracking = lazy(() => import("./components/relief/ReliefTracking"));
+const AuditTrail = lazy(() => import("./components/relief/AuditTrail"));
+const HomeGuidelines = lazy(() => import("./components/guidelines/HomeGuidelines"));
+const UpdateGuideline = lazy(() => import("./components/guidelines/UpdateGuidelines"));
+const TimeInOut = lazy(() => import("./components/admin/timeInOut"));
+const AdminLogs = lazy(() => import("./components/admin/AdminLogs"));
+const EvacuationMap = lazy(() => import("./components/map/EvacuationMap"));
+const AdminAccounts = lazy(() => import("./components/group/AdminAccounts"));
+const AdminAnalytics = lazy(() => import("./components/group/AdminAnalytics"));
+const Notification = lazy(() => import("./components/Notification"));
+const Announcement = lazy(() => import("./components/Announcement"));
+const UnityDigitalTwin = lazy(() => import("./components/DigitalTwin/UnityDigitalTwin"));
+const YoloWaterMonitor = lazy(() => import("./components/YoloWaterMonitor"));
+const UnityDigitalTwin1 = lazy(() => import("./components/DigitalTwin/UnityDigitalTwin1"));
+const FloodVirtualTwin1 = lazy(() => import("./components/FloodVirtualTwin1"));
+const Inventory = lazy(() => import("./components/Donations/Inventory"));
+const InventoryAdd = lazy(() => import("./components/Donations/InventoryAdd"));
+const DonationValidationQueue = lazy(() => import("./components/Donations/DonationValidationQueue"));
 
 const BASE_URL = process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
 
@@ -276,7 +273,11 @@ function App() {
               <Route
                 key={route.path}
                 path={route.path}
-                element={renderRoute(route)}
+                element={
+                  <Suspense fallback={<SplashScreen />}>
+                    {renderRoute(route)}
+                  </Suspense>
+                }
               />
             ))}
             <Route path="*" element={<Navigate to="/Login" replace />} />

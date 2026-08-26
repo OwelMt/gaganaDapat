@@ -33,7 +33,7 @@ import {
 import "../css/Dashboard.css";
 
 import jaenlogo from "../../assets/images/jaenlogo.png";
-import hero1 from "../../assets/images/hero1.jpg";
+import hero1 from "../../assets/images/hero1-landing.jpg";
 import { API_BASE_URL } from "../../config/api";
 import {
   validateLandingAnnouncementField,
@@ -536,8 +536,8 @@ export default function Dashboard() {
     const loadFallbackSlides = async () => {
       try {
         const [hero2Module, hero3Module] = await Promise.all([
-          import("../../assets/images/hero2.jpg"),
-          import("../../assets/images/hero3.jpg"),
+          import("../../assets/images/hero2-landing.jpg"),
+          import("../../assets/images/hero3-landing.jpg"),
         ]);
 
         if (cancelled) return;
@@ -596,21 +596,6 @@ export default function Dashboard() {
       setCurrentHero(0);
     }
   }, [activeHeroImages, currentHero]);
-
-  useEffect(() => {
-    const heroImageUrl = activeHeroImages[0]?.fileUrl;
-    if (!heroImageUrl || typeof document === "undefined") return undefined;
-
-    const preloadLink = document.createElement("link");
-    preloadLink.rel = "preload";
-    preloadLink.as = "image";
-    preloadLink.href = heroImageUrl;
-    document.head.appendChild(preloadLink);
-
-    return () => {
-      preloadLink.remove();
-    };
-  }, [activeHeroImages]);
 
   useEffect(() => {
     if (!filteredPublicPlaces.length) {
@@ -1687,9 +1672,19 @@ export default function Dashboard() {
 
         <section
           className={`landing-hero ${heroBg ? "landing-hero-has-bg" : ""}`}
-          style={heroBg ? { backgroundImage: `url(${heroBg})` } : {}}
           id="home"
         >
+          {heroBg ? (
+            <img
+              src={heroBg}
+              alt=""
+              aria-hidden="true"
+              className="landing-hero-bg-media"
+              fetchPriority="high"
+              loading="eager"
+              decoding="async"
+            />
+          ) : null}
           <div className="landing-hero-overlay">
             <div className="landing-wide-shell">
               <div className="landing-hero-grid">

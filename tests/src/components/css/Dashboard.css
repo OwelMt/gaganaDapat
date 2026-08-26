@@ -400,8 +400,17 @@
   position: relative;
   min-height: 760px;
   background: linear-gradient(135deg, #0d3318 0%, #145227 55%, #1c6a35 100%);
-  background-size: cover;
-  background-position: center;
+  overflow: hidden;
+}
+
+.landing-hero-bg-media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  z-index: 0;
 }
 
 .landing-hero-has-bg::before {
@@ -420,7 +429,7 @@
 
 .landing-hero-overlay {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   padding: 26px 0 34px;
 }
 
@@ -2091,13 +2100,6 @@
 
 .landing-hero-has-bg {
   background-size: cover;
-}
-
-.landing-content-grid,
-.lower-info-grid,
-.site-footer-main {
-  content-visibility: auto;
-  contain-intrinsic-size: 900px;
 }
 
 .landing-map-stage,
