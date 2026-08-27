@@ -179,7 +179,6 @@ const FRONTEND_URLS = [
   "http://192.168.1.87:8081",
   "http://192.168.1.131:3000",
   "https://sagipbayan.com",
-  "https://www.sagipbayan.com",
   ...parseCsvEnv(process.env.FRONTEND_URLS),
 ];
 
