@@ -688,6 +688,7 @@
   align-self: flex-start;
   position: relative;
   overflow: hidden;
+  animation: heroPanelFloat 4.4s ease-in-out infinite;
   transition:
     transform 0.3s ease,
     box-shadow 0.3s ease,
@@ -712,6 +713,7 @@
     transparent 100%
   );
   transform: translateX(-120%);
+  animation: heroWeatherSweep 5.6s ease-in-out infinite;
   pointer-events: none;
   z-index: 0;
 }
@@ -769,6 +771,7 @@
   height: 3px;
   background: linear-gradient(90deg, #ccead3 0%, #3fb950 50%, #ccead3 100%);
   opacity: 0.8;
+  animation: weatherLineMove 3.8s linear infinite;
 }
 
 .hero-weather-compact-main {
@@ -2087,24 +2090,11 @@
     radial-gradient(circle at 60% 75%, rgba(255, 255, 255, 0.04), transparent 22%);
   pointer-events: none;
   z-index: 0;
+  animation: heroGlowShift 12s ease-in-out infinite alternate;
 }
 
 .landing-hero-has-bg {
-  background-size: cover;
-}
-
-.landing-content-grid,
-.lower-info-grid,
-.site-footer-main {
-  content-visibility: auto;
-  contain-intrinsic-size: 900px;
-}
-
-.landing-map-stage,
-.resolved-incident-public-list,
-.inline-list-stack,
-.preparedness-list {
-  contain: layout paint;
+  animation: heroImageBreath 16s ease-in-out infinite alternate;
 }
 
 @keyframes heroWeatherSweep {

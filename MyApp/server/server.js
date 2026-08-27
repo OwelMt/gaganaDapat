@@ -225,21 +225,14 @@ app.use(
   })
 );
 
-const enableRequestLogs = parseBooleanEnv(
-  process.env.DEBUG_REQUEST_LOGS,
-  false
-);
-
 // --------------------
 // DEBUG middleware
 // --------------------
-if (enableRequestLogs) {
-  app.use((req, res, next) => {
-    console.log("REQUEST:", req.method, req.url);
-    console.log("SESSION:", req.session);
-    next();
-  });
-}
+app.use((req, res, next) => {
+  console.log("REQUEST:", req.method, req.url);
+  console.log("SESSION:", req.session);
+  next();
+});
 
 // --------------------
 // Health / Debug routes
@@ -373,36 +366,15 @@ app.get("/", (req, res) => {
 // --------------------
 // Serve uploads
 // --------------------
-const uploadStaticOptions = {
-  maxAge: "7d",
-  etag: true,
-  lastModified: true,
-};
-
-app.use("/uploads", express.static(uploadDir, uploadStaticOptions));
-app.use(
-  "/uploads/guidelines",
-  express.static(guidelinesDir, uploadStaticOptions)
-);
-app.use(
-  "/uploads/announcements",
-  express.static(announcementsDir, uploadStaticOptions)
-);
-app.use(
-  "/uploads/inventory",
-  express.static(inventoryDir, uploadStaticOptions)
-);
-app.use("/uploads/goods", express.static(goodsDir, uploadStaticOptions));
-app.use(
-  "/uploads/monetary",
-  express.static(monetaryDir, uploadStaticOptions)
-);
-app.use("/uploads/proofs", express.static(proofsDir, uploadStaticOptions));
-app.use(
-  "/uploads/relief-requests",
-  express.static(reliefRequestsDir, uploadStaticOptions)
-);
-app.use("/uploads/avatars", express.static(avatarsDir, uploadStaticOptions));
+app.use("/uploads", express.static(uploadDir));
+app.use("/uploads/guidelines", express.static(guidelinesDir));
+app.use("/uploads/announcements", express.static(announcementsDir));
+app.use("/uploads/inventory", express.static(inventoryDir));
+app.use("/uploads/goods", express.static(goodsDir));
+app.use("/uploads/monetary", express.static(monetaryDir));
+app.use("/uploads/proofs", express.static(proofsDir));
+app.use("/uploads/relief-requests", express.static(reliefRequestsDir));
+app.use("/uploads/avatars", express.static(avatarsDir));
 app.use("/uploads", (req, res) => {
   res.status(404).json({
     message:
@@ -543,18 +515,7 @@ app.get("/hazards", async (req, res) => {
 if (process.env.NODE_ENV === "production") {
   const buildPath = path.join(__dirname, "..", "tests", "build");
 
-  app.use(
-    express.static(buildPath, {
-      maxAge: "30d",
-      etag: true,
-      lastModified: true,
-      setHeaders: (res, filePath) => {
-        if (filePath.includes(`${path.sep}static${path.sep}`)) {
-          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-        }
-      },
-    })
-  );
+  app.use(express.static(buildPath));
 
   app.get(/^\/(?!api).*/, (req, res) => {
     res.sendFile(path.join(buildPath, "index.html"));

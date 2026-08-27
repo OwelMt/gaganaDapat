@@ -1,12 +1,4 @@
-import React, {
-  Suspense,
-  lazy,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FaArrowDown,
@@ -34,6 +26,9 @@ import "../css/Dashboard.css";
 
 import jaenlogo from "../../assets/images/jaenlogo.png";
 import hero1 from "../../assets/images/hero1.jpg";
+import hero2 from "../../assets/images/hero2.jpg";
+import hero3 from "../../assets/images/hero3.jpg";
+import EvacMap from "../map/Map";
 import { API_BASE_URL } from "../../config/api";
 import {
   validateLandingAnnouncementField,
@@ -44,26 +39,18 @@ import {
 } from "./landingPageValidation";
 
 const BASE_URL = API_BASE_URL;
-const EvacMap = lazy(() => import("../map/Map"));
 
 const JAEN_COORDS = {
   latitude: 15.3274,
   longitude: 120.9192,
 };
 
-const defaultHeroImage = {
-  _id: "fallback-hero-1",
-  fileUrl: hero1,
-  fileName: "Default hero image 1",
-  caption: "",
-};
-
-const buildFallbackHeroImage = (fileUrl, index) => ({
+const fallbackHeroImages = [hero2, hero1, hero3].map((fileUrl, index) => ({
   _id: `fallback-hero-${index + 1}`,
   fileUrl,
   fileName: `Default hero image ${index + 1}`,
   caption: "",
-});
+}));
 
 const DEFAULT_SITE_CONTENT = {
   hero: {
@@ -326,7 +313,6 @@ function PublicMapLegend() {
 
 export default function Dashboard() {
   const [currentHero, setCurrentHero] = useState(0);
-  const [fallbackHeroImages, setFallbackHeroImages] = useState([defaultHeroImage]);
 
   const [siteContent, setSiteContent] = useState(DEFAULT_SITE_CONTENT);
   const [draftContent, setDraftContent] = useState(DEFAULT_SITE_CONTENT);
@@ -358,14 +344,9 @@ export default function Dashboard() {
   const [publicIncidents, setPublicIncidents] = useState([]);
   const [incidentsLoading, setIncidentsLoading] = useState(true);
   const [incidentsError, setIncidentsError] = useState("");
-  const [shouldLoadMapData, setShouldLoadMapData] = useState(false);
-  const [shouldLoadIncidentData, setShouldLoadIncidentData] = useState(false);
 
   const observerRef = useRef(null);
-  const deferredLoadObserverRef = useRef(null);
   const heroImageInputRef = useRef(null);
-  const mapSectionRef = useRef(null);
-  const incidentSectionRef = useRef(null);
   const navigate = useNavigate();
 
   const isPrivilegedUser = useMemo(() => {
@@ -378,7 +359,7 @@ export default function Dashboard() {
 
   const activeHeroImages = useMemo(() => {
     return pageContent.heroImages?.length ? pageContent.heroImages : fallbackHeroImages;
-  }, [fallbackHeroImages, pageContent.heroImages]);
+  }, [pageContent.heroImages]);
 
   const heroBg = activeHeroImages[currentHero]?.fileUrl || null;
   const topWeather = weather?.current || null;
@@ -531,45 +512,6 @@ export default function Dashboard() {
   }, [incidentFeedList, publicBarangayFilter]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const loadFallbackSlides = async () => {
-      try {
-        const [hero2Module, hero3Module] = await Promise.all([
-          import("../../assets/images/hero2.jpg"),
-          import("../../assets/images/hero3.jpg"),
-        ]);
-
-        if (cancelled) return;
-
-        setFallbackHeroImages([
-          defaultHeroImage,
-          buildFallbackHeroImage(hero2Module.default || hero2Module, 2),
-          buildFallbackHeroImage(hero3Module.default || hero3Module, 3),
-        ]);
-      } catch (error) {
-        if (!cancelled) {
-          setFallbackHeroImages([defaultHeroImage]);
-        }
-      }
-    };
-
-    const idleCallback =
-      typeof window !== "undefined" && "requestIdleCallback" in window
-        ? window.requestIdleCallback(loadFallbackSlides, { timeout: 1500 })
-        : window.setTimeout(loadFallbackSlides, 900);
-
-    return () => {
-      cancelled = true;
-      if (typeof window !== "undefined" && "cancelIdleCallback" in window) {
-        window.cancelIdleCallback(idleCallback);
-      } else {
-        window.clearTimeout(idleCallback);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
     const interval = setInterval(() => {
       setCurrentHero((prev) =>
         activeHeroImages.length ? (prev + 1) % activeHeroImages.length : 0
@@ -598,21 +540,6 @@ export default function Dashboard() {
   }, [activeHeroImages, currentHero]);
 
   useEffect(() => {
-    const heroImageUrl = activeHeroImages[0]?.fileUrl;
-    if (!heroImageUrl || typeof document === "undefined") return undefined;
-
-    const preloadLink = document.createElement("link");
-    preloadLink.rel = "preload";
-    preloadLink.as = "image";
-    preloadLink.href = heroImageUrl;
-    document.head.appendChild(preloadLink);
-
-    return () => {
-      preloadLink.remove();
-    };
-  }, [activeHeroImages]);
-
-  useEffect(() => {
     if (!filteredPublicPlaces.length) {
       setSelectedPublicPlaceId(null);
       return;
@@ -626,39 +553,6 @@ export default function Dashboard() {
       setSelectedPublicPlaceId(filteredPublicPlaces[0]?._id || null);
     }
   }, [filteredPublicPlaces, selectedPublicPlaceId]);
-
-  useEffect(() => {
-    const mapElement = mapSectionRef.current;
-    const incidentElement = incidentSectionRef.current;
-    if (!mapElement && !incidentElement) return undefined;
-
-    deferredLoadObserverRef.current?.disconnect();
-
-    deferredLoadObserverRef.current = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (!entry.isIntersecting) return;
-
-          if (entry.target === mapElement) {
-            setShouldLoadMapData(true);
-          }
-
-          if (entry.target === incidentElement) {
-            setShouldLoadIncidentData(true);
-          }
-        });
-      },
-      {
-        rootMargin: "320px 0px",
-        threshold: 0.01,
-      }
-    );
-
-    if (mapElement) deferredLoadObserverRef.current.observe(mapElement);
-    if (incidentElement) deferredLoadObserverRef.current.observe(incidentElement);
-
-    return () => deferredLoadObserverRef.current?.disconnect();
-  }, []);
 
   useEffect(() => {
     const sectionIds = NAV_ITEMS.map((item) => item.id);
@@ -698,14 +592,6 @@ export default function Dashboard() {
   ]);
 
   const scrollToId = (id) => {
-    if (id === "public-evac-map" || id === "hazard-focus") {
-      setShouldLoadMapData(true);
-    }
-
-    if (id === "incident-focus") {
-      setShouldLoadIncidentData(true);
-    }
-
     document.getElementById(id)?.scrollIntoView({
       behavior: "smooth",
       block: "start",
@@ -978,38 +864,12 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadPublicContent();
+    detectRole();
     fetchWeather();
-  }, []);
-
-  useEffect(() => {
-    if (!shouldLoadMapData) return;
     fetchPublicPlaces();
     fetchPublicBarangayBounds();
-  }, [fetchPublicBarangayBounds, fetchPublicPlaces, shouldLoadMapData]);
-
-  useEffect(() => {
-    if (!shouldLoadIncidentData) return;
     fetchPublicIncidents();
-  }, [shouldLoadIncidentData]);
-
-  useEffect(() => {
-    const scheduleRoleDetection = () => {
-      detectRole();
-    };
-
-    const idleCallback =
-      typeof window !== "undefined" && "requestIdleCallback" in window
-        ? window.requestIdleCallback(scheduleRoleDetection, { timeout: 1200 })
-        : window.setTimeout(scheduleRoleDetection, 400);
-
-    return () => {
-      if (typeof window !== "undefined" && "cancelIdleCallback" in window) {
-        window.cancelIdleCallback(idleCallback);
-      } else {
-        window.clearTimeout(idleCallback);
-      }
-    };
-  }, []);
+  }, [fetchPublicBarangayBounds, fetchPublicPlaces]);
 
   function markFieldTouched(path) {
     setTouchedFields((prev) => ({ ...prev, [path]: true }));
@@ -2136,11 +1996,7 @@ export default function Dashboard() {
             </section>
 
                         <section className="landing-content-grid">
-              <section
-                className="landing-map-column"
-                id="public-evac-map"
-                ref={mapSectionRef}
-              >
+              <section className="landing-map-column" id="public-evac-map">
                 <div className="landing-map-shell">
                   <div className="landing-section-head">
                     <div>
@@ -2182,9 +2038,7 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {!shouldLoadMapData ? (
-                    <div className="panel-empty">Scroll here to load the evacuation map.</div>
-                  ) : mapLoading ? (
+                  {mapLoading ? (
                     <div className="panel-empty">Loading evacuation map…</div>
                   ) : mapError ? (
                     <div className="panel-empty error">{mapError}</div>
@@ -2192,20 +2046,14 @@ export default function Dashboard() {
                     <div className="landing-map-layout map-minimal-layout">
                       <div className="landing-map-main">
                         <div className="landing-map-stage map-dominant-stage">
-                          <Suspense
-                            fallback={
-                              <div className="panel-empty">Preparing evacuation map…</div>
-                            }
-                          >
-                            <EvacMap
-                              places={filteredPublicPlaces}
-                              barangayBounds={publicBarangayBounds}
-                              selectedPlaceId={selectedPublicPlaceId}
-                              onSelectPlace={setSelectedPublicPlaceId}
-                              readOnly
-                              publicMode
-                            />
-                          </Suspense>
+                          <EvacMap
+                            places={filteredPublicPlaces}
+                            barangayBounds={publicBarangayBounds}
+                            selectedPlaceId={selectedPublicPlaceId}
+                            onSelectPlace={setSelectedPublicPlaceId}
+                            readOnly
+                            publicMode
+                          />
 
                           <div className="public-map-overlay legend-overlay">
                             <PublicMapLegend />
@@ -2287,11 +2135,7 @@ export default function Dashboard() {
                   </p>
                 </section>
 
-                <section
-                  className="landing-side-card focus-card"
-                  id="incident-focus"
-                  ref={incidentSectionRef}
-                >
+                <section className="landing-side-card focus-card" id="incident-focus">
                   <div className="landing-section-head">
                     <span className="section-kicker">Incident Focus</span>
                     <h2>Incident Reports</h2>
@@ -2301,11 +2145,7 @@ export default function Dashboard() {
                     </p>
                   </div>
 
-                  {!shouldLoadIncidentData ? (
-                    <div className="panel-empty landing-incident-loading">
-                      Scroll here to load incident updates.
-                    </div>
-                  ) : incidentsLoading ? (
+                  {incidentsLoading ? (
                     <div className="panel-empty landing-incident-loading">
                       Loading incidents…
                     </div>
