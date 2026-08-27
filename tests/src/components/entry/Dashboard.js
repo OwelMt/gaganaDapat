@@ -1,4 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FaArrowDown,
@@ -11,7 +19,6 @@ import {
   FaEyeSlash,
   FaFacebookF,
   FaMapMarkedAlt,
-  FaSearch,
   FaPhoneAlt,
   FaSave,
   FaShieldAlt,
@@ -26,27 +33,37 @@ import {
 import "../css/Dashboard.css";
 
 import jaenlogo from "../../assets/images/jaenlogo.png";
-import hero1 from "../../assets/images/hero1.jpg";
-import hero2 from "../../assets/images/hero2.jpg";
-import hero3 from "../../assets/images/hero3.jpg";
-import EvacMap from "../map/Map";
-import PublicDigitalTwinPanel from "./PublicDigitalTwinPanel";
-import FloodVirtualTwin from "./FloodVirtualTwin";
+import hero1 from "../../assets/images/hero1-landing.jpg";
 import { API_BASE_URL } from "../../config/api";
+import {
+  validateLandingAnnouncementField,
+  validateLandingDraftContent,
+  validateLandingHotlineField,
+  validateLandingOfficeField,
+  validateLandingTipField,
+} from "./landingPageValidation";
 
 const BASE_URL = API_BASE_URL;
+const EvacMap = lazy(() => import("../map/Map"));
 
 const JAEN_COORDS = {
   latitude: 15.3274,
   longitude: 120.9192,
 };
 
-const fallbackHeroImages = [hero2, hero1, hero3].map((fileUrl, index) => ({
+const defaultHeroImage = {
+  _id: "fallback-hero-1",
+  fileUrl: hero1,
+  fileName: "Default hero image 1",
+  caption: "",
+};
+
+const buildFallbackHeroImage = (fileUrl, index) => ({
   _id: `fallback-hero-${index + 1}`,
   fileUrl,
   fileName: `Default hero image ${index + 1}`,
   caption: "",
-}));
+});
 
 const DEFAULT_SITE_CONTENT = {
   hero: {
@@ -134,11 +151,6 @@ const NAV_ITEMS = [
   { id: "footer-info", label: "Contacts" },
 ];
 
-const TWIN_NAV_ITEMS = [
-  { id: "digital-twin", label: "Digital Twin" },
-  { id: "virtual-twin", label: "Virtual Twin" },
-];
-
 function safeJsonParse(value, fallback) {
   try {
     return JSON.parse(value);
@@ -153,15 +165,6 @@ function safeLower(value) {
 
 function formatNumber(value) {
   return new Intl.NumberFormat().format(Number(value || 0));
-}
-
-function countGeoJsonFeatures(geojson) {
-  if (!geojson) return 0;
-  if (geojson.type === "FeatureCollection") {
-    return Array.isArray(geojson.features) ? geojson.features.length : 0;
-  }
-  if (geojson.type === "Feature") return 1;
-  return 0;
 }
 
 function formatDateTime(value) {
@@ -220,6 +223,17 @@ function getRainAdvisory(rainChance) {
   return "Minimal chance of rain today";
 }
 
+function withSectionItemIds(items, section) {
+  return Array.isArray(items)
+    ? items.map((item, index) => ({
+        ...item,
+        id:
+          item?.id ||
+          `${section}-${index + 1}-${item?.title || item?.text || item?.label || "item"}`,
+      }))
+    : [];
+}
+
 function normalizeSitePayload(payload) {
   return {
     hero: {
@@ -231,13 +245,16 @@ function normalizeSitePayload(payload) {
       ...(payload?.alert || {}),
     },
     announcements: Array.isArray(payload?.announcements)
-      ? payload.announcements.slice(0, LIMITS.announcements)
+      ? withSectionItemIds(
+          payload.announcements.slice(0, LIMITS.announcements),
+          "announcement"
+        )
       : DEFAULT_SITE_CONTENT.announcements,
     tips: Array.isArray(payload?.tips)
-      ? payload.tips.slice(0, LIMITS.tips)
+      ? withSectionItemIds(payload.tips.slice(0, LIMITS.tips), "tip")
       : DEFAULT_SITE_CONTENT.tips,
     hotlines: Array.isArray(payload?.hotlines)
-      ? payload.hotlines.slice(0, LIMITS.hotlines)
+      ? withSectionItemIds(payload.hotlines.slice(0, LIMITS.hotlines), "hotline")
       : DEFAULT_SITE_CONTENT.hotlines,
     office: {
       ...DEFAULT_SITE_CONTENT.office,
@@ -263,7 +280,7 @@ function sanitizeSearchInput(value) {
   return String(value || "")
     .replace(/[<>]/g, "")
     .replace(/\s+/g, " ")
-    .trimStart()
+    .trim()
     .slice(0, 100);
 }
 
@@ -282,7 +299,7 @@ function getSeverityTone(level) {
   return "neutral";
 }
 
-function PublicMapLegend({ showHazardOverlay = false }) {
+function PublicMapLegend() {
   return (
     <div className="public-map-legend" aria-label="Map legend">
       <div className="public-map-legend-title">Map Legend</div>
@@ -302,25 +319,6 @@ function PublicMapLegend({ showHazardOverlay = false }) {
           <span className="public-map-dot full" />
           <span>Full</span>
         </div>
-
-        {showHazardOverlay ? (
-          <>
-            <div className="public-map-legend-item">
-              <span className="public-map-swatch susceptible" />
-              <span>Susceptible</span>
-            </div>
-
-            <div className="public-map-legend-item">
-              <span className="public-map-swatch medium" />
-              <span>Medium</span>
-            </div>
-
-            <div className="public-map-legend-item">
-              <span className="public-map-swatch safe" />
-              <span>Safe</span>
-            </div>
-          </>
-        ) : null}
       </div>
     </div>
   );
@@ -328,6 +326,7 @@ function PublicMapLegend({ showHazardOverlay = false }) {
 
 export default function Dashboard() {
   const [currentHero, setCurrentHero] = useState(0);
+  const [fallbackHeroImages, setFallbackHeroImages] = useState([defaultHeroImage]);
 
   const [siteContent, setSiteContent] = useState(DEFAULT_SITE_CONTENT);
   const [draftContent, setDraftContent] = useState(DEFAULT_SITE_CONTENT);
@@ -343,6 +342,9 @@ export default function Dashboard() {
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingHeroImage, setIsUploadingHeroImage] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [touchedFields, setTouchedFields] = useState({});
+  const [saveAttempted, setSaveAttempted] = useState(false);
   const [userRole, setUserRole] = useState("");
   const [isVisitorMode, setIsVisitorMode] = useState(false);
 
@@ -351,26 +353,24 @@ export default function Dashboard() {
   const [mapError, setMapError] = useState("");
   const [selectedPublicPlaceId, setSelectedPublicPlaceId] = useState(null);
   const [publicBarangayFilter, setPublicBarangayFilter] = useState("all");
-  const [publicSelectedBarangays, setPublicSelectedBarangays] = useState([]);
   const [publicBarangayBounds, setPublicBarangayBounds] = useState([]);
-  const [hazardLayers, setHazardLayers] = useState(null);
-  const [hazardLoading, setHazardLoading] = useState(true);
-  const [hazardError, setHazardError] = useState("");
-  const [showHazardOverlay, setShowHazardOverlay] = useState(false);
 
   const [publicIncidents, setPublicIncidents] = useState([]);
   const [incidentsLoading, setIncidentsLoading] = useState(true);
   const [incidentsError, setIncidentsError] = useState("");
-  const [activeTwinView, setActiveTwinView] = useState("");
+  const [shouldLoadMapData, setShouldLoadMapData] = useState(false);
+  const [shouldLoadIncidentData, setShouldLoadIncidentData] = useState(false);
 
   const observerRef = useRef(null);
+  const deferredLoadObserverRef = useRef(null);
   const heroImageInputRef = useRef(null);
+  const mapSectionRef = useRef(null);
+  const incidentSectionRef = useRef(null);
   const navigate = useNavigate();
 
   const isPrivilegedUser = useMemo(() => {
     return ["drrmo", "admin"].includes(safeLower(userRole));
   }, [userRole]);
-  const isTwinViewActive = Boolean(activeTwinView);
 
   const canEdit = isPrivilegedUser && !isVisitorMode;
   const isInlineEditing = canEdit && isEditorOpen;
@@ -378,7 +378,7 @@ export default function Dashboard() {
 
   const activeHeroImages = useMemo(() => {
     return pageContent.heroImages?.length ? pageContent.heroImages : fallbackHeroImages;
-  }, [pageContent.heroImages]);
+  }, [fallbackHeroImages, pageContent.heroImages]);
 
   const heroBg = activeHeroImages[currentHero]?.fileUrl || null;
   const topWeather = weather?.current || null;
@@ -431,15 +431,12 @@ export default function Dashboard() {
   }, [publicPlaces]);
 
   const filteredPublicPlaces = useMemo(() => {
-    if (!publicSelectedBarangays.length) return publicPlaces;
+    if (publicBarangayFilter === "all") return publicPlaces;
 
-    const selectedKeys = new Set(
-      publicSelectedBarangays.map((name) => safeLower(name))
-    );
     return publicPlaces.filter(
-      (item) => selectedKeys.has(safeLower(item?.barangayName))
+      (item) => safeLower(item?.barangayName) === safeLower(publicBarangayFilter)
     );
-  }, [publicPlaces, publicSelectedBarangays]);
+  }, [publicPlaces, publicBarangayFilter]);
 
   const publicMapSummary = useMemo(() => {
     const source = filteredPublicPlaces;
@@ -472,47 +469,8 @@ export default function Dashboard() {
     );
   }, [filteredPublicPlaces, selectedPublicPlaceId]);
 
-  const handlePublicBarangayFilterChange = (nextBarangay) => {
-    setPublicBarangayFilter(nextBarangay);
-    setSelectedPublicPlaceId(null);
-
-    if (nextBarangay === "all") {
-      setPublicSelectedBarangays([]);
-      return;
-    }
-
-    setPublicSelectedBarangays((current) => {
-      const exists = current.some(
-        (name) => safeLower(name) === safeLower(nextBarangay)
-      );
-
-      if (exists) {
-        const nextSelected = current.filter(
-          (name) => safeLower(name) !== safeLower(nextBarangay)
-        );
-        if (!nextSelected.length) {
-          setPublicBarangayFilter("all");
-        }
-        return nextSelected;
-      }
-
-      return [...current, nextBarangay];
-    });
-  };
-
-  const focusedBarangayLabel = !publicSelectedBarangays.length
-    ? "All Barangays"
-    : publicSelectedBarangays.length === 1
-    ? publicSelectedBarangays[0]
-    : `${publicSelectedBarangays.length} barangays selected`;
-
-  const hazardSummary = useMemo(() => {
-    return {
-      safe: countGeoJsonFeatures(hazardLayers?.safe),
-      medium: countGeoJsonFeatures(hazardLayers?.medium),
-      susceptible: countGeoJsonFeatures(hazardLayers?.susceptible),
-    };
-  }, [hazardLayers]);
+  const focusedBarangayLabel =
+    publicBarangayFilter === "all" ? "All Barangays" : publicBarangayFilter;
 
   const incidentSummary = useMemo(() => {
     const total = publicIncidents.length;
@@ -559,23 +517,57 @@ export default function Dashboard() {
   }, [incidentFeedMode, publicIncidents]);
 
   const filteredIncidentFeedList = useMemo(() => {
-    if (!publicSelectedBarangays.length) return incidentFeedList;
+    if (publicBarangayFilter === "all") return incidentFeedList;
 
-    const selectedKeys = publicSelectedBarangays.map((name) => safeLower(name));
+    const barangay = safeLower(publicBarangayFilter);
 
     return incidentFeedList.filter((item) => {
-      const barangayName = safeLower(item.barangayName);
-      const location = safeLower(item.location);
-      const address = safeLower(item.address);
-
-      return selectedKeys.some(
-        (barangay) =>
-          barangayName.includes(barangay) ||
-          location.includes(barangay) ||
-          address.includes(barangay)
+      return (
+        safeLower(item.barangayName).includes(barangay) ||
+        safeLower(item.location).includes(barangay) ||
+        safeLower(item.address).includes(barangay)
       );
     });
-  }, [incidentFeedList, publicSelectedBarangays]);
+  }, [incidentFeedList, publicBarangayFilter]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadFallbackSlides = async () => {
+      try {
+        const [hero2Module, hero3Module] = await Promise.all([
+          import("../../assets/images/hero2-landing.jpg"),
+          import("../../assets/images/hero3-landing.jpg"),
+        ]);
+
+        if (cancelled) return;
+
+        setFallbackHeroImages([
+          defaultHeroImage,
+          buildFallbackHeroImage(hero2Module.default || hero2Module, 2),
+          buildFallbackHeroImage(hero3Module.default || hero3Module, 3),
+        ]);
+      } catch (error) {
+        if (!cancelled) {
+          setFallbackHeroImages([defaultHeroImage]);
+        }
+      }
+    };
+
+    const idleCallback =
+      typeof window !== "undefined" && "requestIdleCallback" in window
+        ? window.requestIdleCallback(loadFallbackSlides, { timeout: 1500 })
+        : window.setTimeout(loadFallbackSlides, 900);
+
+    return () => {
+      cancelled = true;
+      if (typeof window !== "undefined" && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idleCallback);
+      } else {
+        window.clearTimeout(idleCallback);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -589,6 +581,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!canEdit && isEditorOpen) {
+      clearLandingValidationState();
       setIsEditorOpen(false);
     }
   }, [canEdit, isEditorOpen]);
@@ -620,12 +613,39 @@ export default function Dashboard() {
   }, [filteredPublicPlaces, selectedPublicPlaceId]);
 
   useEffect(() => {
-    if (isTwinViewActive) {
-      observerRef.current?.disconnect();
-      setActiveSection(activeTwinView);
-      return undefined;
-    }
+    const mapElement = mapSectionRef.current;
+    const incidentElement = incidentSectionRef.current;
+    if (!mapElement && !incidentElement) return undefined;
 
+    deferredLoadObserverRef.current?.disconnect();
+
+    deferredLoadObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+
+          if (entry.target === mapElement) {
+            setShouldLoadMapData(true);
+          }
+
+          if (entry.target === incidentElement) {
+            setShouldLoadIncidentData(true);
+          }
+        });
+      },
+      {
+        rootMargin: "320px 0px",
+        threshold: 0.01,
+      }
+    );
+
+    if (mapElement) deferredLoadObserverRef.current.observe(mapElement);
+    if (incidentElement) deferredLoadObserverRef.current.observe(incidentElement);
+
+    return () => deferredLoadObserverRef.current?.disconnect();
+  }, []);
+
+  useEffect(() => {
     const sectionIds = NAV_ITEMS.map((item) => item.id);
     const elements = sectionIds
       .map((id) => document.getElementById(id))
@@ -655,8 +675,6 @@ export default function Dashboard() {
 
     return () => observerRef.current?.disconnect();
   }, [
-    activeTwinView,
-    isTwinViewActive,
     filteredPublicPlaces.length,
     filteredIncidentFeedList,
     weatherLoading,
@@ -665,6 +683,14 @@ export default function Dashboard() {
   ]);
 
   const scrollToId = (id) => {
+    if (id === "public-evac-map" || id === "hazard-focus") {
+      setShouldLoadMapData(true);
+    }
+
+    if (id === "incident-focus") {
+      setShouldLoadIncidentData(true);
+    }
+
     document.getElementById(id)?.scrollIntoView({
       behavior: "smooth",
       block: "start",
@@ -676,22 +702,8 @@ export default function Dashboard() {
   const scrollToUpdates = () => scrollToId("updates");
   const scrollToPreparedness = () => scrollToId("preparedness");
   const scrollToFooter = () => scrollToId("footer-info");
-  const openTwinView = (viewId) => {
-    setActiveTwinView(viewId);
-    setActiveSection(viewId);
-    setIsEditorOpen(false);
-  };
 
   function handleNavClick(id) {
-    if (id === "digital-twin" || id === "virtual-twin") {
-      openTwinView(id);
-      return;
-    }
-
-    if (isTwinViewActive) {
-      setActiveTwinView("");
-    }
-
     setActiveSection(id);
     scrollToId(id);
   }
@@ -699,7 +711,7 @@ export default function Dashboard() {
   function handleSearchSubmit(e) {
     e.preventDefault();
 
-    const value = sanitizeSearchInput(searchText).trim().toLowerCase();
+    const value = sanitizeSearchInput(searchText).toLowerCase();
 
     if (!value) return;
 
@@ -923,34 +935,6 @@ export default function Dashboard() {
     }
   }, []);
 
-  const fetchHazardLayers = useCallback(async () => {
-    setHazardLoading(true);
-    setHazardError("");
-
-    try {
-      const res = await fetch(`${BASE_URL}/api/hazard-layers`, {
-        credentials: "include",
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to load hazard layers.");
-      }
-
-      const data = await res.json();
-      setHazardLayers({
-        safe: data?.safe || null,
-        medium: data?.medium || null,
-        susceptible: data?.susceptible || null,
-      });
-    } catch (err) {
-      console.error("fetchHazardLayers error:", err);
-      setHazardError("Hazard layer is unavailable right now.");
-      setHazardLayers(null);
-    } finally {
-      setHazardLoading(false);
-    }
-  }, []);
-
   async function fetchPublicIncidents() {
     setIncidentsLoading(true);
     setIncidentsError("");
@@ -979,13 +963,117 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadPublicContent();
-    detectRole();
     fetchWeather();
+  }, []);
+
+  useEffect(() => {
+    if (!shouldLoadMapData) return;
     fetchPublicPlaces();
     fetchPublicBarangayBounds();
-    fetchHazardLayers();
+  }, [fetchPublicBarangayBounds, fetchPublicPlaces, shouldLoadMapData]);
+
+  useEffect(() => {
+    if (!shouldLoadIncidentData) return;
     fetchPublicIncidents();
-  }, [fetchHazardLayers, fetchPublicBarangayBounds, fetchPublicPlaces]);
+  }, [shouldLoadIncidentData]);
+
+  useEffect(() => {
+    const scheduleRoleDetection = () => {
+      detectRole();
+    };
+
+    const idleCallback =
+      typeof window !== "undefined" && "requestIdleCallback" in window
+        ? window.requestIdleCallback(scheduleRoleDetection, { timeout: 1200 })
+        : window.setTimeout(scheduleRoleDetection, 400);
+
+    return () => {
+      if (typeof window !== "undefined" && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idleCallback);
+      } else {
+        window.clearTimeout(idleCallback);
+      }
+    };
+  }, []);
+
+  function markFieldTouched(path) {
+    setTouchedFields((prev) => ({ ...prev, [path]: true }));
+  }
+
+  function setFieldError(path, error) {
+    setFieldErrors((prev) => {
+      if (!error && !prev[path]) return prev;
+      const next = { ...prev };
+      if (error) next[path] = error;
+      else delete next[path];
+      return next;
+    });
+  }
+
+  function clearLandingValidationState() {
+    setFieldErrors({});
+    setTouchedFields({});
+    setSaveAttempted(false);
+  }
+
+  function validateSingleField(path, nextDraft = draftContent) {
+    let error = "";
+
+    if (path.startsWith("announcements.")) {
+      const [, index, field] = path.split(".");
+      error = validateLandingAnnouncementField(
+        field,
+        nextDraft.announcements?.[Number(index)]?.[field]
+      );
+    } else if (path.startsWith("tips.")) {
+      const [, index] = path.split(".");
+      error = validateLandingTipField(nextDraft.tips?.[Number(index)]?.text);
+    } else if (path.startsWith("hotlines.")) {
+      const [, index, field] = path.split(".");
+      error = validateLandingHotlineField(
+        nextDraft.hotlines?.[Number(index)],
+        field
+      );
+    } else if (path.startsWith("office.")) {
+      const [, field] = path.split(".");
+      error = validateLandingOfficeField(field, nextDraft.office?.[field]);
+    }
+
+    setFieldError(path, error);
+    return error;
+  }
+
+  function validateBeforeSave(nextDraft = draftContent) {
+    const nextErrors = validateLandingDraftContent(nextDraft);
+    setFieldErrors(nextErrors);
+    setSaveAttempted(true);
+    return nextErrors;
+  }
+
+  function shouldShowFieldError(path) {
+    return Boolean(fieldErrors[path] && (touchedFields[path] || saveAttempted));
+  }
+
+  function renderFieldError(path) {
+    if (!shouldShowFieldError(path)) return null;
+    return (
+      <span className="landing-inline-error" role="alert">
+        {fieldErrors[path]}
+      </span>
+    );
+  }
+
+  function getFieldInputClass(path, baseClassName = "landing-inline-input") {
+    return shouldShowFieldError(path)
+      ? `${baseClassName} landing-inline-input-error`
+      : baseClassName;
+  }
+
+  useEffect(() => {
+    Object.keys(touchedFields).forEach((path) => {
+      validateSingleField(path, draftContent);
+    });
+  }, [draftContent]);
 
   function updateDraft(path, value) {
     setDraftContent((prev) => {
@@ -1003,6 +1091,12 @@ export default function Dashboard() {
       }
 
       ref[keys[keys.length - 1]] = value;
+
+      queueMicrotask(() => {
+        markFieldTouched(path);
+        validateSingleField(path, next);
+      });
+
       return next;
     });
   }
@@ -1016,10 +1110,23 @@ export default function Dashboard() {
         [field]: value,
       };
 
-      return {
+      const nextDraft = {
         ...prev,
         [section]: nextItems,
       };
+
+      const path = `${section}.${index}.${field}`;
+      queueMicrotask(() => {
+        markFieldTouched(path);
+        validateSingleField(path, nextDraft);
+        if (section === "hotlines" && field === "type") {
+          const detailPath = `${section}.${index}.number`;
+          markFieldTouched(detailPath);
+          validateSingleField(detailPath, nextDraft);
+        }
+      });
+
+      return nextDraft;
     });
   }
 
@@ -1040,15 +1147,26 @@ export default function Dashboard() {
     });
   }
 
-  function removeItem(section, id) {
-    setDraftContent((prev) => {
-      const currentItems = prev[section] || [];
+  function removeItem(section, id, index) {
+    const currentItems = draftContent[section] || [];
+    if (currentItems.length <= 1) return;
 
-      if (currentItems.length <= 1) return prev;
+    const hasValidIndex =
+      Number.isInteger(index) && index >= 0 && index < currentItems.length;
+    const hasMatchingId = Boolean(id) && currentItems.some((item) => item.id === id);
+
+    if (!hasMatchingId && !hasValidIndex) return;
+
+    // Array-indexed validation keys no longer match after an item is removed.
+    clearLandingValidationState();
+    setDraftContent((prev) => {
+      const nextItems = prev[section] || [];
 
       return {
         ...prev,
-        [section]: currentItems.filter((item) => item.id !== id),
+        [section]: hasValidIndex
+          ? nextItems.filter((_, itemIndex) => itemIndex !== index)
+          : nextItems.filter((item) => item.id !== id),
       };
     });
   }
@@ -1056,25 +1174,25 @@ export default function Dashboard() {
   function startInlineEditing() {
     setDraftContent(siteContent);
     setSaveMessage("");
+    clearLandingValidationState();
     setIsEditorOpen(true);
   }
 
   function closeInlineEditing() {
     setDraftContent(siteContent);
     setSaveMessage("");
+    clearLandingValidationState();
     setIsEditorOpen(false);
   }
 
   function resetDraftContent() {
     setDraftContent(siteContent);
+    clearLandingValidationState();
     setSaveMessage("Draft reset to current saved content.");
   }
 
   async function saveSiteContent() {
     if (!canEdit) return;
-
-    setIsSaving(true);
-    setSaveMessage("");
 
     const trimmedPayload = normalizeSitePayload({
       ...draftContent,
@@ -1126,6 +1244,15 @@ export default function Dashboard() {
       })),
     });
 
+    const nextErrors = validateBeforeSave(trimmedPayload);
+    if (Object.keys(nextErrors).length > 0) {
+      setSaveMessage("");
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveMessage("");
+
     try {
       const res = await fetch(`${BASE_URL}/api/public-site`, {
         method: "PUT",
@@ -1145,12 +1272,14 @@ export default function Dashboard() {
       setDraftContent(normalized);
       localStorage.setItem("publicSiteContent", JSON.stringify(normalized));
       setSaveMessage("Landing page updated.");
+      clearLandingValidationState();
       setIsEditorOpen(false);
     } catch (err) {
       localStorage.setItem("publicSiteContent", JSON.stringify(trimmedPayload));
       setSiteContent(trimmedPayload);
       setDraftContent(trimmedPayload);
       setSaveMessage("Saved locally. Check API if database save is unavailable.");
+      clearLandingValidationState();
       setIsEditorOpen(false);
     } finally {
       setIsSaving(false);
@@ -1322,133 +1451,106 @@ export default function Dashboard() {
             </div>
 
             <div className="header-right">
-              <div className="header-public-actions">
-                <form className="header-search-wrap" onSubmit={handleSearchSubmit}>
-                  <div className="header-search-shell">
-                    <FaSearch className="header-search-icon" aria-hidden="true" />
-                    <input
-                      type="text"
-                      className="header-search"
-                      placeholder="Search weather, hazard, incident, barangay, contacts..."
-                      value={searchText}
-                      onChange={(e) =>
-                        setSearchText(sanitizeSearchInput(e.target.value))
-                      }
-                    />
-                  </div>
-                </form>
-              </div>
+              <form className="header-search-wrap" onSubmit={handleSearchSubmit}>
+                <input
+                  type="text"
+                  className="header-search"
+                  placeholder="Search weather, hazard, incident, barangay, contacts..."
+                  value={searchText}
+                  onChange={(e) =>
+                    setSearchText(sanitizeSearchInput(e.target.value))
+                  }
+                />
+              </form>
 
-              {isPrivilegedUser && (
-                <div className="mode-toggle-wrap">
+              <div className="header-public-actions">
+                {isPrivilegedUser && (
+                  <div className="mode-toggle-wrap">
+                    <button
+                      type="button"
+                      className={`mode-toggle-btn ${
+                        !isVisitorMode ? "active" : ""
+                      }`}
+                      onClick={() => setIsVisitorMode(false)}
+                    >
+                      <FaEdit />
+                      <span>Editor Mode</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`mode-toggle-btn ${
+                        isVisitorMode ? "active" : ""
+                      }`}
+                      onClick={() => {
+                        setIsVisitorMode(true);
+                        clearLandingValidationState();
+                        setIsEditorOpen(false);
+                      }}
+                    >
+                      <FaEye />
+                      <span>Visitor Mode</span>
+                    </button>
+                  </div>
+                )}
+
+                {isPrivilegedUser && (
                   <button
+                    className="editor-toggle-btn"
+                    onClick={goBackToModules}
                     type="button"
-                    className={`mode-toggle-btn ${
-                      !isVisitorMode ? "active" : ""
-                    }`}
-                    onClick={() => setIsVisitorMode(false)}
+                  >
+                    <span>Back</span>
+                  </button>
+                )}
+
+                {canEdit && !isInlineEditing && (
+                  <button
+                    className="editor-toggle-btn"
+                    onClick={startInlineEditing}
+                    type="button"
                   >
                     <FaEdit />
-                    <span>Editor Mode</span>
+                    <span>Edit Landing</span>
                   </button>
+                )}
 
+                {canEdit && isInlineEditing && (
                   <button
+                    className="editor-toggle-btn"
+                    onClick={closeInlineEditing}
                     type="button"
-                    className={`mode-toggle-btn ${
-                      isVisitorMode ? "active" : ""
-                    }`}
-                    onClick={() => {
-                      setIsVisitorMode(true);
-                      setIsEditorOpen(false);
-                    }}
+                    disabled={isSaving}
                   >
-                    <FaEye />
-                    <span>Visitor Mode</span>
+                    <FaTimes />
+                    <span>Close Editor</span>
                   </button>
-                </div>
-              )}
-
-              {isPrivilegedUser && (
-                <button
-                  className="editor-toggle-btn"
-                  onClick={goBackToModules}
-                  type="button"
-                >
-                  <span>Back</span>
-                </button>
-              )}
-
-              {canEdit && !isInlineEditing && (
-                <button
-                  className="editor-toggle-btn"
-                  onClick={startInlineEditing}
-                  type="button"
-                >
-                  <FaEdit />
-                  <span>Edit Landing</span>
-                </button>
-              )}
-
-              {canEdit && isInlineEditing && (
-                <button
-                  className="editor-toggle-btn"
-                  onClick={closeInlineEditing}
-                  type="button"
-                  disabled={isSaving}
-                >
-                  <FaTimes />
-                  <span>Close Editor</span>
-                </button>
-              )}
+                )}
+              </div>
             </div>
           </div>
 
           <div className="dashboard-nav-shell">
-            <nav className="nav-links" aria-label="Primary navigation">
-              {NAV_ITEMS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`nav-link-btn ${
-                    activeSection === item.id ? "active" : ""
-                  }`}
-                  onClick={() => handleNavClick(item.id)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </nav>
-
-            <div className="header-twin-links" aria-label="Twin views">
-              {TWIN_NAV_ITEMS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`nav-link-btn twin-link-btn ${
-                    activeSection === item.id ? "active" : ""
-                  }`}
-                  onClick={() => handleNavClick(item.id)}
-                >
-                  {item.label}
-                </button>
-              ))}
+            <div className="dashboard-nav-scroll">
+              <nav className="nav-links" aria-label="Primary navigation">
+                {NAV_ITEMS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`nav-link-btn ${
+                      activeSection === item.id ? "active" : ""
+                    }`}
+                    onClick={() => handleNavClick(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
             </div>
           </div>
         </header>
 
-        {isTwinViewActive ? (
-          <section className="landing-twin-shell" id={activeTwinView}>
-            <div className="landing-wide-shell">
-              {activeTwinView === "digital-twin" ? (
-                <PublicDigitalTwinPanel />
-              ) : (
-                <FloodVirtualTwin />
-              )}
-            </div>
-          </section>
-        ) : (
-          <>
-        {isPrivilegedUser && (
+                {isPrivilegedUser && (
           <section className="mode-preview-bar">
             <div className="mode-preview-left">
               {isVisitorMode ? <FaEye /> : <FaEyeSlash />}
@@ -1570,9 +1672,19 @@ export default function Dashboard() {
 
         <section
           className={`landing-hero ${heroBg ? "landing-hero-has-bg" : ""}`}
-          style={heroBg ? { backgroundImage: `url(${heroBg})` } : {}}
           id="home"
         >
+          {heroBg ? (
+            <img
+              src={heroBg}
+              alt=""
+              aria-hidden="true"
+              className="landing-hero-bg-media"
+              fetchPriority="high"
+              loading="eager"
+              decoding="async"
+            />
+          ) : null}
           <div className="landing-hero-overlay">
             <div className="landing-wide-shell">
               <div className="landing-hero-grid">
@@ -1611,6 +1723,60 @@ export default function Dashboard() {
                       <p>{pageContent.hero.subtitle}</p>
                     </>
                   )}
+
+                  <div className="landing-hero-actions">
+                    <button
+                      type="button"
+                      className="hero-btn primary"
+                      onClick={scrollToWeather}
+                    >
+                      {isInlineEditing ? (
+                        <input
+                          className="landing-inline-input cta-inline-input"
+                          type="text"
+                          value={draftContent.hero.primaryCtaLabel}
+                          maxLength={24}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) =>
+                            updateDraft("hero.primaryCtaLabel", e.target.value)
+                          }
+                          placeholder="Primary button"
+                        />
+                      ) : (
+                        pageContent.hero.primaryCtaLabel || "View Weather"
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="hero-btn secondary"
+                      onClick={scrollToMap}
+                    >
+                      View Evacuation Map
+                    </button>
+
+                    <button
+                      type="button"
+                      className="hero-btn ghost"
+                      onClick={scrollToFooter}
+                    >
+                      {isInlineEditing ? (
+                        <input
+                          className="landing-inline-input cta-inline-input"
+                          type="text"
+                          value={draftContent.hero.secondaryCtaLabel}
+                          maxLength={24}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) =>
+                            updateDraft("hero.secondaryCtaLabel", e.target.value)
+                          }
+                          placeholder="Secondary button"
+                        />
+                      ) : (
+                        pageContent.hero.secondaryCtaLabel || "Emergency Contacts"
+                      )}
+                    </button>
+                  </div>
 
                   {isInlineEditing && (
                     <div className="landing-hero-image-manager">
@@ -1713,6 +1879,31 @@ export default function Dashboard() {
                     </div>
                   )}
 
+                  <div className="hero-highlights">
+                    <div className="hero-highlight-card">
+                      <FaCloudSun />
+                      <div>
+                        <strong>Live Weather Outlook</strong>
+                        <span>Quick rain, wind, and temperature view for Jaen.</span>
+                      </div>
+                    </div>
+
+                    <div className="hero-highlight-card">
+                      <FaMap />
+                      <div>
+                        <strong>Barangay-Based Public Map</strong>
+                        <span>Focus the page on a specific barangay when needed.</span>
+                      </div>
+                    </div>
+
+                    <div className="hero-highlight-card">
+                      <FaBell />
+                      <div>
+                        <strong>Official Advisories</strong>
+                        <span>Updates, preparedness, contacts, and public guidance.</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="landing-hero-side">
@@ -1804,43 +1995,15 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="hero-lower-dock">
-                <div className="hero-highlights">
-                  <div className="hero-highlight-card">
-                    <FaCloudSun />
-                    <div>
-                      <strong>Live Weather Outlook</strong>
-                      <span>Quick rain, wind, and temperature view for Jaen.</span>
-                    </div>
-                  </div>
-
-                  <div className="hero-highlight-card">
-                    <FaMap />
-                    <div>
-                      <strong>Barangay-Based Public Map</strong>
-                      <span>Focus the page on a specific barangay when needed.</span>
-                    </div>
-                  </div>
-
-                  <div className="hero-highlight-card">
-                    <FaBell />
-                    <div>
-                      <strong>Official Advisories</strong>
-                      <span>Updates, preparedness, contacts, and public guidance.</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="hero-slide-indicators" aria-hidden="true">
-                  {activeHeroImages.map((_, index) => (
-                    <span
-                      key={`hero-dot-${index}`}
-                      className={`hero-slide-dot ${
-                        currentHero === index ? "active" : ""
-                      }`}
-                    />
-                  ))}
-                </div>
+              <div className="hero-slide-indicators" aria-hidden="true">
+                {activeHeroImages.map((_, index) => (
+                  <span
+                    key={`hero-dot-${index}`}
+                    className={`hero-slide-dot ${
+                      currentHero === index ? "active" : ""
+                    }`}
+                  />
+                ))}
               </div>
             </div>
           </div>
@@ -1968,12 +2131,20 @@ export default function Dashboard() {
             </section>
 
                         <section className="landing-content-grid">
-              <section className="landing-map-column" id="public-evac-map">
+              <section
+                className="landing-map-column"
+                id="public-evac-map"
+                ref={mapSectionRef}
+              >
                 <div className="landing-map-shell">
                   <div className="landing-section-head">
                     <div>
                       <span className="section-kicker">Evacuation Areas</span>
                       <h2>Public Evacuation Map</h2>
+                      <p>
+                        View public evacuation areas and capacity status by
+                        barangay.
+                      </p>
                     </div>
                   </div>
 
@@ -1982,9 +2153,7 @@ export default function Dashboard() {
                       <span>Barangay</span>
                       <select
                         value={publicBarangayFilter}
-                        onChange={(e) =>
-                          handlePublicBarangayFilterChange(e.target.value)
-                        }
+                        onChange={(e) => setPublicBarangayFilter(e.target.value)}
                       >
                         <option value="all">All Barangays</option>
                         {publicBarangayOptions.map((item) => (
@@ -1994,16 +2163,6 @@ export default function Dashboard() {
                         ))}
                       </select>
                     </label>
-
-                    {publicSelectedBarangays.length ? (
-                      <button
-                        type="button"
-                        className="public-map-clear-selection"
-                        onClick={() => handlePublicBarangayFilterChange("all")}
-                      >
-                        Clear Barangays
-                      </button>
-                    ) : null}
 
                     <div className="public-map-mini-summary">
                       <span className="mini-status available">
@@ -2016,22 +2175,11 @@ export default function Dashboard() {
                         {formatNumber(publicMapSummary.fullCount)} full
                       </span>
                     </div>
-
-                    <button
-                      type="button"
-                      className={`public-hazard-toggle ${
-                        showHazardOverlay ? "on" : "off"
-                      }`}
-                      onClick={() =>
-                        setShowHazardOverlay((current) => !current)
-                      }
-                      disabled={hazardLoading || Boolean(hazardError)}
-                    >
-                      {showHazardOverlay ? "Hide Hazard Layer" : "Show Hazard Layer"}
-                    </button>
                   </div>
 
-                  {mapLoading ? (
+                  {!shouldLoadMapData ? (
+                    <div className="panel-empty">Scroll here to load the evacuation map.</div>
+                  ) : mapLoading ? (
                     <div className="panel-empty">Loading evacuation map…</div>
                   ) : mapError ? (
                     <div className="panel-empty error">{mapError}</div>
@@ -2039,26 +2187,23 @@ export default function Dashboard() {
                     <div className="landing-map-layout map-minimal-layout">
                       <div className="landing-map-main">
                         <div className="landing-map-stage map-dominant-stage">
-                          <EvacMap
-                            places={filteredPublicPlaces}
-                            barangayBounds={publicBarangayBounds}
-                            selectedPlaceId={selectedPublicPlaceId}
-                            onSelectPlace={(place) =>
-                              setSelectedPublicPlaceId(place?._id || null)
+                          <Suspense
+                            fallback={
+                              <div className="panel-empty">Preparing evacuation map…</div>
                             }
-                            selectedBarangayName=""
-                            selectedBarangayNames={publicSelectedBarangays}
-                            onSelectBarangay={handlePublicBarangayFilterChange}
-                            readOnly
-                            publicMode
-                            hazardLayers={hazardLayers}
-                            showHazardOverlay={showHazardOverlay}
-                          />
+                          >
+                            <EvacMap
+                              places={filteredPublicPlaces}
+                              barangayBounds={publicBarangayBounds}
+                              selectedPlaceId={selectedPublicPlaceId}
+                              onSelectPlace={setSelectedPublicPlaceId}
+                              readOnly
+                              publicMode
+                            />
+                          </Suspense>
 
                           <div className="public-map-overlay legend-overlay">
-                            <PublicMapLegend
-                              showHazardOverlay={showHazardOverlay}
-                            />
+                            <PublicMapLegend />
                           </div>
 
                           <div className="public-map-overlay place-overlay">
@@ -2101,6 +2246,10 @@ export default function Dashboard() {
                   <div className="landing-section-head">
                     <span className="section-kicker">Hazard Focus</span>
                     <h2>Hazard Monitoring</h2>
+                    <p>
+                      Barangay-focused hazard information can be shown here for
+                      public viewing.
+                    </p>
                   </div>
 
                   <div className="focus-info-grid">
@@ -2125,48 +2274,33 @@ export default function Dashboard() {
                       <label>Full</label>
                       <strong>{formatNumber(publicMapSummary.fullCount)}</strong>
                     </div>
-
-                    <div className="focus-info-item">
-                      <label>Hazard Overlay</label>
-                      <strong>
-                        {hazardLoading
-                          ? "Loading"
-                          : hazardError
-                          ? "Unavailable"
-                          : showHazardOverlay
-                          ? "Visible"
-                          : "Hidden"}
-                      </strong>
-                    </div>
-
-                    <div className="focus-info-item">
-                      <label>Susceptible Zones</label>
-                      <strong>{formatNumber(hazardSummary.susceptible)}</strong>
-                    </div>
-
-                    <div className="focus-info-item">
-                      <label>Medium Zones</label>
-                      <strong>{formatNumber(hazardSummary.medium)}</strong>
-                    </div>
-
-                    <div className="focus-info-item">
-                      <label>Safe Zones</label>
-                      <strong>{formatNumber(hazardSummary.safe)}</strong>
-                    </div>
                   </div>
 
-                  {hazardError ? (
-                    <p className="landing-empty-copy">{hazardError}</p>
-                  ) : null}
+                  <p className="landing-empty-copy">
+                    Connect your real hazard layer here later for flood, storm
+                    surge, or other public risk overlays.
+                  </p>
                 </section>
 
-                <section className="landing-side-card focus-card" id="incident-focus">
+                <section
+                  className="landing-side-card focus-card"
+                  id="incident-focus"
+                  ref={incidentSectionRef}
+                >
                   <div className="landing-section-head">
                     <span className="section-kicker">Incident Focus</span>
                     <h2>Incident Reports</h2>
+                    <p>
+                      Public incident information now includes resolved report
+                      summaries from the incident module.
+                    </p>
                   </div>
 
-                  {incidentsLoading ? (
+                  {!shouldLoadIncidentData ? (
+                    <div className="panel-empty landing-incident-loading">
+                      Scroll here to load incident updates.
+                    </div>
+                  ) : incidentsLoading ? (
                     <div className="panel-empty landing-incident-loading">
                       Loading incidents…
                     </div>
@@ -2321,7 +2455,15 @@ export default function Dashboard() {
                                   )
                                 }
                                 placeholder="Notice tag"
+                                aria-invalid={shouldShowFieldError(
+                                  `announcements.${index}.tag`
+                                )}
                               />
+                              {shouldShowFieldError(`announcements.${index}.tag`) && (
+                                <span className="inline-field-error" role="alert">
+                                  {fieldErrors[`announcements.${index}.tag`]}
+                                </span>
+                              )}
                             </label>
 
                             <button
@@ -2330,7 +2472,8 @@ export default function Dashboard() {
                               onClick={() =>
                                 removeItem(
                                   "announcements",
-                                  draftContent.announcements[index]?.id
+                                  draftContent.announcements[index]?.id,
+                                  index
                                 )
                               }
                               disabled={
@@ -2360,7 +2503,15 @@ export default function Dashboard() {
                                 )
                               }
                               placeholder="Announcement title"
+                              aria-invalid={shouldShowFieldError(
+                                `announcements.${index}.title`
+                              )}
                             />
+                            {shouldShowFieldError(`announcements.${index}.title`) && (
+                              <span className="inline-field-error" role="alert">
+                                {fieldErrors[`announcements.${index}.title`]}
+                              </span>
+                            )}
                           </label>
 
                           <label className="inline-edit-field">
@@ -2379,7 +2530,15 @@ export default function Dashboard() {
                                 )
                               }
                               placeholder="Announcement details"
+                              aria-invalid={shouldShowFieldError(
+                                `announcements.${index}.body`
+                              )}
                             />
+                            {shouldShowFieldError(`announcements.${index}.body`) && (
+                              <span className="inline-field-error" role="alert">
+                                {fieldErrors[`announcements.${index}.body`]}
+                              </span>
+                            )}
                           </label>
                         </>
                       ) : (
@@ -2434,7 +2593,7 @@ export default function Dashboard() {
                         <div className="preparedness-inline-edit">
                           <input
                             type="text"
-                            className="landing-inline-input"
+                            className={getFieldInputClass(`tips.${index}.text`)}
                             value={draftContent.tips[index]?.text || ""}
                             maxLength={120}
                             onChange={(e) =>
@@ -2446,13 +2605,15 @@ export default function Dashboard() {
                               )
                             }
                             placeholder="Preparedness reminder"
+                            aria-invalid={shouldShowFieldError(`tips.${index}.text`)}
                           />
+                          {renderFieldError(`tips.${index}.text`)}
 
                           <button
                             type="button"
                             className="inline-delete-btn"
                             onClick={() =>
-                              removeItem("tips", draftContent.tips[index]?.id)
+                              removeItem("tips", draftContent.tips[index]?.id, index)
                             }
                             disabled={(draftContent.tips || []).length <= 1}
                             title="Remove tip"
@@ -2499,7 +2660,13 @@ export default function Dashboard() {
                                 updateDraft("office.name", e.target.value)
                               }
                               placeholder="Office name"
+                              aria-invalid={shouldShowFieldError("office.name")}
                             />
+                            {shouldShowFieldError("office.name") && (
+                              <span className="inline-field-error" role="alert">
+                                {fieldErrors["office.name"]}
+                              </span>
+                            )}
                           </label>
 
                           <label className="footer-inline-field">
@@ -2513,7 +2680,13 @@ export default function Dashboard() {
                                 updateDraft("office.address", e.target.value)
                               }
                               placeholder="Office address"
+                              aria-invalid={shouldShowFieldError("office.address")}
                             />
+                            {shouldShowFieldError("office.address") && (
+                              <span className="inline-field-error" role="alert">
+                                {fieldErrors["office.address"]}
+                              </span>
+                            )}
                           </label>
                         </>
                       ) : (
@@ -2590,7 +2763,15 @@ export default function Dashboard() {
                                         )
                                       }
                                       placeholder="Contact label"
+                                      aria-invalid={shouldShowFieldError(
+                                        `hotlines.${index}.label`
+                                      )}
                                     />
+                                    {shouldShowFieldError(`hotlines.${index}.label`) && (
+                                      <span className="inline-field-error" role="alert">
+                                        {fieldErrors[`hotlines.${index}.label`]}
+                                      </span>
+                                    )}
                                   </label>
 
                                   <label className="footer-inline-field">
@@ -2623,7 +2804,8 @@ export default function Dashboard() {
                                     onClick={() =>
                                       removeItem(
                                         "hotlines",
-                                        draftContent.hotlines[index]?.id
+                                        draftContent.hotlines[index]?.id,
+                                        index
                                       )
                                     }
                                     disabled={
@@ -2639,7 +2821,9 @@ export default function Dashboard() {
                                   <span>Contact Detail</span>
                                   <input
                                     type="text"
-                                    className="landing-inline-input"
+                                    className={getFieldInputClass(
+                                      `hotlines.${index}.number`
+                                    )}
                                     value={
                                       draftContent.hotlines[index]?.number || ""
                                     }
@@ -2653,7 +2837,11 @@ export default function Dashboard() {
                                       )
                                     }
                                     placeholder="Phone, SMS, email, or link"
+                                    aria-invalid={shouldShowFieldError(
+                                      `hotlines.${index}.number`
+                                    )}
                                   />
+                                  {renderFieldError(`hotlines.${index}.number`)}
                                 </label>
                               </>
                             ) : (
@@ -2688,7 +2876,13 @@ export default function Dashboard() {
                               updateDraft("office.address", e.target.value)
                             }
                             placeholder="Office address"
+                            aria-invalid={shouldShowFieldError("office.address")}
                           />
+                          {shouldShowFieldError("office.address") && (
+                            <span className="inline-field-error" role="alert">
+                              {fieldErrors["office.address"]}
+                            </span>
+                          )}
                         </label>
                       ) : (
                         <span>{pageContent.office.address}</span>
@@ -2710,7 +2904,13 @@ export default function Dashboard() {
                               updateDraft("office.hours", e.target.value)
                             }
                             placeholder="Office hours"
+                            aria-invalid={shouldShowFieldError("office.hours")}
                           />
+                          {shouldShowFieldError("office.hours") && (
+                            <span className="inline-field-error" role="alert">
+                              {fieldErrors["office.hours"]}
+                            </span>
+                          )}
                         </label>
                       ) : (
                         <span>{pageContent.office.hours}</span>
@@ -2725,14 +2925,16 @@ export default function Dashboard() {
                           <span>Email Address</span>
                           <input
                             type="text"
-                            className="landing-inline-input"
+                            className={getFieldInputClass("office.email")}
                             value={draftContent.office.email}
                             maxLength={80}
                             onChange={(e) =>
                               updateDraft("office.email", e.target.value)
                             }
                             placeholder="Office email"
+                            aria-invalid={shouldShowFieldError("office.email")}
                           />
+                          {renderFieldError("office.email")}
                         </label>
                       ) : (
                         <span>{pageContent.office.email}</span>
@@ -2754,7 +2956,13 @@ export default function Dashboard() {
                               updateDraft("office.facebook", e.target.value)
                             }
                             placeholder="Facebook page link"
+                            aria-invalid={shouldShowFieldError("office.facebook")}
                           />
+                          {shouldShowFieldError("office.facebook") && (
+                            <span className="inline-field-error" role="alert">
+                              {fieldErrors["office.facebook"]}
+                            </span>
+                          )}
                         </label>
                       ) : (
                         <span>{pageContent.office.facebook}</span>
@@ -2774,8 +2982,6 @@ export default function Dashboard() {
             </div>
           </footer>
         </main>
-          </>
-        )}
       </div>
     </div>
   );
