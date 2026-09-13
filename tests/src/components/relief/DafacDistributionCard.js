@@ -22,7 +22,6 @@ export default function DafacDistributionCard({
   onDelete
 }) {
   const familyMembers = Array.isArray(record?.familyMembers) ? record.familyMembers : [];
-  const latestMembers = familyMembers.slice(0, 2);
   const remarks = String(record?.remarks || '').trim();
   const applianceUnits = safeNumber(
     record?.distribution?.applianceUnitsReceived ??
@@ -69,6 +68,10 @@ export default function DafacDistributionCard({
             <span>First Name</span>
             <input type="text" value={record?.headOfFamily?.firstName || ''} readOnly />
           </label>
+          <label>
+            <span>Family Head Age</span>
+            <input type="text" value={record?.headOfFamily?.age ?? ''} readOnly />
+          </label>
           {visibility?.showsFoodPacks ? (
             <label>
               <span>Food Packs</span>
@@ -104,14 +107,11 @@ export default function DafacDistributionCard({
         <div className="rrf-dafac-readonly-members">
           <div className="rrf-dafac-readonly-title">Family members</div>
           <div className="rrf-dafac-chip-row">
-            {latestMembers.map((member, index) => (
+            {familyMembers.map((member, index) => (
               <span key={`${member.fullName || 'member'}-${index}`} className="rrf-dafac-chip">
-                {member.fullName || 'Unnamed member'}
+                {member.fullName || 'Unnamed member'} - {member.age === undefined || member.age === null || member.age === '' ? 'Age not entered' : `${member.age} ${Number(member.age) === 1 ? 'year' : 'years'}`}
               </span>
             ))}
-            {familyMembers.length > latestMembers.length ? (
-              <span className="rrf-dafac-chip muted">+{familyMembers.length - latestMembers.length} more</span>
-            ) : null}
             {familyMembers.length === 0 ? (
               <span className="rrf-dafac-chip muted">No members listed</span>
             ) : null}

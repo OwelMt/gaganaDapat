@@ -1,4 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FaArrowDown,
@@ -25,14 +33,19 @@ import {
 } from "react-icons/fa";
 import "../css/Dashboard.css";
 
-import jaenlogo from "../../assets/images/jaenlogo.png";
+import jaenlogo from "../../assets/images/jaenlogo-landing.png";
 import hero1 from "../../assets/images/hero1.jpg";
 import hero2 from "../../assets/images/hero2.jpg";
 import hero3 from "../../assets/images/hero3.jpg";
-import EvacMap from "../map/Map";
-import PublicDigitalTwinPanel from "./PublicDigitalTwinPanel";
-import FloodVirtualTwin from "./FloodVirtualTwin";
 import { API_BASE_URL } from "../../config/api";
+
+const loadEvacMap = () => import("../map/Map");
+const loadPublicDigitalTwinPanel = () => import("./PublicDigitalTwinPanel");
+const loadFloodVirtualTwin = () => import("./FloodVirtualTwin");
+
+const LazyEvacMap = lazy(loadEvacMap);
+const LazyPublicDigitalTwinPanel = lazy(loadPublicDigitalTwinPanel);
+const LazyFloodVirtualTwin = lazy(loadFloodVirtualTwin);
 
 const BASE_URL = API_BASE_URL;
 
@@ -151,6 +164,50 @@ function safeLower(value) {
   return String(value || "").toLowerCase().trim();
 }
 
+function scheduleIdleTask(task, delay = 250) {
+  if (typeof window === "undefined") {
+    task();
+    return () => {};
+  }
+
+  if (typeof window.requestIdleCallback === "function") {
+    const id = window.requestIdleCallback(() => task(), { timeout: 1500 });
+    return () => window.cancelIdleCallback?.(id);
+  }
+
+  const id = window.setTimeout(task, delay);
+  return () => window.clearTimeout(id);
+}
+
+function isSampleLandingText(value) {
+  const normalized = String(value || "").trim();
+  return (
+    normalized === "Updated sample hero title" ||
+    normalized === "Updated sample hero subtitle"
+  );
+}
+
+function stripObsoleteSampleContent(payload) {
+  if (!payload || typeof payload !== "object") return payload;
+
+  const nextPayload = {
+    ...payload,
+    hero: {
+      ...(payload.hero || {}),
+    },
+  };
+
+  if (isSampleLandingText(nextPayload.hero.title)) {
+    nextPayload.hero.title = DEFAULT_SITE_CONTENT.hero.title;
+  }
+
+  if (isSampleLandingText(nextPayload.hero.subtitle)) {
+    nextPayload.hero.subtitle = DEFAULT_SITE_CONTENT.hero.subtitle;
+  }
+
+  return nextPayload;
+}
+
 function formatNumber(value) {
   return new Intl.NumberFormat().format(Number(value || 0));
 }
@@ -221,30 +278,32 @@ function getRainAdvisory(rainChance) {
 }
 
 function normalizeSitePayload(payload) {
+  const sanitizedPayload = stripObsoleteSampleContent(payload);
+
   return {
     hero: {
       ...DEFAULT_SITE_CONTENT.hero,
-      ...(payload?.hero || {}),
+      ...(sanitizedPayload?.hero || {}),
     },
     alert: {
       ...DEFAULT_SITE_CONTENT.alert,
-      ...(payload?.alert || {}),
+      ...(sanitizedPayload?.alert || {}),
     },
-    announcements: Array.isArray(payload?.announcements)
-      ? payload.announcements.slice(0, LIMITS.announcements)
+    announcements: Array.isArray(sanitizedPayload?.announcements)
+      ? sanitizedPayload.announcements.slice(0, LIMITS.announcements)
       : DEFAULT_SITE_CONTENT.announcements,
-    tips: Array.isArray(payload?.tips)
-      ? payload.tips.slice(0, LIMITS.tips)
+    tips: Array.isArray(sanitizedPayload?.tips)
+      ? sanitizedPayload.tips.slice(0, LIMITS.tips)
       : DEFAULT_SITE_CONTENT.tips,
-    hotlines: Array.isArray(payload?.hotlines)
-      ? payload.hotlines.slice(0, LIMITS.hotlines)
+    hotlines: Array.isArray(sanitizedPayload?.hotlines)
+      ? sanitizedPayload.hotlines.slice(0, LIMITS.hotlines)
       : DEFAULT_SITE_CONTENT.hotlines,
     office: {
       ...DEFAULT_SITE_CONTENT.office,
-      ...(payload?.office || {}),
+      ...(sanitizedPayload?.office || {}),
     },
-    heroImages: Array.isArray(payload?.heroImages)
-      ? payload.heroImages
+    heroImages: Array.isArray(sanitizedPayload?.heroImages)
+      ? sanitizedPayload.heroImages
           .map((item, index) => ({
             _id: item?._id || `hero-${index + 1}`,
             fileName: item?.fileName || `Landing image ${index + 1}`,
@@ -255,7 +314,9 @@ function normalizeSitePayload(payload) {
           .filter((item) => item.fileUrl)
       : [],
     incidentFeedMode:
-      payload?.incidentFeedMode === "resolved-only" ? "resolved-only" : "all",
+      sanitizedPayload?.incidentFeedMode === "resolved-only"
+        ? "resolved-only"
+        : "all",
   };
 }
 
@@ -347,14 +408,14 @@ export default function Dashboard() {
   const [isVisitorMode, setIsVisitorMode] = useState(false);
 
   const [publicPlaces, setPublicPlaces] = useState([]);
-  const [mapLoading, setMapLoading] = useState(true);
+  const [mapLoading, setMapLoading] = useState(false);
   const [mapError, setMapError] = useState("");
   const [selectedPublicPlaceId, setSelectedPublicPlaceId] = useState(null);
   const [publicBarangayFilter, setPublicBarangayFilter] = useState("all");
   const [publicSelectedBarangays, setPublicSelectedBarangays] = useState([]);
   const [publicBarangayBounds, setPublicBarangayBounds] = useState([]);
   const [hazardLayers, setHazardLayers] = useState(null);
-  const [hazardLoading, setHazardLoading] = useState(true);
+  const [hazardLoading, setHazardLoading] = useState(false);
   const [hazardError, setHazardError] = useState("");
   const [showHazardOverlay, setShowHazardOverlay] = useState(false);
 
@@ -362,8 +423,11 @@ export default function Dashboard() {
   const [incidentsLoading, setIncidentsLoading] = useState(true);
   const [incidentsError, setIncidentsError] = useState("");
   const [activeTwinView, setActiveTwinView] = useState("");
+  const [shouldLoadMapExperience, setShouldLoadMapExperience] = useState(false);
 
   const observerRef = useRef(null);
+  const mapSectionRef = useRef(null);
+  const mapDataRequestedRef = useRef(false);
   const heroImageInputRef = useRef(null);
   const navigate = useNavigate();
 
@@ -375,6 +439,25 @@ export default function Dashboard() {
   const canEdit = isPrivilegedUser && !isVisitorMode;
   const isInlineEditing = canEdit && isEditorOpen;
   const pageContent = isInlineEditing ? draftContent : siteContent;
+
+  const ensureMapExperienceLoaded = useCallback(() => {
+    setShouldLoadMapExperience(true);
+    void loadEvacMap();
+  }, []);
+
+  const ensureTwinExperienceLoaded = useCallback((viewId = "") => {
+    if (viewId === "virtual-twin") {
+      void loadFloodVirtualTwin();
+      return;
+    }
+
+    if (viewId === "digital-twin") {
+      void loadPublicDigitalTwinPanel();
+      return;
+    }
+
+    void Promise.all([loadPublicDigitalTwinPanel(), loadFloodVirtualTwin()]);
+  }, []);
 
   const activeHeroImages = useMemo(() => {
     return pageContent.heroImages?.length ? pageContent.heroImages : fallbackHeroImages;
@@ -665,6 +748,10 @@ export default function Dashboard() {
   ]);
 
   const scrollToId = (id) => {
+    if (id === "public-evac-map" || id === "hazard-focus") {
+      ensureMapExperienceLoaded();
+    }
+
     document.getElementById(id)?.scrollIntoView({
       behavior: "smooth",
       block: "start",
@@ -677,6 +764,7 @@ export default function Dashboard() {
   const scrollToPreparedness = () => scrollToId("preparedness");
   const scrollToFooter = () => scrollToId("footer-info");
   const openTwinView = (viewId) => {
+    ensureTwinExperienceLoaded(viewId);
     setActiveTwinView(viewId);
     setActiveSection(viewId);
     setIsEditorOpen(false);
@@ -979,13 +1067,53 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadPublicContent();
-    detectRole();
     fetchWeather();
+
+    const cancelIdleTask = scheduleIdleTask(() => {
+      detectRole();
+      fetchPublicIncidents();
+    });
+
+    return cancelIdleTask;
+  }, []);
+
+  useEffect(() => {
+    if (shouldLoadMapExperience) return undefined;
+
+    const node = mapSectionRef.current;
+    if (!node) return undefined;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          ensureMapExperienceLoaded();
+          observer.disconnect();
+        }
+      },
+      {
+        rootMargin: "420px 0px",
+        threshold: 0.01,
+      }
+    );
+
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, [ensureMapExperienceLoaded, shouldLoadMapExperience]);
+
+  useEffect(() => {
+    if (!shouldLoadMapExperience || mapDataRequestedRef.current) return;
+
+    mapDataRequestedRef.current = true;
     fetchPublicPlaces();
     fetchPublicBarangayBounds();
     fetchHazardLayers();
-    fetchPublicIncidents();
-  }, [fetchHazardLayers, fetchPublicBarangayBounds, fetchPublicPlaces]);
+  }, [
+    fetchHazardLayers,
+    fetchPublicBarangayBounds,
+    fetchPublicPlaces,
+    shouldLoadMapExperience,
+  ]);
 
   function updateDraft(path, value) {
     setDraftContent((prev) => {
@@ -1439,11 +1567,13 @@ export default function Dashboard() {
         {isTwinViewActive ? (
           <section className="landing-twin-shell" id={activeTwinView}>
             <div className="landing-wide-shell">
-              {activeTwinView === "digital-twin" ? (
-                <PublicDigitalTwinPanel />
-              ) : (
-                <FloodVirtualTwin />
-              )}
+              <Suspense fallback={<div className="panel-empty">Loading twin view…</div>}>
+                {activeTwinView === "digital-twin" ? (
+                  <LazyPublicDigitalTwinPanel />
+                ) : (
+                  <LazyFloodVirtualTwin />
+                )}
+              </Suspense>
             </div>
           </section>
         ) : (
@@ -1570,9 +1700,20 @@ export default function Dashboard() {
 
         <section
           className={`landing-hero ${heroBg ? "landing-hero-has-bg" : ""}`}
-          style={heroBg ? { backgroundImage: `url(${heroBg})` } : {}}
           id="home"
         >
+          {heroBg ? (
+            <img
+              src={heroBg}
+              alt=""
+              aria-hidden="true"
+              className="landing-hero-bg-media"
+              fetchPriority="high"
+              loading="eager"
+              decoding="async"
+            />
+          ) : null}
+
           <div className="landing-hero-overlay">
             <div className="landing-wide-shell">
               <div className="landing-hero-grid">
@@ -1968,7 +2109,11 @@ export default function Dashboard() {
             </section>
 
                         <section className="landing-content-grid">
-              <section className="landing-map-column" id="public-evac-map">
+              <section
+                className="landing-map-column"
+                id="public-evac-map"
+                ref={mapSectionRef}
+              >
                 <div className="landing-map-shell">
                   <div className="landing-section-head">
                     <div>
@@ -2031,7 +2176,9 @@ export default function Dashboard() {
                     </button>
                   </div>
 
-                  {mapLoading ? (
+                  {!shouldLoadMapExperience ? (
+                    <div className="panel-empty">Preparing evacuation map…</div>
+                  ) : mapLoading ? (
                     <div className="panel-empty">Loading evacuation map…</div>
                   ) : mapError ? (
                     <div className="panel-empty error">{mapError}</div>
@@ -2039,21 +2186,23 @@ export default function Dashboard() {
                     <div className="landing-map-layout map-minimal-layout">
                       <div className="landing-map-main">
                         <div className="landing-map-stage map-dominant-stage">
-                          <EvacMap
-                            places={filteredPublicPlaces}
-                            barangayBounds={publicBarangayBounds}
-                            selectedPlaceId={selectedPublicPlaceId}
-                            onSelectPlace={(place) =>
-                              setSelectedPublicPlaceId(place?._id || null)
-                            }
-                            selectedBarangayName=""
-                            selectedBarangayNames={publicSelectedBarangays}
-                            onSelectBarangay={handlePublicBarangayFilterChange}
-                            readOnly
-                            publicMode
-                            hazardLayers={hazardLayers}
-                            showHazardOverlay={showHazardOverlay}
-                          />
+                          <Suspense fallback={<div className="panel-empty">Loading evacuation map…</div>}>
+                            <LazyEvacMap
+                              places={filteredPublicPlaces}
+                              barangayBounds={publicBarangayBounds}
+                              selectedPlaceId={selectedPublicPlaceId}
+                              onSelectPlace={(place) =>
+                                setSelectedPublicPlaceId(place?._id || null)
+                              }
+                              selectedBarangayName=""
+                              selectedBarangayNames={publicSelectedBarangays}
+                              onSelectBarangay={handlePublicBarangayFilterChange}
+                              readOnly
+                              publicMode
+                              hazardLayers={hazardLayers}
+                              showHazardOverlay={showHazardOverlay}
+                            />
+                          </Suspense>
 
                           <div className="public-map-overlay legend-overlay">
                             <PublicMapLegend

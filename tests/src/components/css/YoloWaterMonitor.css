@@ -1,0 +1,343 @@
+.yolo-water-page {
+  min-height: 100vh;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 82% 0%, rgba(20, 83, 45, 0.11), transparent 30%),
+    linear-gradient(180deg, #f6faf7 0%, #eef4ef 100%);
+  color: #16331f;
+}
+
+.yolo-water-shell {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+
+.yolo-monitor-console {
+  border: 1px solid #d6e7d9;
+  border-radius: 24px;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: 0 18px 44px rgba(20, 83, 45, 0.1);
+}
+
+.yolo-console-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 24px;
+  background:
+    linear-gradient(135deg, rgba(240, 253, 244, 0.98), rgba(239, 246, 255, 0.82)),
+    #ffffff;
+  border-bottom: 1px solid #dce9de;
+}
+
+.yolo-console-title {
+  min-width: 0;
+}
+
+.yolo-water-kicker {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #eef5ef;
+  color: #5e7365;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.yolo-console-title h1 {
+  margin: 10px 0 0;
+  color: #0f3d21;
+  font-size: clamp(2rem, 3.5vw, 2.8rem);
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.yolo-console-status-group {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.yolo-process-pill,
+.yolo-reading-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.yolo-process-pill {
+  color: #b83b3b;
+  background: #fef2f2;
+  border: 1px solid #f1c5c5;
+}
+
+.yolo-process-pill.is-running {
+  color: #166534;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.yolo-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 5px rgba(184, 59, 59, 0.12);
+}
+
+.yolo-process-pill.is-running .yolo-status-dot {
+  box-shadow: 0 0 0 5px rgba(22, 101, 52, 0.13);
+}
+
+.yolo-reading-badge {
+  color: #5e7365;
+  background: #eef5ef;
+  border: 1px solid #dce9de;
+}
+
+.yolo-reading-badge.safe,
+.yolo-reading-badge.normal {
+  color: #166534;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.yolo-reading-badge.warning {
+  color: #b45309;
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.yolo-reading-badge.danger,
+.yolo-reading-badge.critical {
+  color: #b83b3b;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.yolo-console-body {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.3fr) minmax(210px, 0.7fr);
+  gap: 16px;
+  padding: 18px;
+}
+
+.yolo-level-panel,
+.yolo-info-panel,
+.yolo-control-panel {
+  min-width: 0;
+  border: 1px solid #dce9de;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdfb 100%);
+}
+
+.yolo-level-panel {
+  position: relative;
+  overflow: hidden;
+  padding: 18px;
+  background:
+    radial-gradient(circle at 100% 100%, rgba(20, 83, 45, 0.1), transparent 42%),
+    linear-gradient(180deg, #ffffff 0%, #f7fcf8 100%);
+}
+
+.yolo-level-panel.warning {
+  background:
+    radial-gradient(circle at 100% 100%, rgba(245, 158, 11, 0.16), transparent 42%),
+    linear-gradient(180deg, #ffffff 0%, #fff7ed 100%);
+  border-color: #fed7aa;
+}
+
+.yolo-level-panel.danger,
+.yolo-level-panel.critical {
+  background:
+    radial-gradient(circle at 100% 100%, rgba(184, 59, 59, 0.16), transparent 42%),
+    linear-gradient(180deg, #ffffff 0%, #fef2f2 100%);
+  border-color: #fecaca;
+}
+
+.yolo-panel-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #5e7365;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.yolo-level-panel strong {
+  display: block;
+  margin-top: 18px;
+  color: #0f3d21;
+  font-size: clamp(2.6rem, 5vw, 4.3rem);
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+}
+
+.yolo-level-panel small {
+  display: block;
+  margin-top: 12px;
+  color: #5e7365;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.yolo-info-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+}
+
+.yolo-info-item {
+  min-width: 0;
+  padding: 18px;
+}
+
+.yolo-info-item + .yolo-info-item {
+  border-left: 1px solid #dce9de;
+}
+
+.yolo-info-item span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: #5e7365;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.yolo-info-item strong {
+  display: block;
+  color: #0f3d21;
+  font-size: clamp(1rem, 1.7vw, 1.35rem);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.yolo-control-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px;
+}
+
+.yolo-water-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.yolo-water-btn {
+  min-height: 48px;
+  border-radius: 14px;
+  border: 1px solid #c5d9c8;
+  padding: 0 16px;
+  font-weight: 900;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.yolo-water-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.yolo-water-btn:focus-visible {
+  outline: 3px solid rgba(20, 83, 45, 0.22);
+  outline-offset: 2px;
+}
+
+.yolo-water-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.yolo-water-btn-primary {
+  color: #ffffff;
+  background: #14532d;
+  border-color: #14532d;
+  box-shadow: 0 12px 24px rgba(20, 83, 45, 0.2);
+}
+
+.yolo-water-btn-outline {
+  color: #14532d;
+  background: #ffffff;
+}
+
+@media (max-width: 1080px) {
+  .yolo-console-body {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .yolo-control-panel {
+    grid-column: 1 / -1;
+  }
+
+  .yolo-water-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .yolo-water-page {
+    padding: 16px;
+  }
+
+  .yolo-console-header {
+    align-items: stretch;
+    display: grid;
+    padding: 18px;
+  }
+
+  .yolo-console-status-group {
+    justify-content: flex-start;
+  }
+
+  .yolo-console-body,
+  .yolo-info-panel,
+  .yolo-water-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .yolo-info-item + .yolo-info-item {
+    border-left: 0;
+    border-top: 1px solid #dce9de;
+  }
+}
+
+@media (max-width: 520px) {
+  .yolo-monitor-console {
+    border-radius: 18px;
+  }
+
+  .yolo-console-title h1 {
+    font-size: 2rem;
+  }
+
+  .yolo-console-body {
+    padding: 12px;
+  }
+}

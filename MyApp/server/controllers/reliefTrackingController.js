@@ -10,15 +10,12 @@ const toNumber = (value) => {
 };
 
 const computePrioritySnapshotFromRows = (rows = []) => {
+  rows = rows.filter((row) => row && row.isActiveRow !== false);
   const totalAffected = rows.reduce(
     (sum, row) =>
       sum +
       toNumber(row.male) +
-      toNumber(row.female) +
-      toNumber(row.lgbtq) +
-      toNumber(row.pwd) +
-      toNumber(row.pregnant) +
-      toNumber(row.senior),
+      toNumber(row.female),
     0
   );
 
@@ -41,6 +38,12 @@ const computePrioritySnapshotFromRows = (rows = []) => {
     vulnerableCount,
     priorityScore,
   };
+};
+
+const getCurrentPrioritySnapshot = (request) => {
+  const computed = computePrioritySnapshotFromRows(request.rows || []);
+  const saved = request.prioritySnapshot?.toObject?.() || request.prioritySnapshot || {};
+  return { ...computed, ...saved, totalAffected: computed.totalAffected };
 };
 
 const buildFulfillmentFromReleases = (releases = []) => {
@@ -131,12 +134,7 @@ async function getReliefTracking(req, res) {
         const relatedReleases = releasesByRequestId.get(String(request._id)) || [];
         const fulfillment = buildFulfillmentFromReleases(relatedReleases);
         const stage = deriveCurrentStage(request, relatedReleases);
-        const prioritySnapshot =
-          request.prioritySnapshot?.priorityScore ||
-          request.prioritySnapshot?.totalAffected ||
-          request.prioritySnapshot?.vulnerableCount
-            ? request.prioritySnapshot
-            : computePrioritySnapshotFromRows(request.rows || []);
+        const prioritySnapshot = getCurrentPrioritySnapshot(request);
 
         return {
           ...request.toObject(),
@@ -190,6 +188,7 @@ async function getReliefTracking(req, res) {
         ...request.toObject(),
         fulfillment,
         currentStage: stage,
+        prioritySnapshot: getCurrentPrioritySnapshot(request),
         releases: relatedReleases,
       };
     });

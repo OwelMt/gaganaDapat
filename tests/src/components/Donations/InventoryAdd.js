@@ -1,3 +1,4 @@
+import InventoryImportPreview from './InventoryImportPreview';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import axios from "axios";
@@ -194,6 +195,9 @@ const InventoryAdd = () => {
   const toastTimersRef = useRef({});
   const [confirmationDialog, setConfirmationDialog] = useState(null);
   const [importingFile, setImportingFile] = useState(false);
+  const [pendingImportRows, setPendingImportRows] = useState([]);
+  const savingImportRef = useRef(false);
+  const importBatchRef = useRef(0);
   const [importInfo, setImportInfo] = useState({
     hasImported: false,
     fileName: "",
@@ -459,6 +463,7 @@ const InventoryAdd = () => {
   }, [historyActive, historyRequest.asOf, pushToast, showArchived]);
 
   const resetForm = () => {
+    setPendingImportRows([]);
     setForm({
       type: donationType,
       name: "",
@@ -499,6 +504,7 @@ const InventoryAdd = () => {
   useEffect(() => {
     if (editingItemId) return;
 
+    setPendingImportRows([]);
     setForm({
       type: donationType,
       name: "",
@@ -603,7 +609,7 @@ const InventoryAdd = () => {
   };
 
   const getProofLabel = () => {
-    return "Upload at least one document proof (PDF/DOC/DOCX) and one picture proof (JPG/PNG/WEBP). Videos and unsupported files are not allowed.";
+    return "Upload exactly one document proof (PDF/DOC/DOCX) and one picture proof (JPG/PNG/WEBP), up to 15 MB each. Videos and unsupported files are not allowed.";
   };
 
   const getImportButtonLabel = () => {
@@ -614,7 +620,7 @@ const InventoryAdd = () => {
 
   const buildInventoryImportSummaryText = (summary) => {
     if (!summary?.hasImported) return "";
-    return `${summary.importedCount} row${summary.importedCount === 1 ? "" : "s"} imported - ${summary.skippedCount} skipped`;
+    return `${pendingImportRows.length} row${pendingImportRows.length === 1 ? "" : "s"} ready to save - ${summary.skippedCount} skipped`;
   };
 
   const appendInventoryFormData = (formData, type, payload) => {
@@ -656,6 +662,22 @@ const InventoryAdd = () => {
     );
   };
 
+  const normalizeImportSourceType = (value) => {
+    const normalized = String(value || "external").trim().toLowerCase();
+    const sourceTypeAliases = {
+      donated: "external",
+      donor: "external",
+      donation: "external",
+      external: "external",
+      ngo: "government",
+      government: "government",
+      govt: "government",
+      lgu: "internal",
+      internal: "internal",
+    };
+    return sourceTypeAliases[normalized] || normalized || "external";
+  };
+
   const buildInventoryImportPayload = (mappedRow, mode) => {
     if (mode === "monetary") {
       return {
@@ -663,7 +685,7 @@ const InventoryAdd = () => {
         amount: parseSafeNumber(mappedRow.amount),
         referenceNumber: String(mappedRow.referenceNumber || "").trim(),
         description: String(mappedRow.description || "").trim(),
-        sourceType: String(mappedRow.sourceType || "external").trim().toLowerCase() || "external",
+        sourceType: normalizeImportSourceType(mappedRow.sourceType),
         sourceName: String(mappedRow.itemName || "").trim(),
       };
     }
@@ -676,7 +698,7 @@ const InventoryAdd = () => {
         condition: String(mappedRow.condition || "brand_new").trim().toLowerCase() || "brand_new",
         usageDuration: String(mappedRow.usageDuration || "").trim(),
         description: String(mappedRow.description || "").trim(),
-        sourceType: String(mappedRow.sourceType || "external").trim().toLowerCase() || "external",
+        sourceType: normalizeImportSourceType(mappedRow.sourceType),
         sourceName: String(mappedRow.sourceName || "").trim(),
       };
     }
@@ -689,7 +711,7 @@ const InventoryAdd = () => {
       expirationDate: String(mappedRow.expirationDate || "").trim(),
       requiresExpiration: Boolean(String(mappedRow.expirationDate || "").trim()),
       description: String(mappedRow.description || "").trim(),
-      sourceType: String(mappedRow.sourceType || "external").trim().toLowerCase() || "external",
+      sourceType: normalizeImportSourceType(mappedRow.sourceType),
       sourceName: String(mappedRow.sourceName || "").trim(),
     };
   };
@@ -727,12 +749,12 @@ const InventoryAdd = () => {
     const retainedFiles = Array.isArray(existingProofFiles) ? existingProofFiles : [];
     const combinedProofFiles = [...retainedFiles, ...selectedFiles];
 
-    if (combinedProofFiles.length === 0 && existingProofCount > 0) {
-      return "";
+    if (combinedProofFiles.length !== 2) {
+      return "Upload exactly 2 proof files: 1 document proof and 1 picture proof.";
     }
 
-    if (combinedProofFiles.length < 2) {
-      return "Upload at least 2 proof files: 1 document proof and 1 picture proof.";
+    if (selectedFiles.some((file) => file.size > 15 * 1024 * 1024)) {
+      return "Each proof file must be 15 MB or smaller.";
     }
 
     const unsupportedFile = combinedProofFiles.find(
@@ -753,7 +775,7 @@ const InventoryAdd = () => {
     }
 
     return "";
-  }, [existingProofCount, existingProofFiles, proofFiles]);
+  }, [existingProofFiles, proofFiles]);
 
   const getFinalGoodsCategory = useCallback(() => {
     if (form.category === CUSTOM_CATEGORY_VALUE) {
@@ -872,33 +894,25 @@ const InventoryAdd = () => {
   };
 
   const handleFileChange = (e) => {
+    if (loading) return;
     const files = Array.from(e.target.files || []);
-    setProofFiles((prev) => {
-      const mergedFiles = [...(Array.isArray(prev) ? prev : [])];
-
-      files.forEach((file) => {
-        const isDuplicate = mergedFiles.some(
-          (existingFile) =>
-            existingFile?.name === file?.name &&
-            existingFile?.size === file?.size &&
-            existingFile?.type === file?.type &&
-            existingFile?.lastModified === file?.lastModified
-        );
-
-        if (!isDuplicate) {
-          mergedFiles.push(file);
-        }
-      });
-
-      return mergedFiles;
+    const mergedFiles = [...proofFiles];
+    files.forEach((file) => {
+      if (!mergedFiles.some((existing) => existing.name === file.name && existing.size === file.size && existing.lastModified === file.lastModified)) mergedFiles.push(file);
     });
-    setFormErrors((prev) => ({
-      ...prev,
-      proofFiles: "",
-    }));
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+    const combined = [...existingProofFiles, ...mergedFiles];
+    let error = "";
+    if (combined.length > 2 || combined.filter(isDocumentProofFile).length > 1 || combined.filter(isImageProofFile).length > 1) {
+      error = "Only one document and one image are allowed per donation. Remove an existing proof before replacing it.";
+    } else if (files.some((file) => !ALLOWED_PROOF_EXTENSIONS.includes(getFileExtension(file.name)))) {
+      error = "Only PDF, DOC, DOCX, JPG, JPEG, PNG, and WEBP files are allowed for proof uploads.";
+    } else if (files.some((file) => file.size > 15 * 1024 * 1024)) {
+      error = "Each proof file must be 15 MB or smaller.";
     }
+    setFormErrors((prev) => ({ ...prev, proofFiles: error }));
+    if (error) pushToast(error, "error");
+    else setProofFiles(mergedFiles);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleRemoveSelectedProofFile = (targetIndex) => {
@@ -933,20 +947,11 @@ const InventoryAdd = () => {
 
   const handleImportFile = async (event) => {
     const file = event.target.files?.[0];
-    if (!file || editingItemId) return;
+    if (!file || editingItemId || loading || importingFile) return;
 
     setImportingFile(true);
 
     try {
-      const proofFilesError = validateProofFiles();
-      if (proofFilesError) {
-        setFormErrors((prev) => ({
-          ...prev,
-          proofFiles: proofFilesError,
-        }));
-        throw new Error(proofFilesError);
-      }
-
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: "array" });
       const firstSheetName = workbook.SheetNames?.[0];
@@ -978,24 +983,14 @@ const InventoryAdd = () => {
           return;
         }
 
-        validPayloads.push(buildInventoryImportPayload(mappedRow, config.mode));
+        validPayloads.push({ ...buildInventoryImportPayload(mappedRow, config.mode), importRowNumber: rawRow.__rowNum__ !== undefined ? rawRow.__rowNum__ + 1 : index + 2 });
       });
 
       if (!validPayloads.length) {
         throw new Error("No valid rows matched the active import tab.");
       }
 
-      for (const payload of validPayloads) {
-        const formData = new FormData();
-        appendInventoryFormData(formData, config.mode, payload);
-        proofFiles.forEach((proofFile) => {
-          formData.append("proofFiles", proofFile);
-        });
-        await axios.post(`${BASE_URL}/api/inventory`, formData, {
-          withCredentials: true,
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-      }
+      setPendingImportRows(validPayloads.map((row, index) => ({ ...row, importId: `${++importBatchRef.current}-${index}` })));
 
       const nextImportInfo = {
         hasImported: true,
@@ -1008,21 +1003,11 @@ const InventoryAdd = () => {
       setImportInfo(nextImportInfo);
       setFormErrors({});
       pushToast(
-        `${validPayloads.length} ${config.mode} row${validPayloads.length === 1 ? "" : "s"} imported successfully.`,
+        `${validPayloads.length} ${config.mode} row${validPayloads.length === 1 ? "" : "s"} loaded. Add proof files, then click Save.`,
         "success"
       );
-      await fetchInventory();
-      resetForm();
-      setShowForm(false);
     } catch (err) {
       console.error("Error importing inventory file:", err);
-      setImportInfo({
-        hasImported: false,
-        fileName: "",
-        importedCount: 0,
-        skippedCount: 0,
-        issues: [],
-      });
       pushToast(err?.message || "Failed to import inventory file.", "error");
     } finally {
       setImportingFile(false);
@@ -1230,8 +1215,50 @@ const InventoryAdd = () => {
     return Object.keys(errors).length === 0;
   };
 
+  const saveImportedDonations = async () => {
+    if (savingImportRef.current) return;
+    const incomplete = pendingImportRows.find((row) => !row.proofDocument || !row.proofImage);
+    if (incomplete) {
+      pushToast(`Every donation needs exactly one document and one image. Attach proofs for row ${incomplete.importRowNumber}: ${incomplete.name}.`, "error");
+      return;
+    }
+    savingImportRef.current = true;
+    setLoading(true);
+    setFormErrors({});
+    let savedCount = 0;
+    try {
+      for (const payload of pendingImportRows) {
+        const formData = new FormData();
+        appendInventoryFormData(formData, donationType, payload);
+        [payload.proofDocument, payload.proofImage].forEach((proofFile) => formData.append("proofFiles", proofFile));
+        await axios.post(`${BASE_URL}/api/inventory`, formData, {
+          withCredentials: true,
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+        savedCount += 1;
+        setPendingImportRows((rows) => rows.slice(1));
+      }
+      pushToast(`${savedCount} donation${savedCount === 1 ? "" : "s"} saved successfully.`, "success");
+      resetForm();
+      setShowForm(false);
+    } catch (err) {
+      const row = pendingImportRows[savedCount];
+      const message = err?.response?.data?.message || err?.message || "Failed to save donation.";
+      pushToast(`Row ${row?.importRowNumber}: ${message} ${savedCount} saved; ${pendingImportRows.length - savedCount} remain to save.`, "error");
+    } finally {
+      if (savedCount > 0) await fetchInventory();
+      savingImportRef.current = false;
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading || importingFile) return;
+    if (pendingImportRows.length) {
+      await saveImportedDonations();
+      return;
+    }
 
     if (!validateForm()) return;
 
@@ -2071,7 +2098,7 @@ const InventoryAdd = () => {
                           type="button"
                           className="btn btn-secondary"
                           onClick={() => importFileInputRef.current?.click()}
-                          disabled={importingFile}
+                          disabled={importingFile || loading}
                         >
                           <FaUpload className="btn-icon" />
                           {importingFile ? "Importing..." : getImportButtonLabel()}
@@ -2091,6 +2118,7 @@ const InventoryAdd = () => {
                     <button
                       type="button"
                       className="btn btn-secondary modal-back-btn"
+                      disabled={loading || importingFile}
                       onClick={() => {
                         setShowForm(false);
                         resetForm();
@@ -2109,7 +2137,7 @@ const InventoryAdd = () => {
                       <span>{buildInventoryImportSummaryText(importInfo)}</span>
                     </div>
                     {importInfo.issues?.length ? (
-                      <small>{importInfo.issues.length} issue(s) skipped</small>
+                      <details><summary>{importInfo.issues.length} issue(s) skipped</summary><ul>{importInfo.issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul></details>
                     ) : null}
                   </div>
                 ) : null}
@@ -2122,6 +2150,7 @@ const InventoryAdd = () => {
                         className={`donation-type-tab ${
                           donationType === "goods" ? "active" : ""
                         }`}
+                        disabled={loading || importingFile}
                         onClick={() => setDonationType("goods")}
                       >
                         <FaBoxes className="btn-icon" />
@@ -2134,6 +2163,7 @@ const InventoryAdd = () => {
                         className={`donation-type-tab ${
                           donationType === "appliance" ? "active" : ""
                         }`}
+                        disabled={loading || importingFile}
                         onClick={() => setDonationType("appliance")}
                       >
                         <FaBlender className="btn-icon" />
@@ -2146,6 +2176,7 @@ const InventoryAdd = () => {
                         className={`donation-type-tab ${
                           donationType === "monetary" ? "active" : ""
                         }`}
+                        disabled={loading || importingFile}
                         onClick={() => setDonationType("monetary")}
                       >
                         <FaMoneyBillWave className="btn-icon" />
@@ -2155,7 +2186,12 @@ const InventoryAdd = () => {
                   </div>
                 )}
 
-                <form onSubmit={handleSubmit} className="donation-form">
+                <form onSubmit={handleSubmit} className={`donation-form ${pendingImportRows.length ? "donation-form-batch" : ""}`}>
+                  {pendingImportRows.length ? (
+                    <InventoryImportPreview rows={pendingImportRows} type={donationType} disabled={loading || importingFile}
+                      onProofChange={(id, field, file) => setPendingImportRows((rows) => rows.map((row) => row.importId === id ? { ...row, [field]: file } : row))} />
+                  ) : (
+                  <>
                   <div className="donation-form-section">
                     <div className="donation-section-heading">
                       <span className="donation-section-icon">
@@ -2543,6 +2579,10 @@ const InventoryAdd = () => {
                     </div>
                   </div>
 
+                  </>
+                  )}
+
+                  {!pendingImportRows.length && (
                   <div className="donation-form-section">
                     <div className="donation-section-heading">
                       <span className="donation-section-icon"><FaUpload /></span>
@@ -2577,15 +2617,16 @@ const InventoryAdd = () => {
                           <span className="error-text">{formErrors.description}</span>
                         )}
                       </div>
-                                            <div className="donation-form-group full-width">
+                      <div className="donation-form-group full-width">
                         <label htmlFor="proofFiles">Validation</label>
 
                         <div
                           className="donation-upload-box"
-                          onClick={() => fileInputRef.current?.click()}
+                          onClick={() => !loading && fileInputRef.current?.click()}
                         >
                           <input
                             id="proofFiles"
+                            disabled={loading}
                             ref={fileInputRef}
                             type="file"
                             multiple
@@ -2728,6 +2769,7 @@ const InventoryAdd = () => {
                                 <button
                                   type="button"
                                   className="donation-file-remove-btn"
+                                  disabled={loading}
                                   onClick={() => handleRemoveSelectedProofFile(index)}
                                 >
                                   Remove
@@ -2749,18 +2791,19 @@ const InventoryAdd = () => {
                     </div>
                   </div>
 
+                  )}
                   <div className="donation-form-actions">
                     <button
                       type="button"
                       className="btn btn-outline"
                       onClick={resetForm}
-                      disabled={loading}
+                      disabled={loading || importingFile}
                     >
                       <FaRedo className="btn-icon" />
                       Reset
                     </button>
 
-                    <button type="submit" disabled={loading} className="btn btn-primary">
+                    <button type="submit" disabled={loading || importingFile} className="btn btn-primary">
                       <FaSave className="btn-icon" />
                       {loading
                         ? "Saving..."

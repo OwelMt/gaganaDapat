@@ -247,11 +247,7 @@ const computePrioritySnapshotFromRequest = (request) => {
 
   const totalAffected =
     toNumber(totals.male) +
-    toNumber(totals.female) +
-    toNumber(totals.lgbtq) +
-    toNumber(totals.pwd) +
-    toNumber(totals.pregnant) +
-    toNumber(totals.senior);
+    toNumber(totals.female);
 
   const vulnerableCount =
     toNumber(totals.pwd) +

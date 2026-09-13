@@ -1,3 +1,4 @@
+const { validateInventoryProofs } = require("../utils/inventoryProofValidation");
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
@@ -2777,9 +2778,10 @@ const addInventory = async (req, res) => {
       return res.status(403).json({ message: roleAccessError });
     }
 
-    const proofFiles = await uploadInventoryProofFiles(
-      Array.isArray(req.files) ? req.files : req.file ? [req.file] : []
-    );
+    const incomingProofs = Array.isArray(req.files) ? req.files : req.file ? [req.file] : [];
+    const proofError = validateInventoryProofs(incomingProofs);
+    if (proofError) return res.status(400).json({ message: proofError });
+    const proofFiles = await uploadInventoryProofFiles(incomingProofs);
 
     const itemData = {
       type: data.type,
@@ -3112,6 +3114,9 @@ const updateInventory = async (req, res) => {
         (file) => retainedProofFiles.includes(String(file || ""))
       );
     }
+
+    const proofError = validateInventoryProofs([...(item.proofFiles || []), ...(req.files || [])]);
+    if (proofError) return res.status(400).json({ message: proofError });
 
     if (req.files && req.files.length > 0) {
       const newFiles = await uploadInventoryProofFiles(req.files);

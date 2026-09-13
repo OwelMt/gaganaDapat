@@ -1128,8 +1128,17 @@ const shapeReliefRequestResponse = (request) => {
     requestType: deriveLegacyRequestType(supportTypes),
     supportTypes,
     requestedAppliances: getRequestedAppliances(requestObject),
+    rows: (requestObject.rows || []).map((row) => ({
+      ...row,
+      individuals: toNumber(row.male) + toNumber(row.female),
+    })),
+    prioritySnapshot: {
+      ...(requestObject.prioritySnapshot || {}),
+      totalAffected: toNumber(requestObject.totals?.male) + toNumber(requestObject.totals?.female),
+    },
     totals: {
       ...(requestObject.totals || {}),
+      individuals: toNumber(requestObject.totals?.male) + toNumber(requestObject.totals?.female),
       requestedMonetaryAmount: toNumber(
         requestObject?.totals?.requestedMonetaryAmount
       ),
@@ -1212,6 +1221,7 @@ const sanitizeRow = (row = {}) => ({
   families: toNumber(row.families),
   male: toNumber(row.male),
   female: toNumber(row.female),
+  individuals: toNumber(row.male) + toNumber(row.female),
   lgbtq: toNumber(row.lgbtq),
   pwd: toNumber(row.pwd),
   pregnant: toNumber(row.pregnant),
@@ -1302,11 +1312,7 @@ const computePrioritySnapshotFromRows = (rows = []) => {
     (sum, row) =>
       sum +
       toNumber(row.male) +
-      toNumber(row.female) +
-      toNumber(row.lgbtq) +
-      toNumber(row.pwd) +
-      toNumber(row.pregnant) +
-      toNumber(row.senior),
+      toNumber(row.female),
     0
   );
 
@@ -1817,6 +1823,11 @@ const submitReliefRequest = async (req, res) => {
       ? normalizeString(req.body.rowSource)
       : "evac_place_snapshot";
 
+    const rawPopulationError = getReliefPopulationValidationError(req.body.rows);
+    if (rawPopulationError) {
+      return res.status(400).json({ message: rawPopulationError });
+    }
+
     let rows = Array.isArray(req.body.rows)
       ? req.body.rows.map(sanitizeRow)
       : [];
@@ -2136,6 +2147,7 @@ const exportMyReliefRequestPdf = async (req, res) => {
     drawPdfLabelValue(doc, "Female", String(toNumber(totals.female)));
     drawPdfLabelValue(doc, "LGBTQ+", String(toNumber(totals.lgbtq)));
     drawPdfLabelValue(doc, "PWD", String(toNumber(totals.pwd)));
+    drawPdfLabelValue(doc, "Individuals", String(toNumber(totals.male) + toNumber(totals.female)));
     drawPdfLabelValue(doc, "Pregnant", String(toNumber(totals.pregnant)));
     drawPdfLabelValue(doc, "Senior", String(toNumber(totals.senior)));
     drawPdfLabelValue(doc, "Requested Food Packs", String(toNumber(demand.requestedFoodPacks)));
@@ -2186,6 +2198,7 @@ const exportMyReliefRequestPdf = async (req, res) => {
       { label: "PWD", key: "pwd", width: 30, align: "right" },
       { label: "Preg", key: "pregnant", width: 34, align: "right" },
       { label: "Senior", key: "senior", width: 34, align: "right" },
+      { label: "Individuals", key: "individuals", width: 60, align: "right" },
       { label: "Packs", key: "requestedFoodPacks", width: 40, align: "right" },
     ];
 
@@ -2205,6 +2218,7 @@ const exportMyReliefRequestPdf = async (req, res) => {
           pwd: toNumber(row.pwd),
           pregnant: toNumber(row.pregnant),
           senior: toNumber(row.senior),
+          individuals: toNumber(row.male) + toNumber(row.female),
           requestedFoodPacks: toNumber(row.requestedFoodPacks),
         })),
         {
@@ -2493,6 +2507,11 @@ const updateOwnReliefRequest = async (req, res) => {
     )
       ? normalizeString(req.body.rowSource)
       : request.rowSource || "evac_place_snapshot";
+
+    const rawPopulationError = getReliefPopulationValidationError(req.body.rows);
+    if (rawPopulationError) {
+      return res.status(400).json({ message: rawPopulationError });
+    }
 
     let rows = Array.isArray(req.body.rows)
       ? req.body.rows.map(sanitizeRow)

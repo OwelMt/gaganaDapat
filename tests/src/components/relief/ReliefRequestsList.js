@@ -26,6 +26,8 @@ import {
 } from './supportTypes';
 import {
   getRequestEditBadgeLabel,
+  getRequestIndividuals,
+  getRowIndividuals,
   getVisibleCenterCount,
   getVisibleRowTotals,
   getVisibleRows,
@@ -67,21 +69,6 @@ const isResolvedStatus = (status) => {
     normalized === 'cancelled' ||
     normalized === 'canceled' ||
     normalized === 'rejected'
-  );
-};
-
-const getRequestIndividuals = (request) => {
-  const totals =
-    Array.isArray(request?.rows) && request.rows.length > 0
-      ? getVisibleRowTotals(request)
-      : request?.totals || {};
-  return (
-    Number(totals.male || 0) +
-    Number(totals.female || 0) +
-    Number(totals.lgbtq || 0) +
-    Number(totals.pwd || 0) +
-    Number(totals.pregnant || 0) +
-    Number(totals.senior || 0)
   );
 };
 
@@ -852,13 +839,7 @@ export default function ReliefRequestsList() {
     }
   }, [accomplishedPage, accomplishedTotalPages]);
 
-  const selectedIndividuals =
-    displayedVisibleTotals.male +
-    displayedVisibleTotals.female +
-    displayedVisibleTotals.lgbtq +
-    displayedVisibleTotals.pwd +
-    displayedVisibleTotals.pregnant +
-    displayedVisibleTotals.senior;
+  const selectedIndividuals = getRequestIndividuals(displayedRequest);
   const selectedVulnerable =
     displayedVisibleTotals.pwd +
     displayedVisibleTotals.pregnant +
@@ -1372,6 +1353,7 @@ export default function ReliefRequestsList() {
                                 <th>PWD</th>
                                 <th>Pregnant</th>
                                 <th>Senior</th>
+                                <th>Individuals</th>
                                 <th>Food Packs</th>
                               </tr>
                             </thead>
@@ -1395,6 +1377,7 @@ export default function ReliefRequestsList() {
                                     <td>{row.pwd || 0}</td>
                                     <td>{row.pregnant || 0}</td>
                                     <td>{row.senior || 0}</td>
+                                    <td>{getRowIndividuals(row)}</td>
                                     <td>{row.requestedFoodPacks || 0}</td>
                                   </tr>
                                 ))
@@ -1413,6 +1396,7 @@ export default function ReliefRequestsList() {
                                 <td>{displayedVisibleTotals.pwd}</td>
                                 <td>{displayedVisibleTotals.pregnant}</td>
                                 <td>{displayedVisibleTotals.senior}</td>
+                                <td>{selectedIndividuals}</td>
                                 <td>
                                   {displayedNeedsFood
                                     ? displayedVisibleTotals.requestedFoodPacks

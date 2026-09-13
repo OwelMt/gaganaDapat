@@ -143,11 +143,7 @@ const computePrioritySnapshot = (request) => {
 
   const totalAffected =
     toNumber(totals.male) +
-    toNumber(totals.female) +
-    toNumber(totals.lgbtq) +
-    toNumber(totals.pwd) +
-    toNumber(totals.pregnant) +
-    toNumber(totals.senior);
+    toNumber(totals.female);
 
   const vulnerableCount =
     toNumber(totals.pwd) +
@@ -279,6 +275,7 @@ const enrichRequestForQueue = (request) => {
   const prioritySnapshot = requestObj.prioritySnapshot?.priorityScore
     ? {
         ...requestObj.prioritySnapshot,
+        totalAffected: computePrioritySnapshot(requestObj).totalAffected,
         waitingHours: toNumber(requestObj.prioritySnapshot.waitingHours),
         waitingDays: toNumber(requestObj.prioritySnapshot.waitingDays),
         requestedFoodPacks: toNumber(
@@ -302,6 +299,7 @@ const enrichRequestForQueue = (request) => {
     demandSummaryLabel: buildDemandSummaryLabel(requestObj),
     totals: {
       ...(requestObj.totals || {}),
+      individuals: toNumber(requestObj?.totals?.male) + toNumber(requestObj?.totals?.female),
       requestedFoodPacks: toNumber(requestObj?.totals?.requestedFoodPacks),
       requestedMonetaryAmount: toNumber(
         requestObj?.totals?.requestedMonetaryAmount

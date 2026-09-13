@@ -1,5 +1,7 @@
+import { getRequestIndividuals } from './requestListUtils';
+import ReliefImportValidationModal from './ReliefImportValidationModal';
 import { createPortal } from 'react-dom';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import {
@@ -27,6 +29,7 @@ import {
 } from './supportTypes';
 import {
   RELIEF_IMPORT_HEADER_ALIASES,
+  getReliefImportPopulationIssues,
   buildImportSummaryText,
   deriveImportedSupportTypes,
   normalizeImportedRequestType,
@@ -36,7 +39,7 @@ import {
   mapSpreadsheetRow,
   parseSafeNumber
 } from '../shared/spreadsheetImportUtils';
-import { getReliefPopulationValidationError } from './reliefRequestValidation';
+import { RELIEF_COUNT_LABELS, getAffectedPeopleCountForRow, getReliefPopulationValidationError } from './reliefRequestValidation';
 import '../css/ReliefRequestForm.css';
 import { API_BASE_URL } from "../../config/api";
 import { getTodayInputDate } from "../Donations/inventoryExpiryUtils";
@@ -268,6 +271,7 @@ export default function ReliefRequestForm() {
   );
   const [remarks, setRemarks] = useState('');
   const [rows, setRows] = useState([]);
+  const [importValidationIssues, setImportValidationIssues] = useState([]);
   const [bootstrapRows, setBootstrapRows] = useState([]);
   const minAllowedDate = useMemo(() => getTodayInputDate(), []);
 
@@ -673,31 +677,10 @@ export default function ReliefRequestForm() {
     SUPPORT_TYPE_APPLIANCE
   );
 
-  const displayTotalAffected = useMemo(() => {
-    const rowTotal = activeRequestRowsForDisplay.reduce(
-      (sum, row) =>
-        sum +
-        Number(row.male || 0) +
-        Number(row.female || 0) +
-        Number(row.lgbtq || 0) +
-        Number(row.pwd || 0) +
-        Number(row.pregnant || 0) +
-        Number(row.senior || 0),
-      0
-    );
-
-    return Number(
-      latestRequest?.totalAffected ||
-        latestRequest?.totalIndividuals ||
-        latestRequest?.totals?.totalAffected ||
-        latestRequest?.totals?.individuals ||
-        latestRequest?.summary?.totalAffected ||
-        journey.summary?.totalAffected ||
-        journey.summary?.totalIndividuals ||
-        rowTotal ||
-        0
-    );
-  }, [activeRequestRowsForDisplay, latestRequest, journey.summary]);
+  const displayTotalAffected = useMemo(
+    () => getRequestIndividuals(latestRequest),
+    [latestRequest]
+  );
 
   const displayVulnerableCount = useMemo(() => {
     const rowTotal = activeRequestRowsForDisplay.reduce(
@@ -767,16 +750,7 @@ export default function ReliefRequestForm() {
   const includesMonetary = hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY);
   const includesAppliance = hasSupportType(supportTypes, SUPPORT_TYPE_APPLIANCE);
 
-  const totalIndividuals = useMemo(() => {
-    return (
-      totals.male +
-      totals.female +
-      totals.lgbtq +
-      totals.pwd +
-      totals.pregnant +
-      totals.senior
-    );
-  }, [totals]);
+  const totalIndividuals = useMemo(() => getAffectedPeopleCountForRow(totals), [totals]);
 
   const vulnerableCount = useMemo(
     () => totals.pwd + totals.pregnant + totals.senior,
@@ -2092,6 +2066,12 @@ export default function ReliefRequestForm() {
         throw new Error('The selected file does not contain any data rows.');
       }
 
+      const populationIssues = getReliefImportPopulationIssues(rawRows);
+      if (populationIssues.length) {
+        setImportValidationIssues(populationIssues);
+        return;
+      }
+
       const mappedRows = [];
       const importedAppliances = [];
       const issues = [];
@@ -2186,8 +2166,6 @@ export default function ReliefRequestForm() {
         .filter((row) => !matchedNames.has(normalizeValue(row.evacuationCenterName)))
         .map((row) => createPreparedRow(row));
 
-      setRows([...mappedRows, ...untouchedBootstrapRows]);
-
       const derivedFoodPackTotal = mappedRows.reduce(
         (sum, row) => sum + Number(row.requestedFoodPacks || 0),
         0
@@ -2211,6 +2189,7 @@ export default function ReliefRequestForm() {
             : [createRequestedAppliance()]
         : [createRequestedAppliance()];
 
+      setRows([...mappedRows, ...untouchedBootstrapRows]);
       setSupportTypes(finalImportedSupportTypes);
       const nextRequestedMonetaryAmount =
         importedMonetaryAmount && importedMonetaryAmount > 0
@@ -2246,14 +2225,7 @@ export default function ReliefRequestForm() {
       setSuccessFeedback(`Import complete. ${buildImportSummaryText(summary, formatMoney)}.`);
     } catch (err) {
       console.error(err);
-      setErrorFeedback(err.message || 'Failed to import file.');
-      setImportInfo({
-        hasImported: false,
-        fileName: '',
-        summary: null,
-        issues: [],
-        source: 'manual'
-      });
+      setImportValidationIssues([err.message || 'Failed to import file.']);
     } finally {
       setImportingFile(false);
       if (event.target) event.target.value = '';
@@ -2274,6 +2246,7 @@ export default function ReliefRequestForm() {
 
   return (
     <DashboardShell>
+      <ReliefImportValidationModal issues={importValidationIssues} onClose={() => setImportValidationIssues([])} />
       <div className="rrf-page">
         <div className="rrf-shell">
           {loadingPage && !sessionChecked ? (
@@ -2675,7 +2648,7 @@ export default function ReliefRequestForm() {
                                 <strong>{totalIndividuals}</strong>
                               </div>
                               <div className="rrf-summary-item">
-                                <span>Vulnerable</span>
+                                <span title="Overlapping subgroup counts; a person may belong to more than one group.">Vulnerable</span>
                                 <strong>{vulnerableCount}</strong>
                               </div>
                               <div className="rrf-summary-item emphasis">
@@ -2728,6 +2701,7 @@ export default function ReliefRequestForm() {
                                 <th>PWD</th>
                                 <th>Pregnant</th>
                                 <th>Senior</th>
+                                <th>Individuals</th>
                                 <th>Food Packs</th>
                                 <th className="rrf-left-cell">Row Remarks</th>
                               </tr>
@@ -2757,11 +2731,15 @@ export default function ReliefRequestForm() {
                                   </td>
 
                                   {numberFields.map((field) => (
-                                    <td key={`${field}-${index}`} className="rrf-number-cell">
+                                    <Fragment key={`${field}-${index}`}>
+                                    <td className="rrf-number-cell">
                                       <input
                                         type="number"
                                         min="0"
-                                        value={row[field]}
+                                        value={row[field] || ''}
+                                        placeholder="0"
+                                        step="1"
+                                        aria-label={`${row.evacuationCenterName} ${RELIEF_COUNT_LABELS[field]}`}
                                         onChange={(e) =>
                                           handleRowNumberChange(index, field, e.target.value)
                                         }
@@ -2772,6 +2750,10 @@ export default function ReliefRequestForm() {
                                         }
                                       />
                                     </td>
+                                    {field === 'senior' && (
+                                      <td aria-label={`${row.evacuationCenterName} Individuals`}>{getAffectedPeopleCountForRow(row)}</td>
+                                    )}
+                                    </Fragment>
                                   ))}
 
                                   <td className="rrf-left-cell rrf-cell-remarks">
@@ -2802,6 +2784,7 @@ export default function ReliefRequestForm() {
                                 <td>{totals.pwd}</td>
                                 <td>{totals.pregnant}</td>
                                 <td>{totals.senior}</td>
+                                <td>{getAffectedPeopleCountForRow(totals)}</td>
                                 <td>{includesFoodPacks ? totals.requestedFoodPacks : '-'}</td>
                                 <td />
                               </tr>
@@ -3017,7 +3000,7 @@ export default function ReliefRequestForm() {
                           </div>
 
                           <div className="rrf-request-metric neutral">
-                            <span>Vulnerable Count</span>
+                            <span title="Overlapping subgroup counts; a person may belong to more than one group.">Vulnerable Count</span>
                             <strong>{displayVulnerableCount}</strong>
                           </div>
 

@@ -98,3 +98,40 @@ describe("reliefImportUtils", () => {
       ).toBe(false);
     });
   });
+
+
+describe("spreadsheet population validation", () => {
+  const { getReliefImportPopulationIssues } = require("./reliefImportUtils");
+  test("reports original worksheet row and does not silently fix totals", () => {
+    expect(getReliefImportPopulationIssues([{ "Evacuation Center": "Hall", Male: 40, Female: 40, "Total Individuals": 89 }])).toEqual([expect.stringMatching(/Row 2.*Individuals.*80/)]);
+  });
+  test("validates raw counts before coercion", () => {
+    expect(getReliefImportPopulationIssues([{ "Evacuation Center": "Hall", Male: "bad", Female: 40 }])).toEqual([expect.stringMatching(/Row 2.*Male/)]);
+  });
+  test("accepts existing spreadsheets without Individuals and valid overlap", () => {
+    expect(getReliefImportPopulationIssues([{ "Evacuation Center": "Hall", Male: 40, Female: 40, Senior: 80, PWD: 80 }])).toEqual([]);
+  });
+});
+
+
+test("allows appliance-only continuation rows alongside a valid evacuation row", () => {
+  const { getReliefImportPopulationIssues } = require("./reliefImportUtils");
+  expect(getReliefImportPopulationIssues([
+    { "Evacuation Center": "Hall", Male: 40, Female: 40 },
+    { "Appliance Name": "Fan", "Appliance Category": "Cooling", "Appliance Quantity": 2 }
+  ])).toEqual([]);
+});
+
+
+test("reads real XLSX headers and counts before validating the supplied total", () => {
+  const XLSX = require("xlsx");
+  const { getReliefImportPopulationIssues } = require("./reliefImportUtils");
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([
+    { "Evacuation Center": "Hall", Male: 40, Female: 40, "Total Individuals": 89 },
+    { "Evacuation Center": "School", Male: 30, Female: 45, "Total Individuals": 75, Pregnant: 10, Senior: 20 }
+  ]), "Requests");
+  const read = XLSX.read(XLSX.write(workbook, { type: "array", bookType: "xlsx" }), { type: "array" });
+  const rows = XLSX.utils.sheet_to_json(read.Sheets.Requests, { defval: "", raw: false });
+  expect(getReliefImportPopulationIssues(rows)).toEqual([expect.stringMatching(/Row 2.*Individuals.*80/)]);
+});

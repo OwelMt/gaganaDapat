@@ -47,6 +47,8 @@ const requestRowSchema = new mongoose.Schema(
       min: 0,
     },
 
+    individuals: { type: Number, default: 0, min: 0 },
+
     lgbtq: {
       type: Number,
       default: 0,
@@ -184,6 +186,7 @@ const reliefRequestSchema = new mongoose.Schema(
       families: { type: Number, default: 0, min: 0 },
       male: { type: Number, default: 0, min: 0 },
       female: { type: Number, default: 0, min: 0 },
+      individuals: { type: Number, default: 0, min: 0 },
       lgbtq: { type: Number, default: 0, min: 0 },
       pwd: { type: Number, default: 0, min: 0 },
       pregnant: { type: Number, default: 0, min: 0 },
@@ -358,6 +361,9 @@ prioritySnapshot: {
 
 reliefRequestSchema.pre("save", function () {
   const rows = this.rows || [];
+  rows.forEach((row) => {
+    row.individuals = (Number(row.male) || 0) + (Number(row.female) || 0);
+  });
   const activeRows = rows.filter((row) => row && row.isActiveRow !== false);
   const requestedMonetaryAmount = Number(this.totals?.requestedMonetaryAmount) || 0;
   const requestedAppliances = Array.isArray(this.requestedAppliances)
@@ -392,6 +398,7 @@ reliefRequestSchema.pre("save", function () {
   this.requestedAppliances = requestedAppliances;
 
   this.totals = {
+    individuals: activeRows.reduce((sum, row) => sum + row.individuals, 0),
     households: activeRows.reduce((sum, row) => sum + (Number(row.households) || 0), 0),
     families: activeRows.reduce((sum, row) => sum + (Number(row.families) || 0), 0),
     male: activeRows.reduce((sum, row) => sum + (Number(row.male) || 0), 0),

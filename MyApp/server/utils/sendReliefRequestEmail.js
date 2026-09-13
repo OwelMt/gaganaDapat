@@ -91,6 +91,7 @@ function drawTableHeader(doc, y) {
     { key: "pwd", label: "PWD", width: 38, align: "center" },
     { key: "pregnant", label: "Preg.", width: 44, align: "center" },
     { key: "senior", label: "Senior", width: 44, align: "center" },
+    { key: "individuals", label: "Individuals", width: 70, align: "center" },
     { key: "requestedFoodPacks", label: "Food Packs", width: 60, align: "center" },
   ];
   const baseTotalWidth = baseColumns.reduce((sum, col) => sum + col.width, 0);
@@ -151,6 +152,7 @@ function drawTableRow(doc, row, index, y, tableMeta) {
     pwd: String(Number(row.pwd) || 0),
     pregnant: String(Number(row.pregnant) || 0),
     senior: String(Number(row.senior) || 0),
+    individuals: String((Number(row.male) || 0) + (Number(row.female) || 0)),
     requestedFoodPacks: String(Number(row.requestedFoodPacks) || 0),
   };
 
@@ -341,6 +343,9 @@ function generateReliefRequestPdf(request) {
         width: 150,
       });
 
+      y += 18;
+      doc.text(`Individuals: ${(Number(totals.male) || 0) + (Number(totals.female) || 0)}`, 40, y, { width: 160 });
+
       addPdfFooter(doc);
       doc.end();
 
@@ -385,6 +390,7 @@ const sendReliefRequestEmail = async (request) => {
           <td>${Number(row.pwd) || 0}</td>
           <td>${Number(row.pregnant) || 0}</td>
           <td>${Number(row.senior) || 0}</td>
+          <td>${(Number(row.male) || 0) + (Number(row.female) || 0)}</td>
           <td>${Number(row.requestedFoodPacks) || 0}</td>
         </tr>
       `
@@ -435,6 +441,7 @@ const sendReliefRequestEmail = async (request) => {
               <th>PWD</th>
               <th>Pregnant</th>
               <th>Senior</th>
+              <th>Individuals</th>
               <th>Requested Food Packs</th>
             </tr>
           </thead>
@@ -453,6 +460,7 @@ const sendReliefRequestEmail = async (request) => {
           <li>PWD: ${Number(request.totals?.pwd) || 0}</li>
           <li>Pregnant: ${Number(request.totals?.pregnant) || 0}</li>
           <li>Senior: ${Number(request.totals?.senior) || 0}</li>
+          <li>Individuals: ${(Number(request.totals?.male) || 0) + (Number(request.totals?.female) || 0)}</li>
           <li>Requested Food Packs: ${Number(request.totals?.requestedFoodPacks) || 0}</li>
         </ul>
 

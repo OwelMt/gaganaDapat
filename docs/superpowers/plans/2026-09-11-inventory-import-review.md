@@ -1,0 +1,3 @@
+# Inventory import review before save
+
+Import parses the worksheet and stages valid rows without proof validation or API writes. Show all pending rows in the existing donation form style, replacing manual data entry panels with a preview. Users upload shared proof files afterward and explicitly click Save. Validate proofs only on Save. Preserve pending rows when a replacement import fails. Clear pending rows on reset/type change/back. Remove confirmed saved rows from the pending batch so a retry after a server rejection does not repeat them. Keep manual single-record behavior. Verify goods and monetary imports, proof gating, cancellation, and partial-save retry.

@@ -156,11 +156,7 @@ const getAffectedTotal = (request) => {
   const totals = request?.totals || {};
   return (
     toNumber(totals.male) +
-    toNumber(totals.female) +
-    toNumber(totals.lgbtq) +
-    toNumber(totals.pwd) +
-    toNumber(totals.pregnant) +
-    toNumber(totals.senior)
+    toNumber(totals.female)
   );
 };
 
@@ -766,6 +762,7 @@ Rules:
 - Treat legacy partially_released data as old workflow information only.
 - Do not recommend partial releases.
 - Do not invent barangays, requests, releases, or totals.
+- Individuals and totalAffected count Male + Female only. Vulnerable counts sum overlapping PWD, pregnant, and senior breakdowns; they are not unique people and may exceed Individuals.
 
 Facts:
 ${JSON.stringify(facts)}

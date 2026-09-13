@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import DashboardShell from '../layout/DashboardShell';
 import '../css/ReliefTracking.css';
 import { API_BASE_URL } from "../../config/api";
+import { getRequestIndividuals, getRowIndividuals, getVisibleRows, getVisibleRowTotals } from './requestListUtils';
 
 const BASE_URL = API_BASE_URL;
 
@@ -161,17 +162,10 @@ export default function ReliefTracking() {
     };
   }, [rows, filteredRows]);
 
-  const getTotalIndividuals = (request) => {
-    const totals = request?.totals || {};
-    return (
-      Number(totals.male || 0) +
-      Number(totals.female || 0) +
-      Number(totals.lgbtq || 0) +
-      Number(totals.pwd || 0) +
-      Number(totals.pregnant || 0) +
-      Number(totals.senior || 0)
-    );
-  };
+  const selectedRows = getVisibleRows(selectedRequest);
+  const selectedTotals = Array.isArray(selectedRequest?.rows) && selectedRequest.rows.length > 0
+    ? getVisibleRowTotals(selectedRequest)
+    : selectedRequest?.totals || {};
 
   const formatDate = (date) => {
     if (!date) return '-';
@@ -556,12 +550,13 @@ export default function ReliefTracking() {
                           <th>PWD</th>
                           <th>Pregnant</th>
                           <th>Senior</th>
+                          <th>Individuals</th>
                           <th>Food Packs</th>
                         </tr>
                       </thead>
 
                       <tbody>
-                        {(selectedRequest.rows || []).map((row, index) => (
+                        {selectedRows.map((row, index) => (
                           <tr key={index}>
                             <td>{index + 1}</td>
                             <td className="rtk-left-cell">{row.evacuationCenterName || '-'}</td>
@@ -573,6 +568,7 @@ export default function ReliefTracking() {
                             <td>{row.pwd || 0}</td>
                             <td>{row.pregnant || 0}</td>
                             <td>{row.senior || 0}</td>
+                            <td>{getRowIndividuals(row)}</td>
                             <td>{row.requestedFoodPacks || 0}</td>
                           </tr>
                         ))}
@@ -583,15 +579,16 @@ export default function ReliefTracking() {
                           <td colSpan="2" className="rtk-total-label">
                             TOTAL
                           </td>
-                          <td>{selectedRequest.totals?.households || 0}</td>
-                          <td>{selectedRequest.totals?.families || 0}</td>
-                          <td>{selectedRequest.totals?.male || 0}</td>
-                          <td>{selectedRequest.totals?.female || 0}</td>
-                          <td>{selectedRequest.totals?.lgbtq || 0}</td>
-                          <td>{selectedRequest.totals?.pwd || 0}</td>
-                          <td>{selectedRequest.totals?.pregnant || 0}</td>
-                          <td>{selectedRequest.totals?.senior || 0}</td>
-                          <td>{selectedRequest.totals?.requestedFoodPacks || 0}</td>
+                          <td>{selectedTotals.households || 0}</td>
+                          <td>{selectedTotals.families || 0}</td>
+                          <td>{selectedTotals.male || 0}</td>
+                          <td>{selectedTotals.female || 0}</td>
+                          <td>{selectedTotals.lgbtq || 0}</td>
+                          <td>{selectedTotals.pwd || 0}</td>
+                          <td>{selectedTotals.pregnant || 0}</td>
+                          <td>{selectedTotals.senior || 0}</td>
+                          <td>{getRequestIndividuals(selectedRequest)}</td>
+                          <td>{selectedTotals.requestedFoodPacks || 0}</td>
                         </tr>
                       </tfoot>
                     </table>
@@ -608,23 +605,23 @@ export default function ReliefTracking() {
                     <div className="rtk-summary-list">
                       <div className="rtk-summary-item">
                         <span>Evacuation Centers</span>
-                        <strong>{selectedRequest.rows?.length || 0}</strong>
+                        <strong>{selectedRows.length}</strong>
                       </div>
                       <div className="rtk-summary-item">
                         <span>Total Households</span>
-                        <strong>{selectedRequest.totals?.households || 0}</strong>
+                        <strong>{selectedTotals.households || 0}</strong>
                       </div>
                       <div className="rtk-summary-item">
                         <span>Total Families</span>
-                        <strong>{selectedRequest.totals?.families || 0}</strong>
+                        <strong>{selectedTotals.families || 0}</strong>
                       </div>
                       <div className="rtk-summary-item">
                         <span>Total Individuals</span>
-                        <strong>{getTotalIndividuals(selectedRequest)}</strong>
+                        <strong>{getRequestIndividuals(selectedRequest)}</strong>
                       </div>
                       <div className="rtk-summary-item emphasis">
                         <span>Requested Food Packs</span>
-                        <strong>{selectedRequest.totals?.requestedFoodPacks || 0}</strong>
+                        <strong>{selectedTotals.requestedFoodPacks || 0}</strong>
                       </div>
                     </div>
 

@@ -5,7 +5,8 @@ import {
   SUPPORT_TYPE_MONETARY,
   normalizeSupportTypes,
 } from "./supportTypes";
-import { normalizeHeader } from "../shared/spreadsheetImportUtils";
+import { getReliefRowPopulationError } from "./reliefRequestValidation";
+import { mapSpreadsheetRow, normalizeHeader } from "../shared/spreadsheetImportUtils";
 
 export const RELIEF_IMPORT_HEADER_ALIASES = {
   requestType: [
@@ -71,6 +72,7 @@ export const RELIEF_IMPORT_HEADER_ALIASES = {
     "evac name",
     "name",
   ],
+  individuals: ["individuals", "individual", "total individuals", "totalindividuals", "total individual", "total people", "total population", "individual count", "individuals count"],
   households: ["households", "household"],
   families: ["families", "family"],
   male: ["male", "males"],
@@ -257,4 +259,20 @@ export const shouldShowConfirmReceivedAction = ({
   }
 
   return false;
+};
+
+// Check original cells before parseSafeNumber can turn invalid counts into zero.
+export const getReliefImportPopulationIssues = (rawRows = []) => {
+  const issues = [];
+  rawRows.forEach((rawRow, index) => {
+    const row = mapSpreadsheetRow(rawRow, RELIEF_IMPORT_HEADER_ALIASES);
+    // Extra appliance/monetary rows may contain no evacuation population.
+    const hasPopulationCells = ["male", "female", "lgbtq", "pwd", "pregnant", "senior", "individuals"].some(
+      (field) => row[field] !== undefined && row[field] !== null && String(row[field]).trim() !== ""
+    );
+    if (!String(row.evacuationCenterName || "").trim() && !hasPopulationCells) return;
+    const error = getReliefRowPopulationError(row);
+    if (error) issues.push(`Row ${rawRow.__rowNum__ !== undefined ? rawRow.__rowNum__ + 1 : index + 2}${row.evacuationCenterName ? ` (${row.evacuationCenterName})` : ""}: ${error}`);
+  });
+  return issues;
 };

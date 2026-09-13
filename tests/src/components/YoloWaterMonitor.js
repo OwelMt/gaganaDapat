@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { FaClock, FaPlay, FaStop, FaSyncAlt, FaTint, FaVideo } from "react-icons/fa";
 import { API_BASE_URL } from "../config/api";
+import "./css/YoloWaterMonitor.css";
 
 export default function YoloWaterMonitor() {
   const [running, setRunning] = useState(false);
@@ -43,23 +45,23 @@ export default function YoloWaterMonitor() {
     return response.json();
   };
 
-  const checkStatus = async () => {
+  const checkStatus = useCallback(async () => {
     try {
       const data = await getYoloStatus();
       setRunning(Boolean(data.running));
     } catch (error) {
       console.error("YOLO status error:", error);
     }
-  };
+  }, []);
 
-  const loadLatestWaterLevel = async () => {
+  const loadLatestWaterLevel = useCallback(async () => {
     try {
       const data = await getLatestWaterLevel("cam_1");
       setWaterLevel(data);
     } catch (error) {
       console.error("Water level error:", error);
     }
-  };
+  }, []);
 
   const handleStart = async () => {
     try {
@@ -114,52 +116,95 @@ export default function YoloWaterMonitor() {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [checkStatus, loadLatestWaterLevel]);
+
+  const waterStatus = String(waterLevel?.status || "No data yet");
+  const waterStatusTone = waterStatus.toLowerCase();
+  const hasWaterLevel = waterLevel?.water_level !== undefined && waterLevel?.water_level !== null;
+  const waterLevelDisplay = hasWaterLevel ? `${waterLevel.water_level} m` : "No data";
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>YOLO TEST PAGE LOADED</h1>
-      <h2>YOLO Water Level Monitor</h2>
+    <main className="yolo-water-page">
+      <section className="yolo-water-shell">
+        <section className="yolo-monitor-console">
+          <div className="yolo-console-header">
+            <div className="yolo-console-title">
+              <span className="yolo-water-kicker">Water monitoring control</span>
+              <h1>YOLO Water Level Monitor</h1>
+            </div>
 
-      <p>
-        <strong>YOLO Status:</strong>{" "}
-        <span style={{ color: running ? "green" : "red" }}>
-          {running ? "Running" : "Not Running"}
-        </span>
-      </p>
+            <div className="yolo-console-status-group" aria-label="Monitor status">
+              <span className={`yolo-process-pill ${running ? "is-running" : "is-stopped"}`}>
+                <span className="yolo-status-dot" aria-hidden="true" />
+                {running ? "Detector running" : "Detector stopped"}
+              </span>
+              <span className={`yolo-reading-badge ${waterStatusTone}`}>{waterStatus}</span>
+            </div>
+          </div>
 
-      <button onClick={handleStart} disabled={loading || running}>
-        {loading ? "Loading..." : "Start YOLO"}
-      </button>
+          <div className="yolo-console-body">
+            <section className={`yolo-level-panel ${waterStatusTone}`}>
+              <span className="yolo-panel-label">
+                <FaTint aria-hidden="true" />
+                Current Water Level
+              </span>
+              <strong>{waterLevelDisplay}</strong>
+              <small>Camera feed: {waterLevel?.camera_id || "No data yet"}</small>
+            </section>
 
-      <button
-        onClick={handleStop}
-        disabled={loading || !running}
-        style={{ marginLeft: 10 }}
-      >
-        {loading ? "Loading..." : "Stop YOLO"}
-      </button>
+            <section className="yolo-info-panel" aria-label="Latest monitoring details">
+              <div className="yolo-info-item">
+                <span>
+                  <FaVideo aria-hidden="true" />
+                  Camera
+                </span>
+                <strong>{waterLevel?.camera_id || "No data yet"}</strong>
+              </div>
 
-      <hr />
+              <div className="yolo-info-item">
+                <span>
+                  <FaClock aria-hidden="true" />
+                  Updated
+                </span>
+                <strong>{waterLevel?.timestamp || "No data yet"}</strong>
+              </div>
 
-      <h3>Latest Water Level</h3>
+              <div className="yolo-info-item">
+                <span>
+                  <FaSyncAlt aria-hidden="true" />
+                  Refresh
+                </span>
+                <strong>Every 5 seconds</strong>
+              </div>
+            </section>
 
-      <p>
-        <strong>Camera:</strong> {waterLevel?.camera_id || "No data yet"}
-      </p>
+            <section className="yolo-control-panel" aria-label="YOLO process controls">
+              <span className="yolo-panel-label">Process Controls</span>
+              <div className="yolo-water-actions">
+                <button
+                  type="button"
+                  className="yolo-water-btn yolo-water-btn-primary"
+                  onClick={handleStart}
+                  disabled={loading || running}
+                >
+                  <FaPlay aria-hidden="true" />
+                  {loading ? "Loading..." : "Start YOLO"}
+                </button>
 
-      <p>
-        <strong>Water Level:</strong>{" "}
-        {waterLevel?.water_level ?? "No data yet"} m
-      </p>
-
-      <p>
-        <strong>Status:</strong> {waterLevel?.status || "No data yet"}
-      </p>
-
-      <p>
-        <strong>Updated:</strong> {waterLevel?.timestamp || "No data yet"}
-      </p>
-    </div>
+                <button
+                  type="button"
+                  className="yolo-water-btn yolo-water-btn-outline"
+                  onClick={handleStop}
+                  disabled={loading || !running}
+                >
+                  <FaStop aria-hidden="true" />
+                  {loading ? "Loading..." : "Stop YOLO"}
+                </button>
+              </div>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
   );
 }

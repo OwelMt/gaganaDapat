@@ -1,5 +1,13 @@
 const normalize = (value) => String(value || "").trim().toLowerCase();
 
+export const getRowIndividuals = (row = {}) =>
+  Number(row?.male || 0) + Number(row?.female || 0);
+
+export const getRequestIndividuals = (request = {}) =>
+  Array.isArray(request?.rows) && request.rows.length > 0
+    ? getVisibleRowTotals(request).individuals
+    : getRowIndividuals(request?.totals);
+
 export const getVisibleRows = (request = {}) =>
   (Array.isArray(request?.rows) ? request.rows : []).filter(
     (row) => row && row.isActiveRow !== false
@@ -20,6 +28,7 @@ export const getVisibleRowTotals = (request = {}) => {
       pwd: totals.pwd + Number(row?.pwd || 0),
       pregnant: totals.pregnant + Number(row?.pregnant || 0),
       senior: totals.senior + Number(row?.senior || 0),
+      individuals: totals.individuals + getRowIndividuals(row),
       requestedFoodPacks:
         totals.requestedFoodPacks + Number(row?.requestedFoodPacks || 0),
     }),
@@ -32,6 +41,7 @@ export const getVisibleRowTotals = (request = {}) => {
       pwd: 0,
       pregnant: 0,
       senior: 0,
+      individuals: 0,
       requestedFoodPacks: 0,
     }
   );

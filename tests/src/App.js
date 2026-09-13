@@ -1,7 +1,7 @@
 import './App.css';
 import './components/css/sidebar.css'; // ← add this
 import './components/css/ThemeTokens.css';
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext"; // ← add this
@@ -9,7 +9,6 @@ import 'leaflet/dist/leaflet.css';
 
 import IncidentReport from './components/IncidentReport';
 import AuditTrails from './components/AuditTrails';
-import EManagement from './components/EManagement';
 import Login from "./components/auth/Login";
 import Register from "./components/auth/Register";
 import Dashboard from "./components/entry/Dashboard";
@@ -19,8 +18,6 @@ import BarangayDashboard from "./components/dashboards/BarangayDashboard";
 import DRRMODashboard from "./components/dashboards/DRRMODashboard";
 import AdminDashboard from "./components/dashboards/AdminDashboard";
 import AccountantDashboard from "./components/dashboards/AccountantDashboard";
-import ReliefRequestForm from "./components/relief/ReliefRequestForm";
-import ReliefRequestsList from "./components/relief/ReliefRequestsList";
 import ReliefTracking from "./components/relief/ReliefTracking";
 import AuditTrail from './components/relief/AuditTrail';
 import HomeGuidelines from './components/guidelines/HomeGuidelines';
@@ -37,8 +34,6 @@ import YoloWaterMonitor from './components/YoloWaterMonitor';
 import UnityDigitalTwin1 from './components/DigitalTwin/UnityDigitalTwin1';
 import FloodVirtualTwin1 from './components/FloodVirtualTwin1';
 
-import Inventory from './components/Donations/Inventory';
-import InventoryAdd from './components/Donations/InventoryAdd';
 import DonationValidationQueue from './components/Donations/DonationValidationQueue';
 import SplashScreen from './components/splashscreen/SplashScreen';
 import {
@@ -48,6 +43,12 @@ import {
 import './components/css/OverlayFixes.css';
 
 const BASE_URL = process.env.REACT_APP_API_URL || "https://gaganadapat.onrender.com";
+
+const EManagement = lazy(() => import("./components/EManagement"));
+const ReliefRequestForm = lazy(() => import("./components/relief/ReliefRequestForm"));
+const ReliefRequestsList = lazy(() => import("./components/relief/ReliefRequestsList"));
+const Inventory = lazy(() => import("./components/Donations/Inventory"));
+const InventoryAdd = lazy(() => import("./components/Donations/InventoryAdd"));
 
 const ADMIN_ONLY = ["admin"];
 const ACCOUNTANT_ONLY = ["accountant"];
@@ -133,6 +134,10 @@ function SessionGate({ allowedRoles = ALL_AUTH, children }) {
 
 function sessionElement(element, allowedRoles) {
   return <SessionGate allowedRoles={allowedRoles}>{element}</SessionGate>;
+}
+
+function withRouteFallback(element) {
+  return <Suspense fallback={<SplashScreen />}>{element}</Suspense>;
 }
 
 function LoginGate({ children }) {
@@ -256,15 +261,17 @@ const ROUTES = [
 
 function App() {
   const renderRoute = (route) => {
+    const routedElement = withRouteFallback(route.element);
+
     if (route.path === "/Login") {
-      return <LoginGate>{route.element}</LoginGate>;
+      return <LoginGate>{routedElement}</LoginGate>;
     }
 
     if (!route.roles) {
-      return route.element;
+      return routedElement;
     }
 
-    return sessionElement(route.element, route.roles);
+    return sessionElement(routedElement, route.roles);
   };
 
   return (

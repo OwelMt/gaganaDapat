@@ -58,7 +58,7 @@ router.post(
   "/",
   requireLogin,
   requireAdminOrDrrmo,
-  uploadProof.array("proofFiles", 5),
+  uploadProof.array("proofFiles", 2),
   inventoryController.addInventory
 );
 
@@ -74,7 +74,7 @@ router.put(
   "/:id",
   requireLogin,
   requireAdminOrDrrmo,
-  uploadProof.array("proofFiles", 5),
+  uploadProof.array("proofFiles", 2),
   inventoryController.updateInventory
 );
 
