@@ -2,7 +2,13 @@ const mongoose = require("mongoose");
 
 const UserModel = require("../models/User");
 const ConnectionModel = require("../models/Connection");
+const SafetyDebugLocation = require("../models/SafetyDebugLocation");
+const BarangayCollection = require("../models/barangayCollection");
 const { sendExpoPushNotifications } = require("../utils/sendExpoPushNotifications");
+const jaenGeoJSON = require("../../screens/data/jaen.json");
+
+const SAFETY_DEBUG_FEATURE_ENABLED =
+  String(process.env.ENABLE_SAFETY_DEBUG || "true").toLowerCase() !== "false";
 
 function normalizeConnectionCode(code) {
   return String(code || "")
@@ -20,6 +26,145 @@ function hasMember(list, userId) {
   return Array.isArray(list) && list.some((id) => idsMatch(id, userId));
 }
 
+function toFiniteCoordinate(value) {
+  const coordinate = Number(value);
+  return Number.isFinite(coordinate) ? coordinate : null;
+}
+
+function pointInRing(latitude, longitude, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = Number(ring[i]?.[0]);
+    const yi = Number(ring[i]?.[1]);
+    const xj = Number(ring[j]?.[0]);
+    const yj = Number(ring[j]?.[1]);
+    const intersects =
+      yi > latitude !== yj > latitude &&
+      longitude < ((xj - xi) * (latitude - yi)) / (yj - yi || Number.EPSILON) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function isInsideJaen(latitude, longitude) {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
+  return (jaenGeoJSON?.features || []).some(({ geometry }) => {
+    const polygons = geometry?.type === "Polygon"
+      ? [geometry.coordinates]
+      : geometry?.type === "MultiPolygon"
+        ? geometry.coordinates
+        : [];
+    return polygons.some((polygon) => {
+      const [outer, ...holes] = polygon || [];
+      return (
+        Array.isArray(outer) &&
+        pointInRing(latitude, longitude, outer) &&
+        !holes.some((hole) => pointInRing(latitude, longitude, hole))
+      );
+    });
+  });
+}
+
+function isInsideGeometry(latitude, longitude, geometry) {
+  const polygons = geometry?.type === "Polygon"
+    ? [geometry.coordinates]
+    : geometry?.type === "MultiPolygon"
+      ? geometry.coordinates
+      : [];
+  return polygons.some((polygon) => {
+    const [outer, ...holes] = polygon || [];
+    return (
+      Array.isArray(outer) &&
+      pointInRing(latitude, longitude, outer) &&
+      !holes.some((hole) => pointInRing(latitude, longitude, hole))
+    );
+  });
+}
+
+async function resolveDebugAreaLabel(latitude, longitude) {
+  if (!isInsideJaen(latitude, longitude)) return "Jaen, Nueva Ecija";
+  const collections = await BarangayCollection.find({})
+    .select("features.properties features.geometry")
+    .lean();
+  const feature = collections
+    .flatMap((collection) => collection?.features || [])
+    .find((item) => isInsideGeometry(latitude, longitude, item?.geometry));
+  const barangayName = String(feature?.properties?.name || "").trim();
+  return barangayName
+    ? `Barangay ${barangayName}, Jaen, Nueva Ecija`
+    : "Jaen, Nueva Ecija";
+}
+
+async function resolveSafetyAlertLocation(user) {
+  if (!user?._id) return { state: "unavailable", source: "live" };
+
+  const debugMarker = SAFETY_DEBUG_FEATURE_ENABLED
+    ? await SafetyDebugLocation.findOne({
+        userId: String(user._id),
+        debugMode: true,
+      }).lean()
+    : null;
+  const debugLatitude = toFiniteCoordinate(debugMarker?.latitude);
+  const debugLongitude = toFiniteCoordinate(debugMarker?.longitude);
+  const usingDebugLocation =
+    debugMarker?.debugMode === true && isInsideJaen(debugLatitude, debugLongitude);
+
+  if (user.shareSafetyLocation !== true) {
+    return {
+      state: "sharing_disabled",
+      source: usingDebugLocation ? "debug" : "live",
+      isTest: usingDebugLocation,
+      sharingEnabled: false,
+    };
+  }
+
+  if (usingDebugLocation) {
+    const areaLabel = await resolveDebugAreaLabel(debugLatitude, debugLongitude);
+    return {
+      state: "simulated",
+      source: "debug",
+      isTest: true,
+      sharingEnabled: true,
+      latitude: debugLatitude,
+      longitude: debugLongitude,
+      areaLabel,
+    };
+  }
+
+  const liveLatitude = toFiniteCoordinate(user?.location?.lat);
+  const liveLongitude = toFiniteCoordinate(user?.location?.lng);
+  if (liveLatitude === null || liveLongitude === null) {
+    return { state: "unavailable", source: "live", isTest: false, sharingEnabled: true };
+  }
+  if (!isInsideJaen(liveLatitude, liveLongitude)) {
+    return { state: "outside", source: "live", isTest: false, sharingEnabled: true };
+  }
+
+  return {
+    state: "live",
+    source: "live",
+    isTest: false,
+    sharingEnabled: true,
+    latitude: liveLatitude,
+    longitude: liveLongitude,
+  };
+}
+
+function formatSafetyAlertLocation(location) {
+  if (location?.state === "sharing_disabled") return "Location sharing disabled.";
+  if (location?.state === "outside") {
+    return "Location is outside Jaen and is not being shared.";
+  }
+  if (location?.state === "unavailable") return "Current location unavailable.";
+  if (Number.isFinite(location?.latitude) && Number.isFinite(location?.longitude)) {
+    const coordinates = `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
+    return location.state === "simulated"
+      ? `Simulated area: ${location.areaLabel || "Jaen, Nueva Ecija"}.`
+      : `Current GPS location: ${coordinates}.`;
+  }
+  return "Current location unavailable.";
+}
+
 async function addNotification(userId, notification) {
   if (!mongoose.Types.ObjectId.isValid(String(userId || ""))) return;
 
@@ -27,6 +172,7 @@ async function addNotification(userId, notification) {
     $push: {
       notifications: {
         type: notification.type,
+        title: notification.title || "",
         message: notification.message,
         notificationType: notification.notificationType || "normal",
         soundType: notification.soundType || "notification",
@@ -43,6 +189,7 @@ async function addNotification(userId, notification) {
         actorUsername: notification.actorUsername || "",
         actorAvatar: notification.actorAvatar || "",
         connectionCode: notification.connectionCode || "",
+        metadata: notification.metadata || {},
         actionable: Boolean(notification.actionable),
         handledAt: notification.handledAt || null,
         read: false,
@@ -67,7 +214,7 @@ async function notifyConnectionMembersSafetyUpdate(user, status, message = "") {
   if (!user?._id) return;
 
   const connections = await ConnectionModel.find({
-    members: user._id,
+    $or: [{ members: user._id }, { creator: user._id }],
   }).select("_id code creator members");
 
   if (!connections.length) return;
@@ -80,21 +227,26 @@ async function notifyConnectionMembersSafetyUpdate(user, status, message = "") {
   const isSafe = status === "SAFE";
   const notificationType = isSafe ? "safety_safe" : "safety_not_safe";
 
-  const baseMessage = isSafe
-    ? `${actorName} marked themselves as safe.`
-    : `${actorName} marked themselves as not safe and may need help.`;
-
   const cleanMessage = String(message || "").trim();
 
-  const notificationMessage = cleanMessage
-    ? `${baseMessage} Message: ${cleanMessage}`
-    : baseMessage;
+  const safetyLocation = isSafe ? null : await resolveSafetyAlertLocation(user);
+  const locationMessage = isSafe ? "" : formatSafetyAlertLocation(safetyLocation);
+  const isTestAlert = !isSafe && safetyLocation?.isTest === true;
+  const notificationTitle = isTestAlert
+    ? "TEST ALERT - Needs help"
+    : isSafe
+      ? "Marked safe"
+      : "Needs help";
+
+  const notificationMessage = isSafe
+    ? `Message: ${cleanMessage || "I am safe"}`
+    : `${isTestAlert ? "TEST ALERT. " : ""}Message: ${cleanMessage || "Need help"}${locationMessage ? ` ${locationMessage}` : ""}`;
 
   const jobs = [];
   const recipientIds = new Set();
 
   connections.forEach((connection) => {
-    const members = Array.isArray(connection.members) ? connection.members : [];
+    const members = [connection.creator, ...(Array.isArray(connection.members) ? connection.members : [])];
 
     members.forEach((memberId) => {
       if (!memberId) return;
@@ -102,17 +254,37 @@ async function notifyConnectionMembersSafetyUpdate(user, status, message = "") {
       // Do not notify the same user who marked their own status.
       if (idsMatch(memberId, user._id)) return;
 
-      recipientIds.add(String(memberId));
+      const recipientId = String(memberId);
+      if (recipientIds.has(recipientId)) return;
+      recipientIds.add(recipientId);
       jobs.push(
         addNotification(memberId, {
           type: notificationType,
+          title: notificationTitle,
           message: notificationMessage,
+          notificationType: isSafe ? "normal" : "danger",
+          soundType: isSafe ? "notification" : "danger",
           connectionId: connection._id,
           actorUserId: user._id,
           actorName,
           actorUsername: user.username || "",
           actorAvatar: user.avatar || "",
           connectionCode: connection.code || "",
+          metadata: {
+            safetyStatus: status,
+            locationLabel:
+              safetyLocation?.state === "simulated"
+                ? `Simulated area: ${safetyLocation?.areaLabel || "Jaen, Nueva Ecija"}`
+                : safetyLocation?.state === "live"
+                  ? "Current GPS location"
+                  : "",
+            latitude: safetyLocation?.latitude ?? null,
+            longitude: safetyLocation?.longitude ?? null,
+            locationSource: safetyLocation?.source || "",
+            locationState: safetyLocation?.state || "none",
+            sharingEnabled: safetyLocation?.sharingEnabled === true,
+            isTest: isTestAlert,
+          },
           actionable: false,
         })
       );
@@ -129,7 +301,7 @@ async function notifyConnectionMembersSafetyUpdate(user, status, message = "") {
     .lean();
 
   await sendExpoPushNotifications(recipients, {
-    title: isSafe ? "Safety update" : "Safety alert",
+    title: notificationTitle,
     body: notificationMessage,
     soundType: isSafe ? "notification" : "danger",
     priority: isSafe ? "default" : "high",
@@ -137,6 +309,19 @@ async function notifyConnectionMembersSafetyUpdate(user, status, message = "") {
       type: notificationType,
       soundType: isSafe ? "notification" : "danger",
       actorUserId: String(user._id),
+      latitude: safetyLocation?.latitude ?? null,
+      longitude: safetyLocation?.longitude ?? null,
+      locationLabel:
+        safetyLocation?.state === "simulated"
+          ? `Simulated area: ${safetyLocation?.areaLabel || "Jaen, Nueva Ecija"}`
+          : safetyLocation?.state === "live"
+            ? "Current GPS location"
+            : "",
+      locationSource: safetyLocation?.source || "",
+      locationState: safetyLocation?.state || "none",
+      sharingEnabled: safetyLocation?.sharingEnabled === true,
+      isTest: isTestAlert,
+      screen: "SafetyMark",
     },
   });
 }
