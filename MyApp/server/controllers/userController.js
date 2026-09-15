@@ -10,7 +10,6 @@ const sendEmailNotification = require("../utils/sendEmailNotification");
 const { sendUniSms } = require("../utils/sendUniSms");
 const cloudinary = require("../config/cloudinary");
 const bcrypt = require("bcryptjs");
-const { issueUserAuthToken } = require("../utils/userAuthToken");
 
 const GUIDELINE_NOTIFICATION_LOOKBACK_DAYS = 30;
 const ANNOUNCEMENT_NOTIFICATION_LOOKBACK_DAYS = 30;
@@ -269,17 +268,6 @@ function clearOtpFields(user, purpose) {
   }
 }
 
-function getContactVerificationPayload(user) {
-  return {
-    email: user.email || "",
-    phoneNumber: user.phoneNumber || user.phone || "",
-    emailMasked: maskEmail(user.email),
-    phoneMasked: maskPhone(user.phoneNumber || user.phone),
-    isEmailVerified: user.isEmailVerified === true,
-    isPhoneVerified: user.isPhoneVerified === true,
-  };
-}
-
 async function deliverOtp(user, { channel, otp, purpose = "" }) {
   if (channel === "sms") {
     const destination = user.phoneNumber || user.phone;
@@ -416,24 +404,6 @@ async function validatePasswordResetToken(user, token) {
 
 function buildFullAddress({ district, barangay, street }) {
   return [street, barangay, district, "Jaen, Nueva Ecija"].filter(Boolean).join(", ");
-}
-
-const BARANGAY_DISTRICT_MAP = {
-  "District 1": ["Bagong Sikat", "Balbalino", "Banganan", "Langla", "Mabini", "Maligaya", "Santo Tomas South"],
-  "District 2": ["Imbunia", "Lambakin", "Marawa", "Naglabrahan", "San Josef", "San Roque", "Santo Tomas North"],
-  "District 3": ["Don Mariano Marcos", "Hilera", "Pinanggaan", "San Andres", "San Nicolas", "Ulanin-Pitak"],
-  "District 4": ["Calabasa", "Kasanglayan", "Pamacpacan", "Putlod", "Sapang"],
-};
-
-function getDistrictForBarangay(barangay) {
-  const target = sanitizeText(barangay, 80).toLowerCase();
-  if (!target) return "";
-
-  return (
-    Object.entries(BARANGAY_DISTRICT_MAP).find(([, barangays]) =>
-      barangays.some((item) => item.toLowerCase() === target)
-    )?.[0] || ""
-  );
 }
 
 function buildGuidelineNotification(guideline) {
@@ -855,10 +825,9 @@ const registerUser = async (req, res) => {
     const cleanPhone = sanitizePhone(phone);
     const cleanBarangay = sanitizeText(barangay, 80);
     const cleanStreet = sanitizeText(street || streetAddress, 160);
-    const cleanDistrict = getDistrictForBarangay(cleanBarangay);
     const cleanAddress =
       buildFullAddress({
-        district: cleanDistrict,
+        district: "",
         barangay: cleanBarangay,
         street: cleanStreet,
       }) || sanitizeText(address, 220);
@@ -918,7 +887,6 @@ const registerUser = async (req, res) => {
       email: cleanEmail,
       phone: cleanPhone,
       phoneNumber: cleanPhone,
-      district: cleanDistrict,
       barangay: cleanBarangay,
       street: cleanStreet,
       streetAddress: cleanStreet,
@@ -934,8 +902,8 @@ const registerUser = async (req, res) => {
     const user = await newUser.save();
 
     return res.status(201).json({
-      message: "Registration successful. Choose SMS OTP or an email verification link.",
-      nextStep: "choose_verification_channel",
+      message: "Registration successful. Choose where you want to receive your OTP.",
+      nextStep: "choose_otp_channel",
       userId: user._id,
       phoneMasked: maskPhone(user.phoneNumber || user.phone),
       emailMasked: maskEmail(user.email),
@@ -1006,9 +974,10 @@ const verifyEmail = async (req, res) => {
     user.isEmailVerified = true;
     user.verificationToken = undefined;
     user.verificationTokenExpires = undefined;
-    // Email-link verification is a complete registration method, just like
-    // successfully entering the SMS OTP selected on the mobile app.
-    user.isVerified = true;
+
+    if (user.isPhoneVerified === true) {
+      user.isVerified = true;
+    }
 
     await user.save();
 
@@ -1079,54 +1048,28 @@ const loginUser = async (req, res) => {
       return res.status(401).json({ message: "Invalid username or password" });
     }
 
-    let restored = false;
     if (user.isArchived) {
-      restored = true;
-      await UserModel.updateOne(
-        { _id: user._id },
-        {
-          $set: { isArchived: false },
-          $unset: { archivedAt: 1, deleteAfter: 1 },
-        }
-      );
       user.isArchived = false;
       user.archivedAt = null;
       user.deleteAfter = null;
     }
 
-    const existingPhoneUser = await UserModel.findOne({
-      $or: [{ phone: cleanPhone }, { phoneNumber: cleanPhone }],
-    });
-    if (existingPhoneUser) {
-      return res.status(400).json({
-        error: "PHONE_EXISTS",
-        message: "Mobile number already exists",
-      });
-    }
-
     if (user.twoFactorEnabled) {
+      await user.save();
       return res.json({
         twoFactor: true,
         userId: user._id,
         email: user.email,
-        restored,
+        restored: true,
       });
     }
 
-    const safeUser = user.toObject();
-    delete safeUser.password;
-    delete safeUser.notifications;
-    delete safeUser.notificationTokens;
-    delete safeUser.emailOtp;
-    delete safeUser.emailOtpExpires;
-    delete safeUser.smsOtp;
-    delete safeUser.smsOtpExpires;
+    await user.save();
 
     res.json({
       twoFactor: false,
-      user: safeUser,
-      token: issueUserAuthToken(user._id),
-      restored,
+      user,
+      restored: true,
     });
   } catch (err) {
     console.error(err);
@@ -1191,11 +1134,6 @@ const updateUser = async (req, res) => {
       }
 
       updateData.email = cleanEmail;
-      if (cleanEmail !== normalizeEmail(existingUser.email)) {
-        updateData.isEmailVerified = false;
-        updateData.verificationToken = "";
-        updateData.verificationTokenExpires = null;
-      }
     }
 
     if (body.phone !== undefined || body.phoneNumber !== undefined) {
@@ -1208,21 +1146,8 @@ const updateUser = async (req, res) => {
         });
       }
 
-      if (cleanPhone) {
-        const phoneOwner = await UserModel.findOne({
-          _id: { $ne: userId },
-          $or: [{ phone: cleanPhone }, { phoneNumber: cleanPhone }],
-        });
-        if (phoneOwner) {
-          return res.status(400).json({ message: "Mobile number is already in use." });
-        }
-      }
-
       updateData.phone = cleanPhone;
       updateData.phoneNumber = cleanPhone;
-      if (cleanPhone !== sanitizePhone(existingUser.phoneNumber || existingUser.phone)) {
-        updateData.isPhoneVerified = false;
-      }
     }
 
     const district =
@@ -1564,14 +1489,6 @@ const verifyOtp = async (req, res) => {
         isPhoneVerified: user.isPhoneVerified === true,
         isEmailVerified: true,
         isVerified: true,
-        user: safeUserPayload(user),
-      };
-    } else if (purpose === "two_factor") {
-      clearOtpFields(user);
-      response = {
-        ...response,
-        message: "Sign-in verification successful.",
-        token: issueUserAuthToken(user._id),
         user: safeUserPayload(user),
       };
     } else if (isForgotPasswordPurpose(purpose)) {
@@ -1934,106 +1851,6 @@ const getVerificationStatus = async (req, res) => {
   }
 };
 
-const getAccountContactVerification = async (req, res) => {
-  try {
-    const user = await UserModel.findById(req.authUserId).select(
-      "email phone phoneNumber isEmailVerified isPhoneVerified"
-    );
-    if (!user) return res.status(404).json({ message: "User not found." });
-    return res.json(getContactVerificationPayload(user));
-  } catch (error) {
-    return res.status(500).json({ message: "Unable to load contact verification." });
-  }
-};
-
-const sendAccountContactOtp = async (req, res) => {
-  try {
-    const channel = String(req.body?.channel || "").toLowerCase();
-    if (!["sms", "email"].includes(channel)) {
-      return res.status(400).json({ message: "Verification channel must be sms or email." });
-    }
-
-    const user = await UserModel.findById(req.authUserId);
-    if (!user) return res.status(404).json({ message: "User not found." });
-    if (channel === "email" && !user.email) {
-      return res.status(400).json({ message: "This account has no email address." });
-    }
-    if (channel === "sms" && !(user.phoneNumber || user.phone)) {
-      return res.status(400).json({ message: "This account has no mobile number." });
-    }
-    if (channel === "email" && user.isEmailVerified === true) {
-      return res.status(409).json({ message: "Email address is already verified." });
-    }
-    if (channel === "sms" && user.isPhoneVerified === true) {
-      return res.status(409).json({ message: "Mobile number is already verified." });
-    }
-
-    const purpose = channel === "sms"
-      ? "account_phone_verification"
-      : "account_email_verification";
-    const { otp } = await setOtpFields(user, { purpose, channel });
-    await user.save();
-
-    try {
-      await deliverOtp(user, { channel, otp, purpose });
-    } catch (deliveryError) {
-      clearOtpFields(user, purpose);
-      user.lastOtpSentAt = null;
-      await user.save();
-      throw deliveryError;
-    }
-
-    return res.json({
-      message: channel === "sms" ? "Verification code sent to your mobile number." : "Verification code sent to your email address.",
-      channel,
-      destination: channel === "sms" ? maskPhone(user.phoneNumber || user.phone) : maskEmail(user.email),
-      expiresInSeconds: OTP_TTL_MS / 1000,
-      resendAfterSeconds: OTP_RESEND_COOLDOWN_MS / 1000,
-    });
-  } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Unable to send verification code.",
-    });
-  }
-};
-
-const verifyAccountContactOtp = async (req, res) => {
-  try {
-    const channel = String(req.body?.channel || "").toLowerCase();
-    const otp = String(req.body?.otp || "").trim();
-    if (!["sms", "email"].includes(channel)) {
-      return res.status(400).json({ message: "Verification channel must be sms or email." });
-    }
-    if (!/^\d{6}$/.test(otp)) {
-      return res.status(400).json({ message: "Please enter the full 6-digit code." });
-    }
-
-    const user = await UserModel.findById(req.authUserId);
-    if (!user) return res.status(404).json({ message: "User not found." });
-    const purpose = channel === "sms"
-      ? "account_phone_verification"
-      : "account_email_verification";
-
-    await verifyUserOtp(user, { otp, purpose, channel });
-    if (channel === "sms") user.isPhoneVerified = true;
-    else user.isEmailVerified = true;
-    clearOtpFields(user, purpose);
-    await user.save();
-
-    return res.json({
-      message: channel === "sms"
-        ? "Mobile number verified successfully."
-        : "Email address verified successfully.",
-      contactVerification: getContactVerificationPayload(user),
-      user: safeUserPayload(user),
-    });
-  } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Unable to verify the code.",
-    });
-  }
-};
-
 const resendVerificationEmail = async (req, res) => {
   try {
     const user = await UserModel.findById(req.params.id);
@@ -2085,12 +1902,8 @@ const archiveUser = (req, res) => {
     },
     { new: true }
   )
-    .then(async (user) => {
+    .then((user) => {
       if (!user) return res.status(404).json({ message: "User not found" });
-      await SafetyDebugLocation.updateMany(
-        { userId: String(userId) },
-        { $set: { debugMode: false, updatedAt: new Date() } }
-      );
       res.json({
         message:
           "Your account has been archived. It will be permanently deleted after 6 months.",
@@ -2527,9 +2340,6 @@ module.exports = {
   forgotPasswordResetPassword,
   forgotPasswordSkipReset,
   getVerificationStatus,
-  getAccountContactVerification,
-  sendAccountContactOtp,
-  verifyAccountContactOtp,
   resendVerificationEmail,
   sendOtp,
   verifyOtp,
