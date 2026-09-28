@@ -1524,3 +1524,91 @@ body {
     border-radius: 18px;
   }
 }
+
+/* Dark mode hardening for admin topbar controls. */
+:root[data-theme="dark"] .dashboard-topbar {
+  background:
+    radial-gradient(circle at top right, rgba(63, 185, 80, 0.12), transparent 26%),
+    linear-gradient(180deg, rgba(13, 40, 22, 0.98), rgba(8, 31, 15, 0.98)) !important;
+  border-color: rgba(176, 220, 187, 0.18) !important;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.3) !important;
+}
+
+:root[data-theme="dark"] .shell-system-title {
+  color: #8ff0ad !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="dark"] .shell-quick-action-btn {
+  background: rgba(15, 54, 28, 0.94) !important;
+  color: #edf7ef !important;
+  border-color: rgba(176, 220, 187, 0.28) !important;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.24) !important;
+}
+
+:root[data-theme="dark"] .shell-quick-action-btn svg,
+:root[data-theme="dark"] .shell-profile-trigger svg,
+:root[data-theme="dark"] .shell-profile-menu-item svg {
+  color: currentColor !important;
+  fill: currentColor !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .shell-quick-action-btn:hover {
+  background: rgba(22, 80, 41, 0.98) !important;
+  color: #ffffff !important;
+  border-color: rgba(143, 240, 173, 0.46) !important;
+}
+
+:root[data-theme="dark"] .shell-quick-action-badge {
+  background: linear-gradient(180deg, #fb923c 0%, #f97316 100%) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 237, 213, 0.82) !important;
+}
+
+:root[data-theme="dark"] .shell-profile-inline,
+:root[data-theme="dark"] .shell-profile-trigger {
+  color: #edf7ef !important;
+}
+
+:root[data-theme="dark"] .shell-profile-kicker,
+:root[data-theme="dark"] .shell-profile-role {
+  color: #b7cdbd !important;
+}
+
+:root[data-theme="dark"] .shell-profile-name {
+  color: #ffffff !important;
+}
+
+:root[data-theme="dark"] .shell-profile-avatar {
+  background: linear-gradient(180deg, #34c759 0%, #1f8f3a 100%) !important;
+  color: #ffffff !important;
+  border-color: rgba(143, 240, 173, 0.34) !important;
+}
+
+:root[data-theme="dark"] .shell-profile-menu {
+  background: linear-gradient(180deg, rgba(10, 49, 26, 0.98), rgba(6, 35, 18, 0.98)) !important;
+  border-color: rgba(143, 240, 173, 0.28) !important;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.42) !important;
+}
+
+:root[data-theme="dark"] .shell-profile-menu-item {
+  background: rgba(11, 61, 31, 0.72) !important;
+  color: #edf7ef !important;
+  border: 1px solid rgba(143, 240, 173, 0.18) !important;
+}
+
+:root[data-theme="dark"] .shell-profile-menu-item:hover {
+  background: rgba(20, 91, 45, 0.88) !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme="dark"] .shell-profile-menu-item.danger {
+  color: #ffb4a8 !important;
+}
+
+:root[data-theme="dark"] .shell-profile-menu-item.danger:hover {
+  background: rgba(147, 34, 28, 0.42) !important;
+  border-color: rgba(255, 180, 168, 0.34) !important;
+  color: #ffe7e3 !important;
+}

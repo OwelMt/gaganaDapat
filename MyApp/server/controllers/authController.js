@@ -33,7 +33,11 @@ function sanitizeUsername(value) {
 }
 
 function sanitizeEmail(value) {
-  return sanitizeText(value).replace(/\s+/g, '').trim();
+  return sanitizeText(value).replace(/\s+/g, '').trim().toLowerCase();
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 }
 
 function sanitizePhoneNumber(value) {
@@ -1019,27 +1023,54 @@ const updateAccount = async (req, res) => {
     if (!account)
       return res.status(404).json({ message: 'Account not found' });
 
-    const { username, phoneNumber, hotline, address, password } = req.body;
+    const { username, email, phoneNumber, hotline, address, password } = req.body;
     const cleanUsername = username !== undefined ? sanitizeUsername(username) : undefined;
     const cleanPhoneNumber = phoneNumber !== undefined ? sanitizePhoneNumber(phoneNumber) : undefined;
     const cleanHotline = hotline !== undefined ? sanitizeHotline(hotline) : undefined;
     const cleanAddress = address !== undefined ? sanitizeAddress(address) : undefined;
+    const cleanEmail = email !== undefined ? sanitizeEmail(email) : account.email;
     const cleanPassword = password ? sanitizePassword(password) : '';
+    const isTargetAdmin = !(account instanceof Barangay) && account.role === 'admin';
+    const isSelfUpdate = String(req.session.userId || '') === String(account._id || '');
+    const isDirectAdminSelfUpdate =
+      req.session.role === 'admin' && isTargetAdmin && isSelfUpdate;
 
     if (!cleanUsername || !cleanPhoneNumber || !cleanAddress) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    const pendingRequest = await findPendingUpdateApprovalByAccount(account._id);
+    if (email !== undefined && !isDirectAdminSelfUpdate) {
+      return res.status(400).json({ message: 'Email can only be changed by the signed-in admin for their own account.' });
+    }
 
-    if (pendingRequest?.status === 'pending') {
-      return res.status(400).json({
-        message: 'An account update approval email is already pending for this account'
-      });
+    if (isDirectAdminSelfUpdate) {
+      if (!cleanEmail || !isValidEmail(cleanEmail)) {
+        return res.status(400).json({ message: 'Enter a valid email address' });
+      }
+
+      const [existingStaffEmail, existingBarangayEmail] = await Promise.all([
+        User.findOne({ email: cleanEmail, _id: { $ne: account._id } }),
+        Barangay.findOne({ email: cleanEmail })
+      ]);
+
+      if (existingStaffEmail || existingBarangayEmail) {
+        return res.status(400).json({ message: 'Email is already used by another account' });
+      }
+    }
+
+    if (!isDirectAdminSelfUpdate) {
+      const pendingRequest = await findPendingUpdateApprovalByAccount(account._id);
+
+      if (pendingRequest?.status === 'pending') {
+        return res.status(400).json({
+          message: 'An account update approval email is already pending for this account'
+        });
+      }
     }
 
     const hasFieldChanges =
       cleanUsername !== account.username ||
+      (isDirectAdminSelfUpdate && cleanEmail !== (account.email || '')) ||
       cleanPhoneNumber !== (account.phoneNumber || '') ||
       cleanHotline !== (account.hotline || '') ||
       cleanAddress !== (account.address || '');
@@ -1055,6 +1086,60 @@ const updateAccount = async (req, res) => {
       if (same)
         return res.status(400).json({ message: 'Password must be different' });
 
+    }
+
+    if (isDirectAdminSelfUpdate) {
+      account.username = cleanUsername;
+      account.email = cleanEmail;
+      account.phoneNumber = cleanPhoneNumber;
+      account.hotline = cleanHotline;
+      account.address = cleanAddress;
+
+      if (cleanPassword) {
+        account.password = await bcrypt.hash(cleanPassword, 10);
+      }
+
+      await account.save();
+
+      req.session.username = account.username;
+
+      await AdminLog.create({
+        adminId: req.session.userId,
+        adminUsername: account.username,
+        action: 'update_admin_self',
+        targetUserId: account._id,
+        targetUsername: account.username
+      });
+
+      await createAuditEvent({
+        module: 'account',
+        type: 'admin_self_updated',
+        priority: 'normal',
+        title: 'Admin account updated',
+        message: `${account.username || 'Admin'} updated their own admin account.`,
+        actorId: req.session.userId || null,
+        actorName: account.username || 'Admin',
+        actorRole: req.session.role || 'admin',
+        recipientRole: 'admin',
+        status: 'completed',
+        referenceId: account._id,
+        referenceModel: 'UserStaff',
+        targetLabel: account.username,
+        metadata: {
+          email: account.email,
+          hasPasswordChange: Boolean(cleanPassword)
+        }
+      });
+
+      return res.json({
+        message: 'Admin account updated successfully.',
+        account: {
+          userId: account._id,
+          username: account.username,
+          email: account.email,
+          role: account.role
+        }
+      });
     }
 
     const pendingPasswordHash = cleanPassword

@@ -302,35 +302,6 @@ function SummaryCard({ tone, icon, label, value, sub, urgent = false }) {
   );
 }
 
-function MapLegend({ inline = false }) {
-  return (
-    <div
-      className={`map-legend-card ${inline ? "map-legend-card-inline" : ""}`}
-      aria-label="Map legend"
-    >
-      {!inline && <div className="map-legend-title">Map Legend</div>}
-      <div className="map-legend-items">
-        <div className="map-legend-item">
-          <span className="map-legend-dot available" />
-          <span>Available</span>
-        </div>
-        <div className="map-legend-item">
-          <span className="map-legend-dot limited" />
-          <span>Limited</span>
-        </div>
-        <div className="map-legend-item">
-          <span className="map-legend-dot full" />
-          <span>Full</span>
-        </div>
-        <div className="map-legend-item">
-          <span className="map-legend-dot archived" />
-          <span>Archived</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function EManagement() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -3402,8 +3373,6 @@ useEffect(() => {
               <div className="map-panel-title-block">
                 <h2>Evacuation Map</h2>
                 <div className="map-panel-controls-row">
-                  <MapLegend inline />
-
                   <div className="map-panel-actions">
                     <button
                       type="button"
@@ -4294,3 +4263,4 @@ useEffect(() => {
     </DashboardShell>
   );
 }
+

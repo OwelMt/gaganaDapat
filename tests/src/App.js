@@ -276,8 +276,8 @@ function App() {
 
   return (
     <AuthProvider>
-      <ThemeProvider>{/* ← Theme for dark/light + icon switching */}
-        <Router>
+      <Router>
+        <ThemeProvider>{/* ← Theme for dark/light + icon switching */}
           <Routes>
             {ROUTES.map((route) => (
               <Route
@@ -288,8 +288,8 @@ function App() {
             ))}
             <Route path="*" element={<Navigate to="/Login" replace />} />
           </Routes>
-        </Router>
-      </ThemeProvider>
+        </ThemeProvider>
+      </Router>
     </AuthProvider>
   );
 }

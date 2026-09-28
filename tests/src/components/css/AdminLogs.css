@@ -641,3 +641,35 @@ body,
 :root[data-theme="dark"] .admin-mobile-row span {
   color: var(--text-soft) !important;
 }
+
+/* Dark mode second pass: admin logs table header/body contrast */
+:root[data-theme="dark"] .admin-logs-table-region,
+:root[data-theme="dark"] .admin-logs-table-wrap,
+:root[data-theme="dark"] .admin-logs-table,
+:root[data-theme="dark"] .admin-logs-table tbody,
+:root[data-theme="dark"] .admin-logs-table tbody tr,
+:root[data-theme="dark"] .admin-logs-table tbody td {
+  background: rgba(10, 50, 29, 0.96) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+}
+
+:root[data-theme="dark"] .admin-logs-table thead,
+:root[data-theme="dark"] .admin-logs-table thead tr,
+:root[data-theme="dark"] .admin-logs-table thead th {
+  background: #0a321d !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.26) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="dark"] .admin-logs-table tbody tr:hover,
+:root[data-theme="dark"] .admin-logs-table tbody tr:hover td {
+  background: rgba(17, 78, 43, 0.96) !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme="dark"] .admin-logs-search::placeholder {
+  color: #a8c4b0 !important;
+  opacity: 1 !important;
+}

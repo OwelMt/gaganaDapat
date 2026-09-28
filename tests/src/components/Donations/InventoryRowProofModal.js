@@ -18,9 +18,9 @@ export default function InventoryRowProofModal({ row, onChange, onClose }) {
     event.target.value = '';
     if (!files.length) return;
     const file = files[0];
-    const allowed = field === 'proofDocument' ? /\.(pdf|doc|docx)$/i : /\.(jpg|jpeg|png|webp)$/i;
+    const allowed = field === 'proofDocument' ? /\.(pdf)$/i : /\.(jpg|jpeg|png|webp)$/i;
     if (files.length !== 1 || !allowed.test(file.name)) {
-      setError(field === 'proofDocument' ? 'Choose one PDF, DOC or DOCX document.' : 'Choose one JPG, PNG or WEBP image.');
+      setError(field === 'proofDocument' ? 'Choose one PDF document.' : 'Choose one JPG, PNG or WEBP image.');
       return;
     }
     if (file.size > 15 * 1024 * 1024) { setError('Each proof file must be 15 MB or smaller.'); return; }
@@ -36,7 +36,7 @@ export default function InventoryRowProofModal({ row, onChange, onClose }) {
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
   const slots = [
-    ['proofDocument', 'Document proof', 'Select document', '.pdf,.doc,.docx', <FaFilePdf aria-hidden="true" />, 'PDF, DOC or DOCX'],
+    ['proofDocument', 'Document proof', 'Select document', '.pdf', <FaFilePdf aria-hidden="true" />, 'PDF'],
     ['proofImage', 'Image proof', 'Select image', '.jpg,.jpeg,.png,.webp', <FaImage aria-hidden="true" />, 'JPG, PNG or WEBP'],
   ];
   return createPortal(

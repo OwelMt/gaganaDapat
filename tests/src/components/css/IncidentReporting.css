@@ -3508,3 +3508,288 @@
     justify-self: start !important;
   }
 }
+
+/* Dark mode: DRRMO incident reporting surfaces */
+:root[data-theme="dark"] .incident-dashboard-page {
+  --ir-bg: #041f10;
+  --ir-surface: #0a351b;
+  --ir-surface-soft: #082b16;
+  --ir-border: rgba(143, 240, 173, 0.22);
+  --ir-border-strong: rgba(143, 240, 173, 0.36);
+  --ir-text: #edf7ef;
+  --ir-text-soft: #c4d6ca;
+  --ir-green: #ffffff;
+  --ir-green-2: #8ff0ad;
+  --ir-green-3: #34c759;
+  --ir-green-4: #22a34e;
+  --ir-green-soft: rgba(52, 199, 89, 0.18);
+  --ir-danger-soft: rgba(176, 49, 43, 0.22);
+  --ir-warning-soft: rgba(180, 104, 16, 0.22);
+  --ir-success-soft: rgba(35, 134, 73, 0.22);
+  --ir-blue-soft: rgba(40, 93, 160, 0.24);
+  --ir-purple-soft: rgba(91, 33, 182, 0.22);
+  --ir-info-soft: rgba(40, 93, 160, 0.24);
+  --ir-slate-tint: rgba(143, 240, 173, 0.1);
+  background:
+    radial-gradient(circle at top right, rgba(51, 130, 71, 0.16), transparent 30%),
+    linear-gradient(180deg, #062512 0%, #03190d 100%) !important;
+  color: #edf7ef !important;
+}
+
+:root[data-theme="dark"] .incident-loading-card,
+:root[data-theme="dark"] .notification-toast,
+:root[data-theme="dark"] .incident-dashboard-header,
+:root[data-theme="dark"] .incident-summary-card,
+:root[data-theme="dark"] .incident-top-filters,
+:root[data-theme="dark"] .incident-left-panel,
+:root[data-theme="dark"] .incident-right-panel,
+:root[data-theme="dark"] .incident-map-panel,
+:root[data-theme="dark"] .incident-review-panel,
+:root[data-theme="dark"] .incident-unified-card,
+:root[data-theme="dark"] .incident-flat-shell,
+:root[data-theme="dark"] .incident-unified-hero,
+:root[data-theme="dark"] .incident-review-stat-card,
+:root[data-theme="dark"] .incident-review-section,
+:root[data-theme="dark"] .incident-review-side-section,
+:root[data-theme="dark"] .incident-description-box,
+:root[data-theme="dark"] .incident-ai-summary-card,
+:root[data-theme="dark"] .incident-ai-detail-grid div,
+:root[data-theme="dark"] .incident-meta-item,
+:root[data-theme="dark"] .context-card,
+:root[data-theme="dark"] .incident-evidence-card,
+:root[data-theme="dark"] .incident-location-card,
+:root[data-theme="dark"] .empty-state-card,
+:root[data-theme="dark"] .incident-empty-detail,
+:root[data-theme="dark"] .incident-review-empty,
+:root[data-theme="dark"] .incident-history-summary,
+:root[data-theme="dark"] .incident-history-empty {
+  background:
+    radial-gradient(circle at right bottom, rgba(57, 116, 72, 0.24), transparent 24%),
+    linear-gradient(180deg, rgba(13, 64, 33, 0.98), rgba(6, 41, 20, 0.98)) !important;
+  border-color: rgba(143, 240, 173, 0.24) !important;
+  color: #edf7ef !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.3) !important;
+}
+
+:root[data-theme="dark"] .incident-details-panel,
+:root[data-theme="dark"] .incident-unified-card {
+  background: transparent !important;
+  color: #edf7ef !important;
+}
+
+:root[data-theme="dark"] .incident-dashboard-heading h1,
+:root[data-theme="dark"] .panel-head h2,
+:root[data-theme="dark"] .incident-queue-title,
+:root[data-theme="dark"] .incident-summary-value,
+:root[data-theme="dark"] .incident-review-title-wrap h3,
+:root[data-theme="dark"] .incident-review-section-head h3,
+:root[data-theme="dark"] .incident-review-stat-card strong,
+:root[data-theme="dark"] .incident-ai-verdict-row strong,
+:root[data-theme="dark"] .incident-ai-detail-grid strong,
+:root[data-theme="dark"] .incident-meta-item strong,
+:root[data-theme="dark"] .context-card strong,
+:root[data-theme="dark"] .empty-state-card strong,
+:root[data-theme="dark"] .incident-empty-detail strong,
+:root[data-theme="dark"] .incident-copy,
+:root[data-theme="dark"] .incident-summary-row strong,
+:root[data-theme="dark"] .incident-history-summary strong {
+  color: #ffffff !important;
+}
+
+:root[data-theme="dark"] .incident-dashboard-heading .eyebrow,
+:root[data-theme="dark"] .incident-summary-label,
+:root[data-theme="dark"] .incident-filter-field span,
+:root[data-theme="dark"] .incident-filter-field span svg,
+:root[data-theme="dark"] .incident-review-stat-card span,
+:root[data-theme="dark"] .incident-review-section-head h3 svg,
+:root[data-theme="dark"] .incident-ai-detail-grid span,
+:root[data-theme="dark"] .incident-meta-item span,
+:root[data-theme="dark"] .context-card span:not(.context-icon),
+:root[data-theme="dark"] .incident-summary-row .incident-summary-label {
+  color: #b7cdbd !important;
+}
+
+:root[data-theme="dark"] .incident-dashboard-heading p,
+:root[data-theme="dark"] .incident-summary-sub,
+:root[data-theme="dark"] .panel-head p,
+:root[data-theme="dark"] .incident-queue-subtitle,
+:root[data-theme="dark"] .incident-queue-meta,
+:root[data-theme="dark"] .incident-queue-foot,
+:root[data-theme="dark"] .incident-review-title-wrap p,
+:root[data-theme="dark"] .incident-review-section-head p,
+:root[data-theme="dark"] .incident-image-preview-hint,
+:root[data-theme="dark"] .empty-state-card span,
+:root[data-theme="dark"] .incident-empty-detail span,
+:root[data-theme="dark"] .incident-history-empty,
+:root[data-theme="dark"] .notification-text {
+  color: #c8d9ce !important;
+}
+
+:root[data-theme="dark"] .incident-queue-list,
+:root[data-theme="dark"] .incident-approved-list {
+  background: linear-gradient(180deg, rgba(4, 31, 16, 0.88), rgba(3, 25, 13, 0.94)) !important;
+}
+
+:root[data-theme="dark"] .incident-queue-card,
+:root[data-theme="dark"] .incident-queue-card.selected,
+:root[data-theme="dark"] .incident-left-panel .incident-queue-card.queue-priority-critical,
+:root[data-theme="dark"] .incident-left-panel .incident-queue-card.queue-priority-high,
+:root[data-theme="dark"] .incident-left-panel .incident-queue-card.queue-priority-medium,
+:root[data-theme="dark"] .incident-left-panel .incident-queue-card.queue-priority-low,
+:root[data-theme="dark"] .incident-right-panel .incident-queue-card.status-reported,
+:root[data-theme="dark"] .incident-right-panel .incident-queue-card.status-onProcess,
+:root[data-theme="dark"] .incident-right-panel .incident-queue-card.status-resolved {
+  background:
+    radial-gradient(circle at right bottom, rgba(78, 150, 89, 0.2), transparent 26%),
+    linear-gradient(180deg, rgba(10, 55, 28, 0.98), rgba(6, 38, 19, 0.98)) !important;
+  border-color: rgba(143, 240, 173, 0.22) !important;
+  color: #edf7ef !important;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.26) !important;
+}
+
+:root[data-theme="dark"] .incident-queue-card:hover,
+:root[data-theme="dark"] .incident-queue-card.selected {
+  border-color: rgba(143, 240, 173, 0.5) !important;
+  background:
+    radial-gradient(circle at right bottom, rgba(78, 150, 89, 0.28), transparent 28%),
+    linear-gradient(180deg, rgba(14, 74, 37, 0.98), rgba(8, 48, 24, 0.98)) !important;
+}
+
+:root[data-theme="dark"] .incident-map-stage {
+  background: #061f12 !important;
+}
+
+:root[data-theme="dark"] .incident-map-stage .leaflet-control-zoom a,
+:root[data-theme="dark"] .incident-map-stage .leaflet-control-attribution {
+  background: rgba(6, 35, 18, 0.9) !important;
+  color: #edf7ef !important;
+  border-color: rgba(143, 240, 173, 0.24) !important;
+}
+
+:root[data-theme="dark"] .incident-filter-field input,
+:root[data-theme="dark"] .incident-filter-field select,
+:root[data-theme="dark"] .status-select {
+  background: rgba(5, 31, 16, 0.96) !important;
+  color: #ffffff !important;
+  border-color: rgba(143, 240, 173, 0.28) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+:root[data-theme="dark"] .incident-filter-field input::placeholder {
+  color: #b7cdbd !important;
+}
+
+:root[data-theme="dark"] .incident-summary-icon,
+:root[data-theme="dark"] .empty-state-icon,
+:root[data-theme="dark"] .incident-review-head-icon,
+:root[data-theme="dark"] .context-icon,
+:root[data-theme="dark"] .notification-icon {
+  background: rgba(143, 240, 173, 0.14) !important;
+  color: #8ff0ad !important;
+  border-color: rgba(143, 240, 173, 0.28) !important;
+}
+
+:root[data-theme="dark"] .top-response-actions {
+  background: rgba(5, 31, 16, 0.78) !important;
+  border-color: rgba(143, 240, 173, 0.22) !important;
+}
+
+:root[data-theme="dark"] .top-response-btn,
+:root[data-theme="dark"] .status-action-btn {
+  background: rgba(12, 68, 34, 0.78) !important;
+  color: #edf7ef !important;
+  border-color: rgba(143, 240, 173, 0.24) !important;
+}
+
+:root[data-theme="dark"] .top-response-btn.reported,
+:root[data-theme="dark"] .top-response-btn.reported.active,
+:root[data-theme="dark"] .status-action-btn.reported.active,
+:root[data-theme="dark"] .status-action-btn.limited,
+:root[data-theme="dark"] .ai-action-grid .status-action-btn.limited:not(.active) {
+  background: rgba(180, 104, 16, 0.25) !important;
+  color: #ffd190 !important;
+  border-color: rgba(255, 193, 112, 0.38) !important;
+}
+
+:root[data-theme="dark"] .top-response-btn.onProcess,
+:root[data-theme="dark"] .top-response-btn.onProcess.active,
+:root[data-theme="dark"] .status-action-btn.onProcess.active {
+  background: rgba(40, 93, 160, 0.28) !important;
+  color: #b8d4ff !important;
+  border-color: rgba(151, 190, 255, 0.38) !important;
+}
+
+:root[data-theme="dark"] .top-response-btn.resolved,
+:root[data-theme="dark"] .top-response-btn.resolved.active,
+:root[data-theme="dark"] .status-action-btn.resolved.active,
+:root[data-theme="dark"] .status-action-btn.available.active,
+:root[data-theme="dark"] .ai-action-grid .status-action-btn.available:not(.active) {
+  background: rgba(35, 134, 73, 0.28) !important;
+  color: #a9f5be !important;
+  border-color: rgba(143, 240, 173, 0.42) !important;
+}
+
+:root[data-theme="dark"] .status-action-btn.full.active,
+:root[data-theme="dark"] .ai-action-grid .status-action-btn.full:not(.active) {
+  background: rgba(176, 49, 43, 0.28) !important;
+  color: #ffb4a8 !important;
+  border-color: rgba(255, 180, 168, 0.38) !important;
+}
+
+:root[data-theme="dark"] .mini-status,
+:root[data-theme="dark"] .priority-chip,
+:root[data-theme="dark"] .ai-score-pill {
+  background: rgba(143, 240, 173, 0.14) !important;
+  color: #dff7e6 !important;
+  border-color: rgba(143, 240, 173, 0.26) !important;
+}
+
+:root[data-theme="dark"] .mini-status.warning,
+:root[data-theme="dark"] .priority-high,
+:root[data-theme="dark"] .priority-medium {
+  background: rgba(180, 104, 16, 0.24) !important;
+  color: #ffd190 !important;
+  border-color: rgba(255, 193, 112, 0.36) !important;
+}
+
+:root[data-theme="dark"] .mini-status.info {
+  background: rgba(40, 93, 160, 0.24) !important;
+  color: #b8d4ff !important;
+  border-color: rgba(151, 190, 255, 0.34) !important;
+}
+
+:root[data-theme="dark"] .mini-status.success,
+:root[data-theme="dark"] .priority-low {
+  background: rgba(35, 134, 73, 0.24) !important;
+  color: #a9f5be !important;
+  border-color: rgba(143, 240, 173, 0.34) !important;
+}
+
+:root[data-theme="dark"] .mini-status.danger,
+:root[data-theme="dark"] .priority-critical {
+  background: rgba(176, 49, 43, 0.28) !important;
+  color: #ffb4a8 !important;
+  border-color: rgba(255, 180, 168, 0.38) !important;
+}
+
+:root[data-theme="dark"] .incident-ai-reasoning,
+:root[data-theme="dark"] .incident-summary-row,
+:root[data-theme="dark"] .incident-image-preview-button {
+  background: rgba(5, 31, 16, 0.72) !important;
+  border-color: rgba(143, 240, 173, 0.22) !important;
+  color: #edf7ef !important;
+}
+
+:root[data-theme="dark"] .incident-preview-image {
+  background: rgba(5, 31, 16, 0.9) !important;
+  border-color: rgba(143, 240, 173, 0.22) !important;
+}
+
+:root[data-theme="dark"] .notification-toast.success,
+:root[data-theme="dark"] .notification-toast.info,
+:root[data-theme="dark"] .notification-toast.warning,
+:root[data-theme="dark"] .notification-toast.error {
+  background: linear-gradient(180deg, rgba(10, 55, 28, 0.98), rgba(6, 38, 19, 0.98)) !important;
+  border-color: rgba(143, 240, 173, 0.24) !important;
+  color: #edf7ef !important;
+}

@@ -339,6 +339,32 @@ const formatMoney = (value) =>
     maximumFractionDigits: 2
   });
 
+const RELIEF_NEW_REQUEST_DRAFT_KEY = 'sagip-relief-new-request-draft';
+
+const rememberNewRequestDraft = () => {
+  try {
+    window.sessionStorage.setItem(RELIEF_NEW_REQUEST_DRAFT_KEY, '1');
+  } catch (err) {
+    // Ignore storage failures; the current in-memory editor state still works.
+  }
+};
+
+const clearNewRequestDraft = () => {
+  try {
+    window.sessionStorage.removeItem(RELIEF_NEW_REQUEST_DRAFT_KEY);
+  } catch (err) {
+    // Ignore storage failures.
+  }
+};
+
+const hasRememberedNewRequestDraft = () => {
+  try {
+    return window.sessionStorage.getItem(RELIEF_NEW_REQUEST_DRAFT_KEY) === '1';
+  } catch (err) {
+    return false;
+  }
+};
+
 const serializeRowsForCompare = (rows = []) =>
   rows.map((row) => ({
     evacPlaceId: row.evacPlaceId || '',
@@ -433,6 +459,7 @@ export default function ReliefRequestForm() {
     loaded: false
   });
   const [distributionEditorCards, setDistributionEditorCards] = useState([]);
+  const [distributionInlineErrors, setDistributionInlineErrors] = useState({});
   const [distributionSubmitting, setDistributionSubmitting] = useState(false);
   const [distributionImporting, setDistributionImporting] = useState(false);
   const [distributionPage, setDistributionPage] = useState(1);
@@ -596,6 +623,27 @@ export default function ReliefRequestForm() {
           return;
         }
 
+        if (!editMode && hasRememberedNewRequestDraft()) {
+          setRequestId('');
+          setRequestNo('Auto-generated');
+          setDisaster('');
+          setSupportTypes([SUPPORT_TYPE_FOODPACKS]);
+          setRequestedMonetaryAmount('');
+          setRequestedAppliances([createRequestedAppliance()]);
+          setRequestDate(new Date().toISOString().slice(0, 10));
+          setRemarks('');
+          setRows(resolvedBootstrapRows.map((row) => createPreparedRow(row)));
+          setShowEditor(true);
+          setImportInfo({
+            hasImported: false,
+            fileName: '',
+            summary: null,
+            issues: [],
+            source: 'manual'
+          });
+          return;
+        }
+
         const journeyRequestStatus = normalizeStatus(sanitizedJourney.request?.status);
         const journeyStageStatus = normalizeStatus(sanitizedJourney.stage);
         const canRestoreExistingRequest =
@@ -687,7 +735,7 @@ export default function ReliefRequestForm() {
       normalizeStatus(journey.request?.status) === 'rejected' ||
       normalizeStatus(journey.stage) === 'rejected';
 
-    if (!canStayInEditor && !editMode) {
+    if (!canStayInEditor && !editMode && !hasRememberedNewRequestDraft()) {
       setShowEditor(false);
     }
   }, [journey.canEdit, journey.request?.status, journey.stage, editMode]);
@@ -768,6 +816,19 @@ export default function ReliefRequestForm() {
   const activeRequestRowsForDisplay = useMemo(() => {
     return requestRowsForDisplay.filter((row) => row.isActiveRow);
   }, [requestRowsForDisplay]);
+
+  const distributionEvacuationCenterOptions = useMemo(() => {
+    const seen = new Set();
+    return activeRequestRowsForDisplay
+      .map((row) => String(row.evacuationCenterName || '').trim())
+      .filter((name) => {
+        const normalizedName = normalizeValue(name);
+        if (!normalizedName || seen.has(normalizedName)) return false;
+        seen.add(normalizedName);
+        return true;
+      })
+      .map((name) => ({ value: name, label: name }));
+  }, [activeRequestRowsForDisplay]);
 
   const displayRequestedPacks = useMemo(() => {
     const rowTotal = activeRequestRowsForDisplay.reduce(
@@ -1921,6 +1982,33 @@ export default function ReliefRequestForm() {
     setDistributionImportIssues([]);
   };
 
+  const setDistributionFieldError = (localId, field, message) => {
+    if (!localId || !field) return;
+    setDistributionInlineErrors((prev) => ({
+      ...prev,
+      [localId]: {
+        ...(prev[localId] || {}),
+        [field]: message
+      }
+    }));
+  };
+
+  const clearDistributionFieldError = (localId, field) => {
+    if (!localId || !field) return;
+    setDistributionInlineErrors((prev) => {
+      if (!prev[localId]?.[field]) return prev;
+      const nextFields = { ...prev[localId] };
+      delete nextFields[field];
+      const next = { ...prev };
+      if (Object.keys(nextFields).length) {
+        next[localId] = nextFields;
+      } else {
+        delete next[localId];
+      }
+      return next;
+    });
+  };
+
   const receiptProofPreviews = useMemo(
     () =>
       receiptProofFiles.map((file) => ({
@@ -2023,7 +2111,15 @@ export default function ReliefRequestForm() {
   };
 
   const openCreateDistributionEditor = () => {
-    setDistributionEditorCards((prev) => [...prev, createDistributionEditorCard({}, 'create')]);
+    setDistributionEditorCards((prev) => [
+      ...prev,
+      createDistributionEditorCard(
+        {
+          evacuationCenterName: distributionEvacuationCenterOptions[0]?.value || ''
+        },
+        'create'
+      )
+    ]);
   };
 
   const openEditDistributionEditor = (record) => {
@@ -2050,6 +2146,7 @@ export default function ReliefRequestForm() {
   };
 
   const handleDistributionDraftField = (localId, path, value) => {
+    clearDistributionFieldError(localId, path);
     updateDistributionEditorCard(localId, (prev) => {
       const next = structuredClone(prev);
       const keys = path.split('.');
@@ -2640,6 +2737,7 @@ export default function ReliefRequestForm() {
         setRequestId(data.request._id);
       }
 
+      clearNewRequestDraft();
       await loadJourneyData({ silent: true });
       setShowEditor(false);
     } catch (err) {
@@ -2811,6 +2909,7 @@ export default function ReliefRequestForm() {
 
       const freshRows = await fetchLatestBootstrapRows();
 
+      rememberNewRequestDraft();
       setShowEditor(true);
       setRows(freshRows.map((row) => createPreparedRow(row)));
       setRequestId('');
@@ -2882,7 +2981,17 @@ export default function ReliefRequestForm() {
       await loadDistributionData({ silent: true });
     } catch (err) {
       console.error(err);
-      setErrorFeedback(err.message || 'Failed to save the DAFAC record.');
+      const message = err.message || 'Failed to save the DAFAC record.';
+      if (
+        editorCard?.localId &&
+        (message === 'Distribution date cannot be in the past.' ||
+          message === 'Distribution date is required.')
+      ) {
+        setDistributionFieldError(editorCard.localId, 'distributionDate', message);
+        setFormFeedback({ type: '', message: '' });
+      } else {
+        setErrorFeedback(message);
+      }
     } finally {
       setDistributionSubmitting(false);
     }
@@ -3003,6 +3112,7 @@ export default function ReliefRequestForm() {
     if (!latestRequest) return;
 
     clearFeedback();
+    clearNewRequestDraft();
     setRequestId(latestRequest._id || '');
     setRequestNo(latestRequest.requestNo || 'Auto-generated');
     setDisaster(latestRequest.disaster || '');
@@ -3042,6 +3152,7 @@ export default function ReliefRequestForm() {
 
   const handleCloseEditor = () => {
     clearFeedback();
+    clearNewRequestDraft();
     setShowEditor(false);
   };
 
@@ -3294,9 +3405,6 @@ export default function ReliefRequestForm() {
                     <h2>Current request status</h2>
                   </div>
                   <div className="rrf-stage-head">
-                    <span className="rrf-stage-context">
-                      {displaySupportTypeLabel}
-                    </span>
                     <span className={`rrf-stage-badge rrf-stage-${stageMeta.tone}`}>
                       {stageMeta.label}
                     </span>
@@ -4084,21 +4192,11 @@ export default function ReliefRequestForm() {
                                 : 'Received Food Packs'}
                             </span>
                             <strong>{receiptPanelSummary.totalFoodPacks}</strong>
-                            <small>
-                              {receiptPanelSummary.showingReleasedForConfirmation
-                                ? 'Packs awaiting confirmation'
-                                : 'Distributed packs'}
-                            </small>
                           </div>
 
                           <div className="rrf-receipt-summary-card">
                             <span>Total Quantity</span>
                             <strong>{Number(receiptPanelSummary.totalQuantity || 0)}</strong>
-                            <small>
-                              {receiptPanelSummary.showingReleasedForConfirmation
-                                ? 'Units prepared for delivery'
-                                : 'Units received'}
-                              </small>
                             </div>
 
                             <div className="rrf-receipt-summary-card">
@@ -4108,11 +4206,6 @@ export default function ReliefRequestForm() {
                                   : 'Received Appliances'}
                               </span>
                               <strong>{Number(receiptPanelSummary.totalApplianceUnits || 0)}</strong>
-                              <small>
-                                {receiptPanelSummary.showingReleasedForConfirmation
-                                  ? 'Appliance units for delivery'
-                                  : 'Appliance units accepted'}
-                              </small>
                             </div>
 
                             <div className="rrf-receipt-summary-card">
@@ -4120,21 +4213,11 @@ export default function ReliefRequestForm() {
                               <strong>
                                 PHP {Number(receiptPanelSummary.totalAmount || 0).toFixed(2)}
                               </strong>
-                              <small>
-                              {receiptPanelSummary.showingReleasedForConfirmation
-                                ? 'Monetary release value'
-                                : 'Monetary value'}
-                            </small>
                           </div>
 
                           <div className="rrf-receipt-summary-card">
                             <span>Item Lines</span>
                             <strong>{Number(receiptPanelSummary.itemLines || 0)}</strong>
-                            <small>
-                              {receiptPanelSummary.showingReleasedForConfirmation
-                                ? 'Release item lines'
-                                : 'Accepted items'}
-                            </small>
                             </div>
 
                             <div className="rrf-receipt-summary-card rrf-receipt-summary-card-date">
@@ -4144,11 +4227,6 @@ export default function ReliefRequestForm() {
                                   : 'Last Received'}
                             </span>
                             <strong>{formatDateTime(receiptPanelSummary.latestActivityAt)}</strong>
-                            <small>
-                              {receiptPanelSummary.showingReleasedForConfirmation
-                                ? 'Latest release activity'
-                                : 'Latest confirmation'}
-                            </small>
                           </div>
                         </div>
 
@@ -4207,7 +4285,7 @@ export default function ReliefRequestForm() {
                                 <span className="rrf-subsection-kicker">Receipt Proof</span>
                                 <h3>{isReceiptConfirmed ? 'Uploaded Receipt Proof' : 'Upload Receipt Proof'}</h3>
                               </div>
-                              {!isReceiptConfirmed ? (
+                              {!isReceiptConfirmed && receiptProofPreviews.length > 0 ? (
                                 <button
                                   type="button"
                                   className="rrf-btn rrf-btn-secondary rrf-btn-small"
@@ -4258,11 +4336,19 @@ export default function ReliefRequestForm() {
                             </div>
 
                             {!isReceiptConfirmed && !receiptProofPreviews.length ? (
-                              <div className="rrf-received-empty compact">
+                              <div className="rrf-received-empty compact rrf-receipt-empty-state">
                                 <div>
                                   <h4>No receipt proof uploaded yet</h4>
                                   <p>Barangay must attach receipt proof before continuing to Step 6.</p>
                                 </div>
+                                <button
+                                  type="button"
+                                  className="rrf-btn rrf-btn-secondary rrf-btn-small"
+                                  onClick={() => distributionFileInputRef.current?.click()}
+                                >
+                                  <FaPlus />
+                                  Add Proof
+                                </button>
                               </div>
                             ) : null}
                           </div>
@@ -4426,20 +4512,41 @@ export default function ReliefRequestForm() {
                                             )
                                           }
                                         />
+                                        {(distributionInlineErrors[editorCard.localId]?.distributionDate ||
+                                          (editorCard.draft.distributionDate &&
+                                          editorCard.draft.distributionDate < minAllowedDate
+                                            ? 'Distribution date cannot be in the past.'
+                                            : '')) ? (
+                                          <small className="rrf-inline-error">
+                                            {distributionInlineErrors[editorCard.localId]?.distributionDate ||
+                                              'Distribution date cannot be in the past.'}
+                                          </small>
+                                        ) : null}
                                       </div>
                                       <div className="rrf-field">
                                         <label>Evacuation Center</label>
-                                        <input
-                                          type="text"
+                                        <select
                                           value={editorCard.draft.evacuationCenterName}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,
                                               'evacuationCenterName',
-                                              sanitizeInlineText(e.target.value, { maxLength: 120 })
+                                              e.target.value
                                             )
                                           }
-                                        />
+                                          disabled={!distributionEvacuationCenterOptions.length}
+                                        >
+                                          <option value="">
+                                            {distributionEvacuationCenterOptions.length
+                                              ? 'Select evacuation center'
+                                              : 'No requested evacuation centers'}
+                                          </option>
+                                          {distributionEvacuationCenterOptions.map((center) => (
+                                            <option key={center.value} value={center.value}>
+                                              {center.label}
+                                            </option>
+                                          ))}
+                                        </select>
                                       </div>
                                       <div className="rrf-field">
                                         <label>Site Label</label>
@@ -4874,3 +4981,8 @@ export default function ReliefRequestForm() {
     </DashboardShell>
   );
 }
+
+
+
+
+

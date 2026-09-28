@@ -540,3 +540,36 @@
 :root[data-theme="dark"] .account-modal-meta span {
   color: var(--text-soft) !important;
 }
+
+/* Dark mode second pass: account management container */
+:root[data-theme="dark"] .acc-page,
+:root[data-theme="dark"] .acc-shell,
+:root[data-theme="dark"] .acc-content {
+  background: #082611 !important;
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .acc-header-card,
+:root[data-theme="dark"] .acc-stat-card,
+:root[data-theme="dark"] .acc-animated {
+  background: linear-gradient(145deg, rgba(13, 61, 34, 0.96), rgba(10, 50, 29, 0.98)) !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .acc-stat-card.active,
+:root[data-theme="dark"] .acc-active-pill {
+  background: linear-gradient(135deg, #148f46, #22c55e) !important;
+  color: #ffffff !important;
+  border-color: rgba(74, 222, 128, 0.48) !important;
+}
+
+:root[data-theme="dark"] .acc-kicker,
+:root[data-theme="dark"] .acc-stat-sub {
+  color: #bfd8c6 !important;
+}
+
+:root[data-theme="dark"] .acc-title,
+:root[data-theme="dark"] .acc-stat-title {
+  color: #f6fff8 !important;
+}

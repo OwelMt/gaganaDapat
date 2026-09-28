@@ -693,3 +693,44 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Dark mode second pass: relief tracking shared pages */
+:root[data-theme="dark"] .rtk-page,
+:root[data-theme="dark"] .rtk-app,
+:root[data-theme="dark"] .rtk-shell {
+  background: #082611 !important;
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .rtk-page :is(.rtk-card, .rtk-panel, .rtk-info-box, .rtk-detail-main, .rtk-detail-side, .rtk-side-panel, .rtk-summary-item, .rtk-meta-box, .rtk-actions-card, .rtk-table-wrapper, .rtk-modal-card),
+:root[data-theme="dark"] .rtk-app :is(.rtk-card, .rtk-panel, .rtk-info-box, .rtk-detail-main, .rtk-detail-side, .rtk-side-panel, .rtk-summary-item, .rtk-meta-box, .rtk-actions-card, .rtk-table-wrapper, .rtk-modal-card) {
+  background: linear-gradient(145deg, rgba(13, 61, 34, 0.96), rgba(10, 50, 29, 0.98)) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+}
+
+:root[data-theme="dark"] .rtk-page :is(input, select, textarea, .rtk-input, .rtk-select, .rtk-textarea),
+:root[data-theme="dark"] .rtk-app :is(input, select, textarea, .rtk-input, .rtk-select, .rtk-textarea) {
+  background: rgba(5, 39, 22, 0.94) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.24) !important;
+  border-radius: 12px !important;
+}
+
+:root[data-theme="dark"] .rtk-page :is(.rtk-table, .rtk-table thead, .rtk-table tbody, .rtk-table tr, .rtk-table th, .rtk-table td),
+:root[data-theme="dark"] .rtk-app :is(.rtk-table, .rtk-table thead, .rtk-table tbody, .rtk-table tr, .rtk-table th, .rtk-table td) {
+  background: rgba(5, 39, 22, 0.74) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.18) !important;
+}
+
+:root[data-theme="dark"] .rtk-page .rtk-table thead th,
+:root[data-theme="dark"] .rtk-app .rtk-table thead th {
+  background: #0a321d !important;
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .rtk-page :is(.rtk-subhead p, .rtk-summary-item span, .rtk-meta-box span),
+:root[data-theme="dark"] .rtk-app :is(.rtk-subhead p, .rtk-summary-item span, .rtk-meta-box span) {
+  color: #bfd8c6 !important;
+}

@@ -1693,3 +1693,215 @@
   align-items: center;
   justify-content: center;
 }
+
+/* Dark mode: shared guideline/announcement surfaces */
+:root[data-theme="dark"] .gl-page,
+:root[data-theme="dark"] .an-page {
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .gl-page .gl-card,
+:root[data-theme="dark"] .gl-page .gl-header-card,
+:root[data-theme="dark"] .gl-page .gl-total-card,
+:root[data-theme="dark"] .gl-page .gl-form-card,
+:root[data-theme="dark"] .gl-page .gl-form-card-fixed,
+:root[data-theme="dark"] .gl-page .gl-list-card,
+:root[data-theme="dark"] .gl-page .gl-list-card-fixed,
+:root[data-theme="dark"] .gl-page .gl-item-card,
+:root[data-theme="dark"] .gl-page .gl-modal-card,
+:root[data-theme="dark"] .gl-page .gl-current-image-card,
+:root[data-theme="dark"] .gl-page .gl-image-preview-card,
+:root[data-theme="dark"] .gl-page .gl-selected-files,
+:root[data-theme="dark"] .gl-page .gl-mini-empty,
+:root[data-theme="dark"] .an-page .gl-form-card-fixed,
+:root[data-theme="dark"] .an-page .gl-list-card-fixed,
+:root[data-theme="dark"] .an-page .gl-item-card,
+:root[data-theme="dark"] .an-page .gl-card,
+:root[data-theme="dark"] .an-page .gl-header-card,
+:root[data-theme="dark"] .an-page .gl-total-card,
+:root[data-theme="dark"] .an-page .gl-selected-files,
+:root[data-theme="dark"] .an-page .gl-mini-empty {
+  background: linear-gradient(145deg, rgba(13, 61, 34, 0.96), rgba(10, 50, 29, 0.98)) !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+  color: #f3fff6 !important;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24) !important;
+}
+
+:root[data-theme="dark"] .gl-page .gl-choice-grid,
+:root[data-theme="dark"] .gl-page .gl-chip-group,
+:root[data-theme="dark"] .gl-page .gl-upload-zone,
+:root[data-theme="dark"] .gl-page .gl-image-placeholder,
+:root[data-theme="dark"] .gl-page .gl-no-image,
+:root[data-theme="dark"] .an-page .gl-choice-grid,
+:root[data-theme="dark"] .an-page .gl-chip-group,
+:root[data-theme="dark"] .an-page .gl-upload-zone,
+:root[data-theme="dark"] .an-page .gl-image-placeholder,
+:root[data-theme="dark"] .an-page .gl-no-image {
+  background: rgba(5, 39, 22, 0.9) !important;
+  border-color: rgba(178, 219, 191, 0.24) !important;
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .gl-page :is(input, select, textarea, .gl-input, .gl-textarea, .gl-modal-textarea, .gl-sort-select),
+:root[data-theme="dark"] .an-page :is(input, select, textarea, .gl-input, .gl-textarea, .gl-modal-textarea, .gl-sort-select) {
+  background: rgba(5, 39, 22, 0.92) !important;
+  color: #f3fff6 !important;
+  border: 1px solid rgba(178, 219, 191, 0.24) !important;
+  border-radius: 14px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+}
+
+:root[data-theme="dark"] .gl-page :is(input, textarea)::placeholder,
+:root[data-theme="dark"] .an-page :is(input, textarea)::placeholder {
+  color: #a8c4b0 !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .gl-page :is(label, .gl-total-card-top, .gl-total-note, .gl-meta, .gl-muted, .gl-card-subtitle),
+:root[data-theme="dark"] .an-page :is(label, .gl-total-card-top, .gl-total-note, .gl-meta, .gl-muted, .gl-card-subtitle) {
+  color: #bfd8c6 !important;
+}
+
+:root[data-theme="dark"] .gl-page :is(.gl-header-title, .gl-section-title, .gl-item-title, .gl-list-title, .gl-form-title, .gl-total-card strong),
+:root[data-theme="dark"] .an-page :is(.gl-header-title, .gl-section-title, .gl-item-title, .gl-list-title, .gl-form-title, .gl-total-card strong) {
+  color: #f6fff8 !important;
+}
+
+:root[data-theme="dark"] .gl-page :is(.gl-choice-btn, .gl-filter-pill, .gl-status-pill, .gl-priority-pill, .gl-category-pill, .gl-legend-item),
+:root[data-theme="dark"] .an-page :is(.gl-choice-btn, .gl-filter-pill, .gl-status-pill, .gl-priority-pill, .gl-category-pill, .gl-legend-item) {
+  background: rgba(17, 78, 43, 0.84) !important;
+  color: #f3fff6 !important;
+  border: 1px solid rgba(178, 219, 191, 0.24) !important;
+}
+
+:root[data-theme="dark"] .gl-page :is(.gl-choice-btn.active, .gl-filter-pill.active, .gl-status-pill.active, .gl-priority-pill.active, .gl-category-pill.active),
+:root[data-theme="dark"] .an-page :is(.gl-choice-btn.active, .gl-filter-pill.active, .gl-status-pill.active, .gl-priority-pill.active, .gl-category-pill.active) {
+  background: linear-gradient(135deg, #148f46, #22c55e) !important;
+  color: #ffffff !important;
+  border-color: rgba(74, 222, 128, 0.55) !important;
+}
+
+:root[data-theme="dark"] .gl-page button:disabled,
+:root[data-theme="dark"] .an-page button:disabled,
+:root[data-theme="dark"] .gl-page .gl-btn:disabled,
+:root[data-theme="dark"] .an-page .gl-btn:disabled {
+  background: rgba(12, 53, 31, 0.65) !important;
+  color: #8daa96 !important;
+  border-color: rgba(178, 219, 191, 0.16) !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .gl-page :is(button, .gl-btn, .gl-action-btn) svg,
+:root[data-theme="dark"] .an-page :is(button, .gl-btn, .gl-action-btn) svg {
+  color: currentColor !important;
+  fill: currentColor !important;
+}
+
+:root[data-theme="dark"] .gl-page .gl-btn-danger,
+:root[data-theme="dark"] .an-page .gl-btn-danger,
+:root[data-theme="dark"] .gl-page .gl-total-card.danger .gl-total-icon,
+:root[data-theme="dark"] .an-page .gl-total-card.danger .gl-total-icon {
+  background: rgba(239, 68, 68, 0.2) !important;
+  color: #fca5a5 !important;
+  border-color: rgba(248, 113, 113, 0.35) !important;
+}
+
+/* Dark mode second pass: remaining guideline/announcement pale controls */
+:root[data-theme="dark"] .gl-page :is(.gl-choice-grid, .gl-chip-group, .gl-upload-zone),
+:root[data-theme="dark"] .an-page :is(.gl-choice-grid, .gl-chip-group, .gl-upload-zone) {
+  background: rgba(4, 36, 20, 0.96) !important;
+  border: 1px solid rgba(178, 219, 191, 0.24) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+}
+
+:root[data-theme="dark"] .gl-page :is(.gl-choice-btn, .gl-filter-pill, .gl-status-pill, .gl-priority-pill, .gl-category-pill),
+:root[data-theme="dark"] .an-page :is(.gl-choice-btn, .gl-filter-pill, .gl-status-pill, .gl-priority-pill, .gl-category-pill) {
+  background: rgba(11, 54, 31, 0.98) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.3) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="dark"] .gl-page :is(.gl-choice-btn:hover, .gl-filter-pill:hover, .gl-status-pill:hover, .gl-priority-pill:hover, .gl-category-pill:hover),
+:root[data-theme="dark"] .an-page :is(.gl-choice-btn:hover, .gl-filter-pill:hover, .gl-status-pill:hover, .gl-priority-pill:hover, .gl-category-pill:hover) {
+  background: rgba(27, 107, 58, 0.95) !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme="dark"] .gl-page :is(.gl-image-placeholder, .gl-no-image, .gl-current-image-card, .gl-image-preview-card, .gl-attachment-preview, .gl-preview-empty),
+:root[data-theme="dark"] .an-page :is(.gl-image-placeholder, .gl-no-image, .gl-current-image-card, .gl-image-preview-card, .gl-attachment-preview, .gl-preview-empty) {
+  background: rgba(5, 39, 22, 0.96) !important;
+  color: #bfd8c6 !important;
+  border-color: rgba(178, 219, 191, 0.28) !important;
+}
+
+:root[data-theme="dark"] .gl-page :is(.gl-image-placeholder svg, .gl-no-image svg),
+:root[data-theme="dark"] .an-page :is(.gl-image-placeholder svg, .gl-no-image svg) {
+  color: #86efac !important;
+  fill: currentColor !important;
+}
+
+:root[data-theme="dark"] .gl-page :is(.gl-btn-secondary, .gl-btn-ghost),
+:root[data-theme="dark"] .an-page :is(.gl-btn-secondary, .gl-btn-ghost) {
+  background: rgba(17, 78, 43, 0.84) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.26) !important;
+}
+
+:root[data-theme="dark"] .gl-page :is(.gl-btn-danger, .gl-archive-btn),
+:root[data-theme="dark"] .an-page :is(.gl-btn-danger, .gl-archive-btn) {
+  background: rgba(127, 29, 29, 0.72) !important;
+  color: #fecaca !important;
+  border-color: rgba(248, 113, 113, 0.42) !important;
+}
+
+/* Dark mode exact chip rows for Guidelines and Announcements */
+:root[data-theme="dark"] .gl-page .gl-chip-row,
+:root[data-theme="dark"] .an-page .gl-chip-row {
+  background: rgba(4, 36, 20, 0.96) !important;
+  border-color: rgba(178, 219, 191, 0.28) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+:root[data-theme="dark"] .gl-page .gl-filter-chip,
+:root[data-theme="dark"] .an-page .gl-filter-chip {
+  background: rgba(11, 54, 31, 0.98) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.32) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="dark"] .gl-page .gl-filter-chip.active,
+:root[data-theme="dark"] .an-page .gl-filter-chip.active {
+  background: rgba(22, 101, 52, 0.98) !important;
+  color: #ffffff !important;
+  border-color: rgba(134, 239, 172, 0.55) !important;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.22) !important;
+}
+
+:root[data-theme="dark"] .gl-page .gl-filter-chip.medium.active,
+:root[data-theme="dark"] .gl-page .gl-filter-chip.high.active,
+:root[data-theme="dark"] .gl-page .gl-filter-chip.critical.active,
+:root[data-theme="dark"] .an-page .gl-filter-chip.medium.active,
+:root[data-theme="dark"] .an-page .gl-filter-chip.high.active,
+:root[data-theme="dark"] .an-page .gl-filter-chip.critical.active {
+  background: rgba(70, 42, 9, 0.95) !important;
+  color: #fde68a !important;
+  border-color: rgba(251, 191, 36, 0.5) !important;
+}
+
+:root[data-theme="dark"] .gl-page .gl-filter-chip.critical.active,
+:root[data-theme="dark"] .an-page .gl-filter-chip.critical.active {
+  background: rgba(76, 20, 20, 0.95) !important;
+  color: #fecaca !important;
+  border-color: rgba(248, 113, 113, 0.5) !important;
+}
+
+:root[data-theme="dark"] .gl-page .gl-upload-box,
+:root[data-theme="dark"] .an-page .gl-upload-box,
+:root[data-theme="dark"] .gl-page .gl-mini-empty,
+:root[data-theme="dark"] .an-page .gl-mini-empty {
+  background: rgba(5, 39, 22, 0.94) !important;
+  color: #d7f8df !important;
+  border-color: rgba(178, 219, 191, 0.24) !important;
+}

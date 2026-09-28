@@ -107,10 +107,8 @@ const ALLOWED_PROOF_EXTENSIONS = [
   "png",
   "webp",
   "pdf",
-  "doc",
-  "docx",
 ];
-const DOCUMENT_PROOF_EXTENSIONS = ["pdf", "doc", "docx"];
+const DOCUMENT_PROOF_EXTENSIONS = ["pdf"];
 const CATEGORY_UNIT_HINTS = [
   { keywords: ["rice", "grain", "corn"], units: ["kg", "sack", "bag"] },
   { keywords: ["water", "drink", "juice", "milk"], units: ["bottle", "liter", "gallon", "box"] },
@@ -609,7 +607,7 @@ const InventoryAdd = () => {
   };
 
   const getProofLabel = () => {
-    return "Upload exactly one document proof (PDF/DOC/DOCX) and one picture proof (JPG/PNG/WEBP), up to 15 MB each. Videos and unsupported files are not allowed.";
+    return "Upload exactly one document proof (PDF) and one picture proof (JPG/PNG/WEBP), up to 15 MB each. Videos and unsupported files are not allowed.";
   };
 
   const getImportButtonLabel = () => {
@@ -764,7 +762,7 @@ const InventoryAdd = () => {
         )
     );
     if (unsupportedFile) {
-      return "Only PDF, DOC, DOCX, JPG, JPEG, PNG, and WEBP files are allowed for proof uploads.";
+      return "Only PDF, JPG, JPEG, PNG, and WEBP files are allowed for proof uploads.";
     }
 
     const hasDocumentProof = combinedProofFiles.some((file) => isDocumentProofFile(file));
@@ -905,7 +903,7 @@ const InventoryAdd = () => {
     if (combined.length > 2 || combined.filter(isDocumentProofFile).length > 1 || combined.filter(isImageProofFile).length > 1) {
       error = "Only one document and one image are allowed per donation. Remove an existing proof before replacing it.";
     } else if (files.some((file) => !ALLOWED_PROOF_EXTENSIONS.includes(getFileExtension(file.name)))) {
-      error = "Only PDF, DOC, DOCX, JPG, JPEG, PNG, and WEBP files are allowed for proof uploads.";
+      error = "Only PDF, JPG, JPEG, PNG, and WEBP files are allowed for proof uploads.";
     } else if (files.some((file) => file.size > 15 * 1024 * 1024)) {
       error = "Each proof file must be 15 MB or smaller.";
     }
@@ -1964,12 +1962,8 @@ const InventoryAdd = () => {
               )
             : null}
 
-          <div
-            className={`inventory-header ${
-              !showForm && !showArchived ? "inventory-header-with-summary" : ""
-            }`}
-          >
-            {!showForm && !showArchived && (
+          {!showForm && !showArchived ? (
+            <div className="inventory-header inventory-header-with-summary">
               <>
                 <div className="inventory-header-summary-head">
                   <div className="inventory-summary-title-group">
@@ -2006,9 +2000,6 @@ const InventoryAdd = () => {
                         <span className="summary-icon"><FaBoxes /></span>
                       </div>
                       <h3 className="summary-value">{summary.totalGoodsEntries}</h3>
-                      <span className="summary-note">
-                        Total quantity: {summary.totalGoodsQuantity}
-                      </span>
                     </div>
                   ) : null}
 
@@ -2041,9 +2032,6 @@ const InventoryAdd = () => {
                         <span className="summary-icon"><FaBlender /></span>
                       </div>
                       <h3 className="summary-value">{summary.totalApplianceEntries}</h3>
-                      <span className="summary-note">
-                        Total quantity: {summary.totalApplianceQuantity}
-                      </span>
                     </div>
                   ) : null}
 
@@ -2064,8 +2052,8 @@ const InventoryAdd = () => {
                   </div>
                 </div>
               </>
-            )}
-          </div>
+            </div>
+          ) : null}
 
           {showForm ? (
             <div className="donation-modal-shell">
@@ -3400,5 +3388,3 @@ const InventoryAdd = () => {
 };
 
 export default InventoryAdd;
-                  
-                  

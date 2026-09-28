@@ -1,5 +1,5 @@
 const IMAGE_PROOF_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "gif", "heic", "heif"];
-const DOCUMENT_PROOF_EXTENSIONS = ["pdf", "doc", "docx"];
+const DOCUMENT_PROOF_EXTENSIONS = ["pdf"];
 
 const extractProofFileValue = (value = "") => {
   if (typeof value === "string") {
@@ -47,7 +47,7 @@ export const isDocumentProofFile = (value = "") =>
   Boolean(
     value &&
       typeof value === "object" &&
-      /pdf|wordprocessingml|msword/i.test(
+      /pdf/i.test(
         String(value.type || value.mimeType || value.mimetype || "")
       )
   );

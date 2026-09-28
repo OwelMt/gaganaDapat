@@ -17,6 +17,42 @@
   --border-strong: rgba(157, 203, 168, 0.28);
   --shadow-soft: 0 18px 40px rgba(0, 0, 0, 0.26);
 
+  --app-page-bg: #071f10;
+  --app-page-bg-2: #0b3117;
+  --app-surface: #102f1a;
+  --app-surface-soft: #153a21;
+  --app-surface-raised: #183f25;
+  --app-input-bg: #0b2a16;
+  --app-input-bg-focus: #10341c;
+  --app-text: #f1fff5;
+  --app-text-soft: #c6dccb;
+  --app-text-muted: #9fb6a6;
+  --app-placeholder: #9bb1a1;
+  --app-border: rgba(176, 220, 187, 0.18);
+  --app-border-strong: rgba(176, 220, 187, 0.32);
+  --app-icon: #e8f8ec;
+  --app-success-bg: rgba(34, 197, 94, 0.18);
+  --app-success-bg-strong: rgba(34, 197, 94, 0.28);
+  --app-success-text: #8ff0ad;
+  --app-success-border: rgba(74, 222, 128, 0.42);
+  --app-warning-bg: rgba(245, 158, 11, 0.2);
+  --app-warning-bg-strong: rgba(245, 158, 11, 0.3);
+  --app-warning-text: #fbbf24;
+  --app-warning-border: rgba(251, 191, 36, 0.48);
+  --app-danger-bg: rgba(239, 68, 68, 0.2);
+  --app-danger-bg-strong: rgba(239, 68, 68, 0.32);
+  --app-danger-text: #fca5a5;
+  --app-danger-border: rgba(248, 113, 113, 0.48);
+  --app-info-bg: rgba(59, 130, 246, 0.18);
+  --app-info-bg-strong: rgba(59, 130, 246, 0.28);
+  --app-info-text: #93c5fd;
+  --app-info-border: rgba(96, 165, 250, 0.42);
+  --app-neutral-bg: rgba(203, 213, 225, 0.12);
+  --app-neutral-text: #dbe7de;
+  --app-neutral-border: rgba(203, 213, 225, 0.22);
+  --app-card-bg: linear-gradient(180deg, rgba(16, 47, 26, 0.98) 0%, rgba(21, 58, 33, 0.98) 100%);
+  --app-card-bg-soft: linear-gradient(180deg, rgba(13, 40, 22, 0.96) 0%, rgba(17, 50, 28, 0.96) 100%);
+
   --bg-page: #0c2814;
   --bg-card: #13311b;
   --bg-soft: #173a20;
@@ -212,7 +248,7 @@
 
 :root[data-theme="dark"] .dashboard-page,
 :root[data-theme="dark"] .dashboard-page * {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 :root[data-theme="dark"] .dashboard-page {
@@ -220,37 +256,34 @@
   --sb-bg-2: #0c3618;
   --sb-panel: rgba(255, 255, 255, 0.04);
   --sb-panel-strong: rgba(255, 255, 255, 0.08);
-  --sb-text: #edf7ef;
-  --sb-muted: #aec8b4;
+  --sb-text: var(--app-text);
+  --sb-muted: var(--app-text-soft);
   --sb-accent: #3fb950;
   --sb-accent-strong: #2e9d42;
   --sb-border: rgba(255, 255, 255, 0.08);
   --sb-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
   --content-bg:
-    radial-gradient(circle at top right, rgba(15, 90, 32, 0.06), transparent 24%),
-    radial-gradient(circle at top left, rgba(34, 197, 94, 0.05), transparent 30%),
-    linear-gradient(180deg, #f6fbf7 0%, #edf5ef 100%);
-  --content-text: #1b1b1b;
-  --page-bg: #edf5ef;
-  --surface: #ffffff;
-  --surface-soft: #f7fbf8;
-  --surface-strong: #f1f7f2;
-  --text-main: #13311b;
-  --text-soft: #567061;
-  --text-muted: #70887a;
-  --border-soft: rgba(15, 90, 32, 0.1);
-  --border-strong: rgba(15, 90, 32, 0.16);
-  --success-bg: #e8f7ed;
-  --warning-bg: #fff3da;
-  --danger-bg: #fff0f0;
-  --success-text: #166534;
-  --warning-text: #a16207;
-  --danger-text: #b91c1c;
-  background:
-    radial-gradient(circle at top right, rgba(15, 90, 32, 0.06), transparent 24%),
-    radial-gradient(circle at top left, rgba(34, 197, 94, 0.05), transparent 30%),
-    linear-gradient(180deg, #f6fbf7 0%, #edf5ef 100%);
-  color: #13311b;
+    radial-gradient(circle at top right, rgba(63, 185, 80, 0.14), transparent 24%),
+    radial-gradient(circle at top left, rgba(46, 157, 66, 0.1), transparent 30%),
+    linear-gradient(180deg, var(--app-page-bg) 0%, var(--app-page-bg-2) 100%);
+  --content-text: var(--app-text);
+  --page-bg: var(--app-page-bg);
+  --surface: var(--app-surface);
+  --surface-soft: var(--app-surface-soft);
+  --surface-strong: var(--app-surface-raised);
+  --text-main: var(--app-text);
+  --text-soft: var(--app-text-soft);
+  --text-muted: var(--app-text-muted);
+  --border-soft: var(--app-border);
+  --border-strong: var(--app-border-strong);
+  --success-bg: var(--app-success-bg);
+  --warning-bg: var(--app-warning-bg);
+  --danger-bg: var(--app-danger-bg);
+  --success-text: var(--app-success-text);
+  --warning-text: var(--app-warning-text);
+  --danger-text: var(--app-danger-text);
+  background: var(--content-bg);
+  color: var(--app-text);
 }
 
 :root[data-theme="dark"] .inventory-page .inventory-hero,
@@ -1165,4 +1198,572 @@
 :root[data-theme="dark"] .incident-history-modal-head p,
 :root[data-theme="dark"] .modal p {
   color: var(--text-soft) !important;
+}
+
+/* Shared admin dark-mode polish: keep surfaces, icons, fields, and semantic states readable. */
+:root[data-theme="dark"] .dashboard-page :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea),
+:root[data-theme="dark"] .dashboard-page :is(.notification-select, .audit-select, .audit-search-input, .admin-logs-search, .admin-logs-filter, .acc-search, .acc-filter, .ea-list-search, .ea-role-filter, .ea-input, .ea-input-readonly, .rr-input, .rr-select, .tio-input, .tio-select) {
+  background: var(--app-input-bg) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border-strong) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+}
+
+:root[data-theme="dark"] .dashboard-page :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus,
+:root[data-theme="dark"] .dashboard-page :is(.notification-select, .audit-select, .audit-search-input, .admin-logs-search, .admin-logs-filter, .acc-search, .acc-filter, .ea-list-search, .ea-role-filter, .ea-input, .ea-input-readonly, .rr-input, .rr-select, .tio-input, .tio-select):focus {
+  background: var(--app-input-bg-focus) !important;
+  border-color: var(--app-success-border) !important;
+  outline: none !important;
+}
+
+:root[data-theme="dark"] .dashboard-page :is(input, textarea)::placeholder,
+:root[data-theme="dark"] .dashboard-page :is(.ea-list-search, .ea-input, .acc-search, .audit-search-input)::placeholder {
+  color: var(--app-placeholder) !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .dashboard-page :is(svg, .sidebar-icon, .notification-title-icon, .notification-icon, .overview-ai-icon, .overview-kpi-icon, .overview-priority-icon, .overview-module-icon, .ea-head-avatar, .ea-profile-avatar) {
+  color: currentColor;
+}
+
+:root[data-theme="dark"] .dashboard-page :is(.notification-button, .notification-icon-button, .notification-title-icon, .module-toggle-pill, .overview-command-badge, .overview-command-status, .overview-priority-badge, .overview-module-status, .ea-role, .ea-role-badge, .acc-active-pill, .admin-log-chip, .audit-pill, .audit-priority) {
+  background: var(--app-neutral-bg) !important;
+  color: var(--app-neutral-text) !important;
+  border-color: var(--app-neutral-border) !important;
+}
+
+:root[data-theme="dark"] .dashboard-page :is(.notification-button:hover, .notification-icon-button:hover, .module-toggle-pill:hover, .ea-head:hover) {
+  border-color: var(--app-success-border) !important;
+  color: var(--app-text) !important;
+}
+
+:root[data-theme="dark"] .dashboard-page :is(.notification-button.danger, .notification-icon-button.archive, .ea-btn-danger, .archived-delete-btn, .delete, .archive, .danger, .critical, .error, .rejected, .full) {
+  background: var(--app-danger-bg) !important;
+  color: var(--app-danger-text) !important;
+  border-color: var(--app-danger-border) !important;
+}
+
+:root[data-theme="dark"] .dashboard-page :is(.warning, .notice, .needs-attention, .pending, .priority-high, .overview-command-status.warning, .overview-command-badge.warning, .overview-priority-item.warning .overview-priority-badge, .overview-module-card.warning .overview-module-status, .notification-pill.priority-high) {
+  background: var(--app-warning-bg) !important;
+  color: var(--app-warning-text) !important;
+  border-color: var(--app-warning-border) !important;
+}
+
+:root[data-theme="dark"] .dashboard-page :is(.success, .approved, .resolved, .safe, .available, .notification-button.toggle-on, .module-toggle-pill.active, .overview-command-status.success, .overview-command-badge.success, .notification-pill.is-new, .notification-pill.priority-low) {
+  background: var(--app-success-bg) !important;
+  color: var(--app-success-text) !important;
+  border-color: var(--app-success-border) !important;
+}
+
+:root[data-theme="dark"] .dashboard-page :is(.info, .neutral, .notification-pill.priority-normal, .overview-kpi-card.info .overview-kpi-icon, .overview-kpi-card.notice .overview-kpi-icon) {
+  background: var(--app-info-bg) !important;
+  color: var(--app-info-text) !important;
+  border-color: var(--app-info-border) !important;
+}
+
+:root[data-theme="dark"] .overview-command-status.warning,
+:root[data-theme="dark"] .overview-command-title .warning,
+:root[data-theme="dark"] .overview-ai-card.warning .overview-ai-icon,
+:root[data-theme="dark"] .overview-kpi-card.warning .overview-kpi-icon,
+:root[data-theme="dark"] .overview-priority-item.warning .overview-priority-icon,
+:root[data-theme="dark"] .overview-module-card.warning .overview-module-icon,
+:root[data-theme="dark"] .overview-score-ring.warning {
+  background: var(--app-warning-bg) !important;
+  color: var(--app-warning-text) !important;
+  border-color: var(--app-warning-border) !important;
+}
+
+:root[data-theme="dark"] .overview-command-status.danger,
+:root[data-theme="dark"] .overview-command-badge.danger,
+:root[data-theme="dark"] .overview-ai-card.danger .overview-ai-icon,
+:root[data-theme="dark"] .overview-kpi-card.danger .overview-kpi-icon,
+:root[data-theme="dark"] .overview-priority-item.danger .overview-priority-icon,
+:root[data-theme="dark"] .overview-module-card.danger .overview-module-icon,
+:root[data-theme="dark"] .overview-module-card.danger .overview-module-status,
+:root[data-theme="dark"] .overview-score-ring.danger,
+:root[data-theme="dark"] .overview-kpi-alert {
+  background: var(--app-danger-bg) !important;
+  color: var(--app-danger-text) !important;
+  border-color: var(--app-danger-border) !important;
+}
+
+:root[data-theme="dark"] .notification-card-title,
+:root[data-theme="dark"] .notification-card-message,
+:root[data-theme="dark"] .notification-icon-button,
+:root[data-theme="dark"] .notification-button,
+:root[data-theme="dark"] .module-toggle-pill {
+  color: var(--app-text) !important;
+}
+
+:root[data-theme="dark"] .notification-icon {
+  background: var(--app-info-bg) !important;
+  color: var(--app-info-text) !important;
+  border-color: var(--app-info-border) !important;
+}
+
+:root[data-theme="dark"] .notification-card.priority-high .notification-icon,
+:root[data-theme="dark"] .notification-card.priority-critical .notification-icon,
+:root[data-theme="dark"] .notification-pill.priority-critical {
+  background: var(--app-danger-bg) !important;
+  color: var(--app-danger-text) !important;
+  border-color: var(--app-danger-border) !important;
+}
+
+:root[data-theme="dark"] .notification-card-actions :is(button, svg),
+:root[data-theme="dark"] .notification-actions :is(button, svg),
+:root[data-theme="dark"] .notification-toolbar :is(button, svg) {
+  color: currentColor !important;
+}
+
+:root[data-theme="dark"] .acc-page :is(.acc-header-card, .acc-content, .acc-stat-card, .acc-tabs),
+:root[data-theme="dark"] :is(.ea-hero-card, .ea-sidebar-card, .ea-editor-card, .ea-profile-card, .ea-section-block, .ea-meta-card, .ea-head, .ea-placeholder, .ea-danger-zone) {
+  background: var(--app-card-bg) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22) !important;
+}
+
+:root[data-theme="dark"] :is(.ea-head.is-active, .ea-head.active, .ea-profile-card, .ea-meta-card) {
+  background: var(--app-card-bg-soft) !important;
+  border-color: var(--app-border-strong) !important;
+}
+
+:root[data-theme="dark"] :is(.ea-page-title, .ea-username, .ea-profile-name, .ea-section-title, .ea-empty-title, .ea-meta-card strong, .ea-field label, .acc-title, .acc-stat-title) {
+  color: var(--app-text) !important;
+}
+
+:root[data-theme="dark"] :is(.ea-kicker, .ea-email, .ea-profile-email, .ea-field-hint, .ea-meta-card span, .ea-list-empty, .acc-stat-sub) {
+  color: var(--app-text-soft) !important;
+}
+
+:root[data-theme="dark"] :is(.ea-field-error, .ea-field.has-error label) {
+  color: var(--app-danger-text) !important;
+}
+
+:root[data-theme="dark"] :is(.ea-role, .ea-role-badge, .archived-role-pill, .acc-active-pill) {
+  background: var(--app-info-bg) !important;
+  color: var(--app-info-text) !important;
+  border-color: var(--app-info-border) !important;
+}
+
+:root[data-theme="dark"] :is(.ea-role-accountant, .ea-role-badge.ea-role-accountant) {
+  background: var(--app-warning-bg) !important;
+  color: var(--app-warning-text) !important;
+  border-color: var(--app-warning-border) !important;
+}
+
+:root[data-theme="dark"] :is(.ea-role-drrmo, .ea-role-badge.ea-role-drrmo) {
+  background: var(--app-info-bg) !important;
+  color: var(--app-info-text) !important;
+  border-color: var(--app-info-border) !important;
+}
+
+:root[data-theme="dark"] :is(.ea-role-barangay, .ea-role-badge.ea-role-barangay) {
+  background: var(--app-success-bg) !important;
+  color: var(--app-success-text) !important;
+  border-color: var(--app-success-border) !important;
+}
+
+:root[data-theme="dark"] :is(.notification-toast.success, .account-notification-stack .notification-toast.success) {
+  background: linear-gradient(180deg, rgba(22, 101, 52, 0.96), rgba(20, 83, 45, 0.96)) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-success-border) !important;
+}
+
+:root[data-theme="dark"] :is(.notification-toast.warning, .account-notification-stack .notification-toast.warning, .warning-banner.warning) {
+  background: linear-gradient(180deg, rgba(120, 53, 15, 0.96), rgba(92, 46, 10, 0.96)) !important;
+  color: #fff7ed !important;
+  border-color: var(--app-warning-border) !important;
+}
+
+:root[data-theme="dark"] :is(.notification-toast.error, .account-notification-stack .notification-toast.error, .warning-banner.danger) {
+  background: linear-gradient(180deg, rgba(127, 29, 29, 0.96), rgba(88, 28, 28, 0.96)) !important;
+  color: #fff1f2 !important;
+  border-color: var(--app-danger-border) !important;
+}
+
+:root[data-theme="dark"] :is(.notification-toast.info, .account-notification-stack .notification-toast.info) {
+  background: linear-gradient(180deg, rgba(30, 64, 175, 0.92), rgba(30, 58, 138, 0.92)) !important;
+  color: #eff6ff !important;
+  border-color: var(--app-info-border) !important;
+}
+
+
+/* Edit Account uses local variables, so remap them in dark mode before component styles resolve. */
+:root[data-theme="dark"] .edit-account {
+  --ea-bg: var(--app-page-bg);
+  --ea-surface: var(--app-surface);
+  --ea-surface-soft: var(--app-surface-soft);
+  --ea-border: var(--app-border);
+  --ea-border-strong: var(--app-border-strong);
+  --ea-text: var(--app-text);
+  --ea-muted: var(--app-text-soft);
+  --ea-primary: var(--app-success-text);
+  --ea-primary-strong: var(--app-text);
+  --ea-primary-soft: var(--app-success-bg);
+  --ea-success: var(--app-success-text);
+  --ea-danger: var(--app-danger-text);
+  --ea-warning-bg: var(--app-warning-bg);
+  --ea-warning-text: var(--app-warning-text);
+  --ea-warning-border: var(--app-warning-border);
+  background:
+    radial-gradient(circle at top right, rgba(63, 185, 80, 0.14), transparent 24%),
+    radial-gradient(circle at top left, rgba(46, 157, 66, 0.1), transparent 28%),
+    linear-gradient(180deg, var(--app-page-bg) 0%, var(--app-page-bg-2) 100%) !important;
+  color: var(--app-text) !important;
+}
+
+:root[data-theme="dark"] :is(.ea-hero-copy, .ea-stat-card, .ea-sidebar-top, .ea-editor-card, .ea-list-empty) {
+  background: var(--app-card-bg) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22) !important;
+}
+
+:root[data-theme="dark"] :is(.ea-stat-value, .ea-profile-copy h3, .ea-section-title-row h3, .ea-danger-zone-copy h4) {
+  color: var(--app-text) !important;
+}
+
+:root[data-theme="dark"] :is(.ea-stat-label, .ea-stat-sub, .ea-profile-copy p, .ea-danger-zone-copy p) {
+  color: var(--app-text-soft) !important;
+}
+
+:root[data-theme="dark"] :is(.ea-field input, .ea-field .ea-input-readonly) {
+  background: var(--app-input-bg) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border-strong) !important;
+}
+
+:root[data-theme="dark"] .ea-field.has-error input {
+  background: var(--app-danger-bg) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-danger-border) !important;
+}
+
+:root[data-theme="dark"] .ea-btn-secondary {
+  background: var(--app-neutral-bg) !important;
+  color: var(--app-neutral-text) !important;
+  border-color: var(--app-neutral-border) !important;
+}
+
+:root[data-theme="dark"] .ea-danger-zone {
+  background: linear-gradient(180deg, rgba(127, 29, 29, 0.32), rgba(88, 28, 28, 0.22)) !important;
+  border-color: var(--app-danger-border) !important;
+}
+
+:root[data-theme="dark"] .ea-live-pill--warning {
+  background: var(--app-warning-bg) !important;
+  color: var(--app-warning-text) !important;
+  border-color: var(--app-warning-border) !important;
+}
+
+/* Dark-mode second pass: remove remaining pale admin panels and strengthen form/select contrast. */
+:root[data-theme="dark"] .dashboard-header,
+:root[data-theme="dark"] .dashboard-header-shell,
+:root[data-theme="dark"] .admin-content .dashboard-header,
+:root[data-theme="dark"] .analytics-page .analytics-header--dashboard,
+:root[data-theme="dark"] .analytics-page .analytics-tabs-shell,
+:root[data-theme="dark"] .analytics-page .analytics-tab-content {
+  background:
+    radial-gradient(circle at top right, rgba(63, 185, 80, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(12, 42, 21, 0.98) 0%, rgba(8, 31, 15, 0.98) 100%) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border) !important;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.28) !important;
+}
+
+:root[data-theme="dark"] .analytics-page {
+  --text: var(--app-text) !important;
+  --subtle: var(--app-success-text) !important;
+  --muted: var(--app-text-soft) !important;
+  --card: rgba(16, 47, 26, 0.98) !important;
+  --page-top: var(--app-page-bg) !important;
+  --page-bottom: var(--app-page-bg-2) !important;
+  background:
+    radial-gradient(circle at top right, rgba(63, 185, 80, 0.12), transparent 24%),
+    linear-gradient(180deg, var(--app-page-bg) 0%, var(--app-page-bg-2) 100%) !important;
+  color: var(--app-text) !important;
+}
+
+:root[data-theme="dark"] .analytics-page :is(.analytics-title, .analytics-tab-title, .analytics-badge, .overview-command-title, .overview-ai-title, .overview-kpi-value, .overview-module-score) {
+  color: var(--app-text) !important;
+}
+
+:root[data-theme="dark"] .analytics-page :is(.analytics-header-subtitle, .overview-kpi-label, .overview-kpi-sub, .overview-module-copy, .overview-sync-line) {
+  color: var(--app-text-soft) !important;
+}
+
+:root[data-theme="dark"] .analytics-page :is(.analytics-badge, .analytics-badge--soft, .analytics-tab:not(.is-active)) {
+  background: var(--app-neutral-bg) !important;
+  color: var(--app-neutral-text) !important;
+  border: 1px solid var(--app-neutral-border) !important;
+}
+
+:root[data-theme="dark"] .analytics-page :is(.overview-command-card, .overview-ai-card, .overview-kpi-card, .overview-panel, .overview-priority-item, .overview-module-card, .overview-chart-panel, .overview-empty-state, .evac-panel, .evac-kpi-card, .evac-snapshot-card, .a-card, .don-kpi-card, .don-leaderboard-card, .donation-clean-card, .donation-health-compact-card, .incident-kpi-card, .incident-health-compact-card, .relief-kpi-card, .relief-health-compact-card) {
+  background: var(--app-card-bg) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24) !important;
+}
+
+:root[data-theme="dark"] .analytics-page :is(.overview-kpi-card.warning .overview-kpi-alert, .overview-kpi-card.notice .overview-kpi-alert, .evac-kpi-card.warning .evac-kpi-alert, .evac-kpi-card.notice .evac-kpi-alert, .incident-kpi-card.warning .incident-kpi-alert, .relief-kpi-card.warning .relief-kpi-alert) {
+  background: var(--app-warning-bg) !important;
+  color: var(--app-warning-text) !important;
+  border-color: var(--app-warning-border) !important;
+}
+
+:root[data-theme="dark"] .analytics-page :is(.overview-kpi-card.danger .overview-kpi-alert, .evac-kpi-card.danger .evac-kpi-alert, .incident-kpi-card.danger .incident-kpi-alert, .relief-kpi-card.danger .relief-kpi-alert) {
+  background: var(--app-danger-bg) !important;
+  color: var(--app-danger-text) !important;
+  border-color: var(--app-danger-border) !important;
+}
+
+:root[data-theme="dark"] .register-page {
+  --reg-bg: var(--app-page-bg) !important;
+  --reg-surface: var(--app-surface) !important;
+  --reg-surface-soft: var(--app-surface-soft) !important;
+  --reg-border: var(--app-border) !important;
+  --reg-border-strong: var(--app-border-strong) !important;
+  --reg-text: var(--app-text) !important;
+  --reg-muted: var(--app-text-soft) !important;
+  --reg-primary: var(--app-success-text) !important;
+  --reg-primary-strong: var(--app-text) !important;
+  --reg-primary-hover: var(--app-success-text) !important;
+  --reg-accent: var(--app-info-text) !important;
+  --reg-success-bg: var(--app-success-bg) !important;
+  --reg-success-border: var(--app-success-border) !important;
+  --reg-success-text: var(--app-success-text) !important;
+  --reg-error-bg: var(--app-danger-bg) !important;
+  --reg-error-border: var(--app-danger-border) !important;
+  --reg-error-text: var(--app-danger-text) !important;
+  background:
+    radial-gradient(circle at top right, rgba(63, 185, 80, 0.14), transparent 24%),
+    radial-gradient(circle at top left, rgba(46, 157, 66, 0.1), transparent 28%),
+    linear-gradient(180deg, var(--app-page-bg) 0%, var(--app-page-bg-2) 100%) !important;
+  color: var(--app-text) !important;
+}
+
+:root[data-theme="dark"] :is(.register-hero-copy, .register-stat-card, .register-panel, .register-panel-form, .form-block-highlight, .register-role-switch) {
+  background: var(--app-card-bg) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22) !important;
+}
+
+:root[data-theme="dark"] :is(.register-stat-card--green, .register-stat-card--amber, .register-stat-card--blue) {
+  background: var(--app-card-bg-soft) !important;
+}
+
+:root[data-theme="dark"] :is(.register-title, .register-stat-card strong, .input-label, .role-tab.active, .register-kicker) {
+  color: var(--app-text) !important;
+}
+
+:root[data-theme="dark"] :is(.register-stat-card span, .field-message, .register-mini-badge, .role-tab) {
+  color: var(--app-text-soft) !important;
+}
+
+:root[data-theme="dark"] :is(.input-shell, .register-page .input-shell, .register-page .premium-input, .premium-input, .ea-list-search, .ea-role-filter, .ea-input, .ea-input-readonly, .acc-search, .acc-filter) {
+  background: var(--app-input-bg) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border-strong) !important;
+}
+
+:root[data-theme="dark"] :is(.input-shell:focus-within, .register-page .input-shell:focus-within, .ea-list-search:focus, .ea-role-filter:focus, .premium-input:focus) {
+  background: var(--app-input-bg-focus) !important;
+  border-color: var(--app-success-border) !important;
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.18) !important;
+}
+
+:root[data-theme="dark"] :is(.premium-input::placeholder, .register-page input::placeholder, .register-page textarea::placeholder, .ea-list-search::placeholder, .ea-input::placeholder, .acc-search::placeholder, .filter-field input::placeholder, .filter-field textarea::placeholder) {
+  color: var(--app-placeholder) !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] :is(select, option, optgroup, .premium-input option, .filter-field select option, .notification-select option, .audit-select option, .ea-role-filter option, .acc-filter option) {
+  background-color: var(--app-input-bg) !important;
+  color: var(--app-text) !important;
+}
+
+:root[data-theme="dark"] :is(select:disabled, input:disabled, textarea:disabled, option:disabled, .premium-input:disabled, .ea-input-readonly) {
+  color: var(--app-text-muted) !important;
+  -webkit-text-fill-color: var(--app-text-muted) !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] :is(.input-action, .ea-btn-secondary, .role-tab.active) {
+  background: var(--app-neutral-bg) !important;
+  color: var(--app-success-text) !important;
+  border-color: var(--app-neutral-border) !important;
+}
+
+:root[data-theme="dark"] :is(.input-shell.has-error, .ea-field.has-error input, .field input.input-error, .field select.input-error, .field textarea.input-error) {
+  background: var(--app-danger-bg) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-danger-border) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page :is(.summary-card, .summary-card.success, .summary-card.warning, .summary-card.danger, .summary-card.accent, .summary-card.muted, .summary-card.neutral, .evac-top-filters, .filter-field, .evac-left-panel, .evac-right-panel, .evac-map-panel, .barangay-card, .place-card, .panel-head, .side-panel-tabs, .side-panel-body) {
+  background: var(--app-card-bg) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page :is(.filter-field input, .filter-field select, .filter-field textarea, .field input, .field select, .field textarea) {
+  background: var(--app-input-bg) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border-strong) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page :is(.summary-label, .summary-sub, .filter-field span, .place-card-subtitle, .place-card-meta, .barangay-card-top span) {
+  color: var(--app-text-soft) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page :is(.summary-value, .place-card-title, .barangay-card-top strong, .panel-head h2) {
+  color: var(--app-text) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page .summary-card.success .summary-icon,
+:root[data-theme="dark"] .evac-dashboard-page .summary-card.available .summary-icon {
+  background: var(--app-success-bg) !important;
+  color: var(--app-success-text) !important;
+  border-color: var(--app-success-border) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page :is(.summary-card.warning .summary-icon, .summary-card.limited .summary-icon, .summary-card.warning .summary-alert-dot, .summary-card.limited .summary-alert-dot) {
+  background: var(--app-warning-bg) !important;
+  color: var(--app-warning-text) !important;
+  border-color: var(--app-warning-border) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page :is(.summary-card.danger .summary-icon, .summary-card.full .summary-icon, .summary-card.danger .summary-alert-dot, .summary-card.full .summary-alert-dot, .summary-alert-dot) {
+  background: var(--app-danger-bg) !important;
+  color: var(--app-danger-text) !important;
+  border-color: var(--app-danger-border) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page :is(.summary-card.accent .summary-icon, .summary-card.muted .summary-icon, .summary-card.neutral .summary-icon) {
+  background: var(--app-info-bg) !important;
+  color: var(--app-info-text) !important;
+  border-color: var(--app-info-border) !important;
+}
+
+:root[data-theme="dark"] :is(.field-message, .field-error, .status-banner-error, .ea-field-error) {
+  color: var(--app-danger-text) !important;
+}
+
+:root[data-theme="dark"] :is(.status-banner-error) {
+  background: var(--app-danger-bg) !important;
+  border-color: var(--app-danger-border) !important;
+}
+
+:root[data-theme="dark"] :is(.status-banner-success) {
+  background: var(--app-success-bg) !important;
+  color: var(--app-success-text) !important;
+  border-color: var(--app-success-border) !important;
+}
+
+/* Dark mode shared module safety net for reused admin/DRRMO/accountant components */
+:root[data-theme="dark"] :is(.dashboard-main, .dashboard-content, .admin-content-inner, .dashboard-page, .operations-page, .accountant-dashboard, .drrmo-dashboard) :is(
+  .card,
+  .panel,
+  .summary-card,
+  .stat-card,
+  .metric-card,
+  .kpi-card,
+  .info-card,
+  .queue-card,
+  .detail-card,
+  .list-card,
+  .form-card,
+  .table-card,
+  .filter-card,
+  .history-card,
+  .proof-card,
+  .preview-card,
+  .decision-panel,
+  .action-panel,
+  .content-panel
+) {
+  background: linear-gradient(145deg, rgba(13, 61, 34, 0.96), rgba(10, 50, 29, 0.98)) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+}
+
+:root[data-theme="dark"] :is(.dashboard-main, .dashboard-content, .admin-content-inner, .dashboard-page, .operations-page, .accountant-dashboard, .drrmo-dashboard) :is(
+  input,
+  select,
+  textarea,
+  .search-input,
+  .filter-select,
+  .form-control,
+  .input-shell
+) {
+  background: rgba(5, 39, 22, 0.94) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.24) !important;
+}
+
+:root[data-theme="dark"] :is(.dashboard-main, .dashboard-content, .admin-content-inner, .dashboard-page, .operations-page, .accountant-dashboard, .drrmo-dashboard) :is(input, textarea)::placeholder {
+  color: #a8c4b0 !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] :is(.dashboard-main, .dashboard-content, .admin-content-inner, .dashboard-page, .operations-page, .accountant-dashboard, .drrmo-dashboard) :is(table, thead, tbody, tr, th, td) {
+  border-color: rgba(178, 219, 191, 0.18) !important;
+}
+
+:root[data-theme="dark"] :is(.dashboard-main, .dashboard-content, .admin-content-inner, .dashboard-page, .operations-page, .accountant-dashboard, .drrmo-dashboard) thead th {
+  background: #0a321d !important;
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] :is(.dashboard-main, .dashboard-content, .admin-content-inner, .dashboard-page, .operations-page, .accountant-dashboard, .drrmo-dashboard) tbody td {
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] :is(.dashboard-main, .dashboard-content, .admin-content-inner, .dashboard-page, .operations-page, .accountant-dashboard, .drrmo-dashboard) button svg,
+:root[data-theme="dark"] :is(.dashboard-main, .dashboard-content, .admin-content-inner, .dashboard-page, .operations-page, .accountant-dashboard, .drrmo-dashboard) a svg {
+  color: currentColor !important;
+  fill: currentColor !important;
+}
+
+:root[data-theme="dark"] :is(.dashboard-main, .dashboard-content, .admin-content-inner, .dashboard-page, .operations-page, .accountant-dashboard, .drrmo-dashboard) :is(.danger, .delete, .archive, .error, .critical) {
+  --semantic-local-bg: rgba(239, 68, 68, 0.18);
+  --semantic-local-text: #fca5a5;
+}
+
+:root[data-theme="dark"] :is(.dashboard-main, .dashboard-content, .admin-content-inner, .dashboard-page, .operations-page, .accountant-dashboard, .drrmo-dashboard) :is(.warning, .notice, .attention, .pending) {
+  --semantic-local-bg: rgba(251, 191, 36, 0.18);
+  --semantic-local-text: #fbbf24;
+}
+
+/* Dark mode shared modal fallback for remaining module modals */
+:root[data-theme="dark"] :is([class*="modal-card"], [class*="Modal-card"], [class*="modal__card"], [class*="confirm-card"]) {
+  background: linear-gradient(180deg, rgba(8, 38, 17, 0.98), rgba(11, 50, 29, 0.98)) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.24) !important;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.48) !important;
+}
+
+:root[data-theme="dark"] :is([class*="modal-header"], [class*="Modal-header"], [class*="modal__header"]) {
+  background: linear-gradient(135deg, rgba(12, 53, 31, 0.98), rgba(18, 76, 43, 0.95)) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+}
+
+:root[data-theme="dark"] :is([class*="modal-footer"], [class*="Modal-footer"], [class*="modal-actions"], [class*="Modal-actions"]) {
+  background: rgba(8, 38, 17, 0.96) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+}
+
+:root[data-theme="dark"] :is([class*="modal-card"], [class*="Modal-card"], [class*="modal__card"]) :is(input, select, textarea) {
+  background: rgba(5, 39, 22, 0.94) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.26) !important;
+}
+
+:root[data-theme="dark"] :is([class*="modal-card"], [class*="Modal-card"], [class*="modal__card"]) :is(input, textarea)::placeholder {
+  color: #a8c4b0 !important;
+  opacity: 1 !important;
 }

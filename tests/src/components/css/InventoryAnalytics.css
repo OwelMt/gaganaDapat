@@ -707,3 +707,137 @@
     flex-direction: column;
   }
 }
+/* Dark mode hardening for Inventory Analysis. */
+:root[data-theme="dark"] .analytics-page .inventory-analytics-clean,
+:root[data-theme="dark"] .analytics-page .inventory-analytics-clean * {
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-single-alert,
+:root[data-theme="dark"] .analytics-page .inventory-single-alert.success,
+:root[data-theme="dark"] .analytics-page .inventory-single-alert.warning,
+:root[data-theme="dark"] .analytics-page .inventory-single-alert.danger,
+:root[data-theme="dark"] .analytics-page .inv-kpi-card,
+:root[data-theme="dark"] .analytics-page .inv-kpi-card.success,
+:root[data-theme="dark"] .analytics-page .inv-kpi-card.warning,
+:root[data-theme="dark"] .analytics-page .inv-kpi-card.neutral,
+:root[data-theme="dark"] .analytics-page .inventory-clean-card,
+:root[data-theme="dark"] .analytics-page .inventory-ai-card,
+:root[data-theme="dark"] .analytics-page .inventory-chart-card,
+:root[data-theme="dark"] .analytics-page .inventory-signals-clean,
+:root[data-theme="dark"] .analytics-page .inventory-health-card,
+:root[data-theme="dark"] .analytics-page .inventory-health-compact-card,
+:root[data-theme="dark"] .analytics-page .inventory-health-compact-card.warning,
+:root[data-theme="dark"] .analytics-page .inventory-health-compact-card.notice,
+:root[data-theme="dark"] .analytics-page .inventory-health-compact-card.danger,
+:root[data-theme="dark"] .analytics-page .inventory-ai-summary,
+:root[data-theme="dark"] .analytics-page .inventory-action-list,
+:root[data-theme="dark"] .analytics-page .inventory-chart-value-track,
+:root[data-theme="dark"] .analytics-page .inventory-health-row-track,
+:root[data-theme="dark"] .analytics-page .a-card.inventory-clean-card,
+:root[data-theme="dark"] .analytics-page .a-card.inventory-chart-card {
+  background: linear-gradient(180deg, rgba(16, 47, 26, 0.98) 0%, rgba(21, 58, 33, 0.98) 100%) !important;
+  color: #f1fff5 !important;
+  border-color: rgba(176, 220, 187, 0.18) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-single-alert-title,
+:root[data-theme="dark"] .analytics-page .inventory-panel-title,
+:root[data-theme="dark"] .analytics-page .inv-kpi-value,
+:root[data-theme="dark"] .analytics-page .inventory-health-compact-value,
+:root[data-theme="dark"] .analytics-page .inventory-action-title,
+:root[data-theme="dark"] .analytics-page .inventory-chart-value-row strong,
+:root[data-theme="dark"] .analytics-page .inventory-health-row strong,
+:root[data-theme="dark"] .analytics-page .a-card-title {
+  color: #f1fff5 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-single-alert-text,
+:root[data-theme="dark"] .analytics-page .inv-kpi-label,
+:root[data-theme="dark"] .analytics-page .inv-kpi-sub,
+:root[data-theme="dark"] .analytics-page .inventory-card-subtitle,
+:root[data-theme="dark"] .analytics-page .inventory-action-list ul,
+:root[data-theme="dark"] .analytics-page .inventory-inline-empty,
+:root[data-theme="dark"] .analytics-page .inventory-health-compact-sub,
+:root[data-theme="dark"] .analytics-page .inventory-chart-value-row,
+:root[data-theme="dark"] .analytics-page .inventory-health-row,
+:root[data-theme="dark"] .analytics-page .donation-card-subtitle,
+:root[data-theme="dark"] .analytics-page .a-card-subtitle {
+  color: #c6dccb !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-panel-kicker,
+:root[data-theme="dark"] .analytics-page .inventory-health-compact-label,
+:root[data-theme="dark"] .analytics-page .inventory-refresh-pill,
+:root[data-theme="dark"] .analytics-page .inventory-source-badge,
+:root[data-theme="dark"] .analytics-page .inventory-health-pill {
+  background: rgba(203, 213, 225, 0.12) !important;
+  color: #dbe7de !important;
+  border-color: rgba(203, 213, 225, 0.22) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-single-alert-icon,
+:root[data-theme="dark"] .analytics-page .inv-kpi-icon,
+:root[data-theme="dark"] .analytics-page .inventory-health-compact-icon {
+  background: rgba(59, 130, 246, 0.18) !important;
+  color: #93c5fd !important;
+  border: 1px solid rgba(96, 165, 250, 0.42) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-single-alert.warning .inventory-single-alert-icon,
+:root[data-theme="dark"] .analytics-page .inv-kpi-card.warning .inv-kpi-icon,
+:root[data-theme="dark"] .analytics-page .inventory-health-compact-card.warning .inventory-health-compact-icon,
+:root[data-theme="dark"] .analytics-page .inventory-health-compact-card.notice .inventory-health-compact-icon,
+:root[data-theme="dark"] .analytics-page .inv-kpi-alert {
+  background: rgba(245, 158, 11, 0.2) !important;
+  color: #fbbf24 !important;
+  border-color: rgba(251, 191, 36, 0.48) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-single-alert.danger .inventory-single-alert-icon,
+:root[data-theme="dark"] .analytics-page .inventory-health-compact-card.danger .inventory-health-compact-icon {
+  background: rgba(239, 68, 68, 0.2) !important;
+  color: #fca5a5 !important;
+  border-color: rgba(248, 113, 113, 0.48) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inv-kpi-card.success .inv-kpi-icon,
+:root[data-theme="dark"] .analytics-page .inventory-severity--success {
+  background: rgba(34, 197, 94, 0.18) !important;
+  color: #8ff0ad !important;
+  border-color: rgba(74, 222, 128, 0.42) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-severity--warning,
+:root[data-theme="dark"] .analytics-page .inventory-severity--notice {
+  background: rgba(245, 158, 11, 0.2) !important;
+  color: #fbbf24 !important;
+  border-color: rgba(251, 191, 36, 0.48) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-severity--critical {
+  background: rgba(239, 68, 68, 0.2) !important;
+  color: #fca5a5 !important;
+  border-color: rgba(248, 113, 113, 0.48) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-severity--info {
+  background: rgba(59, 130, 246, 0.18) !important;
+  color: #93c5fd !important;
+  border-color: rgba(96, 165, 250, 0.42) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-clean-card::after,
+:root[data-theme="dark"] .analytics-page .inventory-chart-card::after,
+:root[data-theme="dark"] .analytics-page .inventory-signals-clean::after,
+:root[data-theme="dark"] .analytics-page .inv-kpi-card::after {
+  background: rgba(143, 240, 173, 0.08) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-analytics-clean svg,
+:root[data-theme="dark"] .analytics-page .inventory-analytics-clean button svg {
+  color: currentColor !important;
+  fill: currentColor !important;
+  opacity: 1 !important;
+}

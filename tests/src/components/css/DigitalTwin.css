@@ -826,3 +826,199 @@
     width: 100%;
   }
 }
+
+/* Dark mode: DRRMO Digital Twin surfaces */
+:root[data-theme="dark"] .digital-twin-page {
+  color: #edf7ef;
+}
+
+:root[data-theme="dark"] .digital-twin-hero,
+:root[data-theme="dark"] .digital-twin-main-panel,
+:root[data-theme="dark"] .digital-twin-side-card,
+:root[data-theme="dark"] .digital-twin-filter-bar,
+:root[data-theme="dark"] .digital-twin-summary-card,
+:root[data-theme="dark"] .digital-twin-guidance-card,
+:root[data-theme="dark"] .digital-twin-metric-card,
+:root[data-theme="dark"] .digital-twin-table-panel {
+  background:
+    radial-gradient(circle at right bottom, rgba(57, 116, 72, 0.28), transparent 23%),
+    linear-gradient(180deg, rgba(13, 64, 33, 0.98), rgba(6, 41, 20, 0.98)) !important;
+  border-color: rgba(143, 240, 173, 0.24) !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-guidance-card::after,
+:root[data-theme="dark"] .digital-twin-metric-card::after,
+:root[data-theme="dark"] .digital-twin-summary-card::after,
+:root[data-theme="dark"] .digital-twin-side-card::after,
+:root[data-theme="dark"] .digital-twin-table-panel::after {
+  background: rgba(143, 240, 173, 0.08) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-kicker,
+:root[data-theme="dark"] .digital-twin-summary-card span,
+:root[data-theme="dark"] .digital-twin-guidance-card span,
+:root[data-theme="dark"] .digital-twin-filter-field span,
+:root[data-theme="dark"] .digital-twin-metric-card span,
+:root[data-theme="dark"] .digital-twin-camera-picker span,
+:root[data-theme="dark"] .digital-twin-reading-grid span,
+:root[data-theme="dark"] .digital-twin-table thead th {
+  color: #b7cdbd !important;
+}
+
+:root[data-theme="dark"] .digital-twin-hero h1,
+:root[data-theme="dark"] .digital-twin-summary-card strong,
+:root[data-theme="dark"] .digital-twin-guidance-card strong,
+:root[data-theme="dark"] .digital-twin-metric-card strong,
+:root[data-theme="dark"] .digital-twin-panel-head h2,
+:root[data-theme="dark"] .digital-twin-side-head h3,
+:root[data-theme="dark"] .digital-twin-reading-grid strong,
+:root[data-theme="dark"] .digital-twin-history-item strong,
+:root[data-theme="dark"] .digital-twin-table-header h2 {
+  color: #ffffff !important;
+}
+
+:root[data-theme="dark"] .digital-twin-hero p,
+:root[data-theme="dark"] .digital-twin-summary-card small,
+:root[data-theme="dark"] .digital-twin-guidance-card p,
+:root[data-theme="dark"] .digital-twin-metric-card small,
+:root[data-theme="dark"] .digital-twin-panel-head p,
+:root[data-theme="dark"] .digital-twin-history-count,
+:root[data-theme="dark"] .digital-twin-history-item span,
+:root[data-theme="dark"] .digital-twin-table-header p,
+:root[data-theme="dark"] .digital-twin-row-muted {
+  color: #c8d9ce !important;
+}
+
+:root[data-theme="dark"] .digital-twin-filter-field input,
+:root[data-theme="dark"] .digital-twin-filter-field select,
+:root[data-theme="dark"] .digital-twin-camera-picker select {
+  background: rgba(5, 31, 16, 0.96) !important;
+  color: #ffffff !important;
+  border-color: rgba(143, 240, 173, 0.28) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-filter-field input::placeholder {
+  color: #9fb5a6 !important;
+}
+
+:root[data-theme="dark"] .digital-twin-secondary-btn,
+:root[data-theme="dark"] .digital-twin-refresh-btn,
+:root[data-theme="dark"] .digital-twin-camera-chip {
+  background: rgba(12, 68, 34, 0.88) !important;
+  color: #edf7ef !important;
+  border-color: rgba(143, 240, 173, 0.28) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-secondary-btn:hover,
+:root[data-theme="dark"] .digital-twin-refresh-btn:hover,
+:root[data-theme="dark"] .digital-twin-camera-chip:hover {
+  background: rgba(23, 111, 54, 0.9) !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme="dark"] .digital-twin-primary-btn {
+  background: linear-gradient(180deg, #1fa455 0%, #15783d 100%) !important;
+  color: #ffffff !important;
+  border-color: rgba(143, 240, 173, 0.36) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-camera-chip.active {
+  background: rgba(48, 180, 89, 0.22) !important;
+  border-color: rgba(143, 240, 173, 0.46) !important;
+  color: #a9f5be !important;
+}
+
+:root[data-theme="dark"] .digital-twin-status-pill.safe,
+:root[data-theme="dark"] .digital-twin-status-chip.safe,
+:root[data-theme="dark"] .digital-twin-history-status.safe,
+:root[data-theme="dark"] .digital-twin-table-badge.safe,
+:root[data-theme="dark"] .digital-twin-guidance-card.safe span {
+  background: rgba(35, 134, 73, 0.24) !important;
+  color: #a9f5be !important;
+  border-color: rgba(143, 240, 173, 0.36) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-status-pill.warning,
+:root[data-theme="dark"] .digital-twin-status-chip.warning,
+:root[data-theme="dark"] .digital-twin-history-status.warning,
+:root[data-theme="dark"] .digital-twin-table-badge.warning,
+:root[data-theme="dark"] .digital-twin-guidance-card.warning span {
+  background: rgba(180, 104, 16, 0.24) !important;
+  color: #ffd190 !important;
+  border-color: rgba(255, 193, 112, 0.36) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-status-pill.danger,
+:root[data-theme="dark"] .digital-twin-status-chip.danger,
+:root[data-theme="dark"] .digital-twin-history-status.danger,
+:root[data-theme="dark"] .digital-twin-table-badge.danger,
+:root[data-theme="dark"] .digital-twin-guidance-card.danger span {
+  background: rgba(176, 49, 43, 0.28) !important;
+  color: #ffb4a8 !important;
+  border-color: rgba(255, 180, 168, 0.38) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-banner.loading,
+:root[data-theme="dark"] .digital-twin-inline-alert.loading {
+  background: rgba(40, 93, 160, 0.28) !important;
+  color: #b8d4ff !important;
+  border: 1px solid rgba(151, 190, 255, 0.26) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-banner.error,
+:root[data-theme="dark"] .digital-twin-inline-alert.error {
+  background: rgba(176, 49, 43, 0.28) !important;
+  color: #ffb4a8 !important;
+  border: 1px solid rgba(255, 180, 168, 0.3) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-inline-alert.info,
+:root[data-theme="dark"] .digital-twin-history-empty,
+:root[data-theme="dark"] .digital-twin-table-empty {
+  background: rgba(5, 31, 16, 0.72) !important;
+  color: #c8d9ce !important;
+  border-color: rgba(143, 240, 173, 0.24) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-reading-grid div,
+:root[data-theme="dark"] .digital-twin-history-item {
+  background: rgba(7, 43, 22, 0.82) !important;
+  border-color: rgba(143, 240, 173, 0.2) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-frame-wrap {
+  background: #061f12 !important;
+  border-color: rgba(143, 240, 173, 0.26) !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-table-wrap {
+  border-color: rgba(143, 240, 173, 0.22) !important;
+  background: rgba(5, 31, 16, 0.92) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-table {
+  background: rgba(5, 31, 16, 0.92) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-table thead th {
+  background: rgba(9, 55, 27, 0.98) !important;
+  border-bottom-color: rgba(143, 240, 173, 0.2) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-table tbody td {
+  color: #edf7ef !important;
+  border-bottom-color: rgba(143, 240, 173, 0.16) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-table tbody tr:hover td {
+  background: rgba(20, 91, 45, 0.22) !important;
+}
+
+:root[data-theme="dark"] .digital-twin-row-delete {
+  background: rgba(176, 49, 43, 0.24) !important;
+  color: #ffb4a8 !important;
+  border-color: rgba(255, 180, 168, 0.34) !important;
+}

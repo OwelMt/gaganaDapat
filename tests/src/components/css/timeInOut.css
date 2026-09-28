@@ -498,3 +498,49 @@ html, body, #root {
 :root[data-theme="dark"] .tio-table tbody tr:hover td {
   background: rgba(52, 120, 70, 0.24);
 }
+
+/* Dark mode second pass: time in/out admin module */
+:root[data-theme="dark"] .tio-app,
+:root[data-theme="dark"] .tio-shell,
+:root[data-theme="dark"] .tio-main {
+  background: #082611 !important;
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .tio-app :is(.tio-header-card, .tio-filters, .tio-filter-group, .tio-summary-card, .tio-table-region, .tio-table-head, .tio-table-wrap, .tio-empty-inline, .tio-pagination) {
+  background: linear-gradient(145deg, rgba(13, 61, 34, 0.96), rgba(10, 50, 29, 0.98)) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+}
+
+:root[data-theme="dark"] .tio-app :is(input, select, textarea, .tio-input, .tio-select) {
+  background: rgba(5, 39, 22, 0.94) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.24) !important;
+  border-radius: 12px !important;
+}
+
+:root[data-theme="dark"] .tio-app :is(input, textarea)::placeholder {
+  color: #a8c4b0 !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .tio-app :is(.tio-table, .tio-table thead, .tio-table tbody, .tio-table tr, .tio-table th, .tio-table td) {
+  background: rgba(5, 39, 22, 0.74) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.18) !important;
+}
+
+:root[data-theme="dark"] .tio-app .tio-table thead th {
+  background: #0a321d !important;
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .tio-app :is(.tio-eyebrow, .tio-filter-label, .tio-summary-label, .tio-muted, .tio-table-eyebrow, .tio-table-meta) {
+  color: #bfd8c6 !important;
+}
+
+:root[data-theme="dark"] .tio-app :is(button, .tio-button, .tio-btn) svg {
+  color: currentColor !important;
+  fill: currentColor !important;
+}

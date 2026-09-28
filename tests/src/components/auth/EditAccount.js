@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import '../css/EditAccount.css';
 import {
   sanitizeAddress,
+  sanitizeEmail,
   sanitizeHotline,
   sanitizePassword,
   sanitizePhoneNumber,
@@ -10,6 +11,7 @@ import {
 } from './inputSanitizers';
 import {
   validateAddress,
+  validateEmail,
   validateHotline,
   validatePhoneNumber,
   validateStrongPassword,
@@ -51,11 +53,22 @@ export default function EditAccount() {
   const [updateTargetId, setUpdateTargetId] = useState(null);
   const [sidebarHeight, setSidebarHeight] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth : Number.POSITIVE_INFINITY
   );
 
   const BASE_URL = API_BASE_URL;
+  const currentUserId = typeof window !== 'undefined' ? localStorage.getItem('userId') || '' : '';
+  const currentRole = typeof window !== 'undefined' ? localStorage.getItem('role') || '' : '';
+  const isOwnAdminAccount = useCallback(
+    (account) =>
+      String(currentRole || '').toLowerCase() === 'admin' &&
+      String(account?.role || '').toLowerCase() === 'admin' &&
+      String(account?._id || '') === String(currentUserId || ''),
+    [currentRole, currentUserId]
+  );
 
   useEffect(() => {
     const timeouts = notificationTimeoutsRef.current;
@@ -114,7 +127,9 @@ export default function EditAccount() {
       setFieldErrors({});
 
       if (safeData.length > 0) {
-        const firstVisible = safeData.find((account) => account.role !== 'admin');
+        const firstVisible = safeData.find(
+          (account) => account.role !== 'admin' || isOwnAdminAccount(account)
+        );
         if (firstVisible) {
           setOpen((prev) => prev || firstVisible._id);
         }
@@ -123,7 +138,7 @@ export default function EditAccount() {
       console.error(err);
       showNotification('Failed to fetch accounts', 'error');
     }
-  }, [BASE_URL]);
+  }, [BASE_URL, isOwnAdminAccount]);
 
   useEffect(() => {
     fetchAccounts();
@@ -132,6 +147,7 @@ export default function EditAccount() {
   const handleChange = (id, field, value) => {
     const sanitizers = {
       username: sanitizeUsername,
+      email: sanitizeEmail,
       phoneNumber: sanitizePhoneNumber,
       hotline: sanitizeHotline,
       address: sanitizeAddress,
@@ -160,8 +176,11 @@ export default function EditAccount() {
   };
 
   const visibleAccounts = useMemo(
-    () => accounts.filter((account) => account.role !== 'admin'),
-    [accounts]
+    () =>
+      accounts.filter(
+        (account) => account.role !== 'admin' || isOwnAdminAccount(account)
+      ),
+    [accounts, isOwnAdminAccount]
   );
 
   const filteredAccounts = useMemo(() => {
@@ -186,6 +205,7 @@ export default function EditAccount() {
 
   const selectedForm = selected ? forms[selected._id] : null;
   const selectedErrors = selected ? fieldErrors[selected._id] || {} : {};
+  const selectedIsOwnAdmin = selected ? isOwnAdminAccount(selected) : false;
 
   const totalBarangay = useMemo(
     () => visibleAccounts.filter((account) => account.role === 'barangay').length,
@@ -200,6 +220,10 @@ export default function EditAccount() {
     () => visibleAccounts.filter((account) => account.role === 'accountant').length,
     [visibleAccounts]
   );
+  const totalAdmin = useMemo(
+    () => visibleAccounts.filter((account) => account.role === 'admin').length,
+    [visibleAccounts]
+  );
 
   const getInitials = (value = '') => {
     const text = String(value || '').trim();
@@ -212,13 +236,16 @@ export default function EditAccount() {
 
     return (
       (selectedForm.username || '') !== (selected.username || '') ||
+      (selectedIsOwnAdmin &&
+        String(selectedForm.email || '').toLowerCase() !==
+          String(selected.email || '').toLowerCase()) ||
       (selectedForm.phoneNumber || '') !== (selected.phoneNumber || '') ||
       (selectedForm.hotline || '') !== (selected.hotline || '') ||
       (selectedForm.address || '') !== (selected.address || '') ||
       !!selectedForm.password ||
       !!selectedForm.confirmPassword
     );
-  }, [selected, selectedForm]);
+  }, [selected, selectedForm, selectedIsOwnAdmin]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -303,7 +330,8 @@ export default function EditAccount() {
     }));
   };
 
-  const getAccountValidationErrors = (data = {}) => {
+  const getAccountValidationErrors = (data = {}, account = null) => {
+    const canEditEmail = account ? isOwnAdminAccount(account) : false;
     const nextErrors = {};
 
     const usernameError = validateUsername(data.username);
@@ -311,9 +339,22 @@ export default function EditAccount() {
       nextErrors.username = usernameError;
     }
 
-    const phoneError = validatePhoneNumber(data.phoneNumber);
-    if (phoneError) {
-      nextErrors.phoneNumber = phoneError;
+    if (canEditEmail) {
+      const emailError = validateEmail(data.email);
+      if (emailError) {
+        nextErrors.email = emailError;
+      }
+    }
+
+    if (canEditEmail) {
+      if (!String(data.phoneNumber || '').trim()) {
+        nextErrors.phoneNumber = 'Phone number is required';
+      }
+    } else {
+      const phoneError = validatePhoneNumber(data.phoneNumber);
+      if (phoneError) {
+        nextErrors.phoneNumber = phoneError;
+      }
     }
 
     const hotlineError = validateHotline(data.hotline);
@@ -344,7 +385,8 @@ export default function EditAccount() {
     const data = forms[id];
     if (!data) return;
 
-    const nextErrors = getAccountValidationErrors(data);
+    const targetAccount = accounts.find((account) => account._id === id) || null;
+    const nextErrors = getAccountValidationErrors(data, targetAccount);
     setFieldErrors((prev) => ({
       ...prev,
       [id]: nextErrors
@@ -362,7 +404,8 @@ export default function EditAccount() {
     const data = forms[id];
     if (!data) return;
 
-    const nextErrors = getAccountValidationErrors(data);
+    const original = accounts.find((account) => account._id === id) || null;
+    const nextErrors = getAccountValidationErrors(data, original);
     setFieldErrors((prev) => ({
       ...prev,
       [id]: nextErrors
@@ -374,11 +417,14 @@ export default function EditAccount() {
       return;
     }
 
-    const original = accounts.find((account) => account._id === id);
     if (!original) return;
+    const canEditEmail = isOwnAdminAccount(original);
 
     if (
       data.username === original.username &&
+      (!canEditEmail ||
+        String(data.email || '').toLowerCase() ===
+          String(original.email || '').toLowerCase()) &&
       data.phoneNumber === original.phoneNumber &&
       data.hotline === original.hotline &&
       data.address === original.address &&
@@ -391,7 +437,7 @@ export default function EditAccount() {
 
     const payload = { ...data };
     delete payload.confirmPassword;
-    delete payload.email;
+    if (!canEditEmail) delete payload.email;
     if (!payload.password) delete payload.password;
 
     try {
@@ -409,9 +455,15 @@ export default function EditAccount() {
       if (res.ok) {
         showNotification(
           responseData.message ||
-            'Update approval email sent. Changes will apply after the recipient confirms.',
+            (canEditEmail
+              ? 'Admin account updated successfully.'
+              : 'Update approval email sent. Changes will apply after the recipient confirms.'),
           'success'
         );
+        if (canEditEmail) {
+          localStorage.setItem('username', data.username || '');
+          localStorage.setItem('email', data.email || '');
+        }
         setFieldErrors((prev) => ({
           ...prev,
           [id]: {}
@@ -456,6 +508,7 @@ export default function EditAccount() {
 
   const stats = [
     { label: 'Accounts', value: visibleAccounts.length, tone: 'green' },
+    { label: 'Admin', value: totalAdmin, tone: 'green' },
     { label: 'DRRMO', value: totalDrrmo, tone: 'blue' },
     { label: 'Accountant', value: totalAccountant, tone: 'amber' },
     { label: 'Barangay', value: totalBarangay, tone: 'emerald' }
@@ -472,14 +525,23 @@ export default function EditAccount() {
     updateTarget && updateForm
       ? [
           { label: 'Role', value: updateTarget.role || '-' },
-          { label: 'Email', value: updateTarget.email || '-' },
+          {
+            label: 'Email',
+            value: isOwnAdminAccount(updateTarget)
+              ? `${updateTarget.email || '-'} -> ${updateForm.email || '-'}`
+              : updateTarget.email || '-'
+          },
           { label: 'Username', value: `${updateTarget.username || '-'} -> ${updateForm.username || '-'}` },
           { label: 'Phone', value: `${updateTarget.phoneNumber || '-'} -> ${updateForm.phoneNumber || '-'}` },
           { label: 'Hotline', value: `${updateTarget.hotline || '-'} -> ${updateForm.hotline || '-'}` },
           { label: 'Address', value: `${updateTarget.address || '-'} -> ${updateForm.address || '-'}` },
           {
             label: 'Password',
-            value: updateForm.password ? 'Will be updated after email approval' : 'No password change'
+            value: updateForm.password
+              ? isOwnAdminAccount(updateTarget)
+                ? 'Will be updated immediately'
+                : 'Will be updated after email approval'
+              : 'No password change'
           }
         ]
       : [];
@@ -542,6 +604,7 @@ export default function EditAccount() {
                   onChange={(event) => setRoleFilter(event.target.value)}
                 >
                   <option value="">All Roles</option>
+                  <option value="admin">Admin</option>
                   <option value="drrmo">DRRMO</option>
                   <option value="accountant">Accountant</option>
                   <option value="barangay">Barangay</option>
@@ -644,17 +707,24 @@ export default function EditAccount() {
                       {renderEditError('username')}
                     </div>
 
-                    <div className="ea-field">
+                    <div className={`ea-field ${selectedErrors.email ? 'has-error' : ''}`}>
                       <label>Email</label>
                       <input
                         value={selectedForm.email || ''}
-                        disabled
-                        readOnly
-                        className="ea-input-readonly"
+                        disabled={!selectedIsOwnAdmin}
+                        readOnly={!selectedIsOwnAdmin}
+                        className={!selectedIsOwnAdmin ? 'ea-input-readonly' : ''}
+                        onChange={(event) =>
+                          selectedIsOwnAdmin &&
+                          handleChange(selected._id, 'email', event.target.value)
+                        }
                       />
-                      <div className="ea-field-hint">
-                        Email is locked. Account changes are approved through this address.
-                      </div>
+                      {renderEditError('email')}
+                      {!selectedIsOwnAdmin && (
+                        <div className="ea-field-hint">
+                          Email is locked. Account changes are approved through this address.
+                        </div>
+                      )}
                     </div>
 
                     <div className={`ea-field ${selectedErrors.phoneNumber ? 'has-error' : ''}`}>
@@ -704,31 +774,55 @@ export default function EditAccount() {
                   <div className="ea-form-grid">
                     <div className={`ea-field ${selectedErrors.password ? 'has-error' : ''}`}>
                       <label>New Password</label>
-                      <input
-                        type="password"
-                        value={selectedForm.password || ''}
-                        onChange={(event) =>
-                          handleChange(selected._id, 'password', event.target.value)
-                        }
-                        placeholder="Leave blank to keep current password"
-                      />
+                      <div className="ea-password-input">
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={selectedForm.password || ''}
+                          onChange={(event) =>
+                            handleChange(selected._id, 'password', event.target.value)
+                          }
+                          placeholder="Leave blank to keep current password"
+                        />
+                        <button
+                          type="button"
+                          className="ea-password-toggle"
+                          onClick={() => setShowPassword((prev) => !prev)}
+                          aria-label={showPassword ? 'Hide new password' : 'Show new password'}
+                        >
+                          {showPassword ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
                       {renderEditError('password')}
                     </div>
 
                     <div className={`ea-field ${selectedErrors.confirmPassword ? 'has-error' : ''}`}>
                       <label>Confirm Password</label>
-                      <input
-                        type="password"
-                        value={selectedForm.confirmPassword || ''}
-                        onChange={(event) =>
-                          handleChange(
-                            selected._id,
-                            'confirmPassword',
-                            event.target.value
-                          )
-                        }
-                        placeholder="Re-enter password"
-                      />
+                      <div className="ea-password-input">
+                        <input
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          value={selectedForm.confirmPassword || ''}
+                          onChange={(event) =>
+                            handleChange(
+                              selected._id,
+                              'confirmPassword',
+                              event.target.value
+                            )
+                          }
+                          placeholder="Re-enter password"
+                        />
+                        <button
+                          type="button"
+                          className="ea-password-toggle"
+                          onClick={() => setShowConfirmPassword((prev) => !prev)}
+                          aria-label={
+                            showConfirmPassword
+                              ? 'Hide confirm password'
+                              : 'Show confirm password'
+                          }
+                        >
+                          {showConfirmPassword ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
                       {renderEditError('confirmPassword')}
                     </div>
                   </div>
@@ -749,26 +843,34 @@ export default function EditAccount() {
                     onClick={() => handleRequestUpdateClick(selected._id)}
                     disabled={savingId === selected._id}
                   >
-                    {savingId === selected._id ? 'Sending Approval...' : 'Request Update Approval'}
+                    {savingId === selected._id
+                      ? selectedIsOwnAdmin
+                        ? 'Saving...'
+                        : 'Sending Approval...'
+                      : selectedIsOwnAdmin
+                        ? 'Save Changes'
+                        : 'Request Update Approval'}
                   </button>
                 </div>
 
-                <div className="ea-danger-zone">
-                  <div className="ea-danger-zone-copy">
-                    <h4>Danger Zone</h4>
-                    <p>Archive this account if it should no longer remain active.</p>
+                {!selectedIsOwnAdmin && (
+                  <div className="ea-danger-zone">
+                    <div className="ea-danger-zone-copy">
+                      <h4>Danger Zone</h4>
+                      <p>Archive this account if it should no longer remain active.</p>
+                    </div>
+
+                    <button
+                      className="ea-btn ea-btn-danger"
+                      onClick={() => setArchiveTargetId(selected._id)}
+                      disabled={archivingId === selected._id}
+                    >
+                      {archivingId === selected._id
+                        ? 'Archiving...'
+                        : 'Archive Account'}
+                    </button>
                   </div>
-
-                  <button
-                    className="ea-btn ea-btn-danger"
-                    onClick={() => setArchiveTargetId(selected._id)}
-                    disabled={archivingId === selected._id}
-                  >
-                    {archivingId === selected._id
-                      ? 'Archiving...'
-                      : 'Archive Account'}
-                  </button>
-                </div>
+                )}
               </div>
             )}
           </section>
@@ -792,10 +894,14 @@ export default function EditAccount() {
 
       <AccountConfirmModal
         open={Boolean(updateTargetId)}
-        title="Send account update approval?"
-        message="The account will stay unchanged for now. An approval email will be sent to the registered Gmail address, and the edits will apply only after the recipient confirms them."
+        title={updateTarget && isOwnAdminAccount(updateTarget) ? 'Save admin account changes?' : 'Send account update approval?'}
+        message={
+          updateTarget && isOwnAdminAccount(updateTarget)
+            ? 'Your admin account changes will be saved immediately.'
+            : 'The account will stay unchanged for now. An approval email will be sent to the registered Gmail address, and the edits will apply only after the recipient confirms them.'
+        }
         details={updateSummaryDetails}
-        confirmLabel="Send Approval Email"
+        confirmLabel={updateTarget && isOwnAdminAccount(updateTarget) ? 'Save Changes' : 'Send Approval Email'}
         cancelLabel="Review Again"
         busy={savingId === updateTargetId}
         onConfirm={() => updateTargetId && requestAccountUpdate(updateTargetId)}

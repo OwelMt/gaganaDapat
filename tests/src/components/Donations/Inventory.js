@@ -3230,33 +3230,27 @@ useEffect(() => {
                   <h3 className="summary-value">
                     {archivedSummary.totalRecords.toLocaleString()}
                   </h3>
-                  <span className="summary-note">Historical inventory entries</span>
                 </div>
 
-                {isDrrmo ? (
-                  <>
-                    <div className="summary-card success">
-                      <div className="summary-card-top">
-                        <span className="summary-label">Goods</span>
-                        <span className="summary-icon"><FaBoxes /></span>
-                      </div>
-                      <h3 className="summary-value">
-                        {archivedSummary.goodsCount.toLocaleString()}
-                      </h3>
-                      <span className="summary-note">Archived goods records</span>
-                    </div>
-                    <div className="summary-card warning">
-                      <div className="summary-card-top">
-                        <span className="summary-label">Appliances</span>
-                        <span className="summary-icon"><FaBoxOpen /></span>
-                      </div>
-                      <h3 className="summary-value">
-                        {archivedSummary.applianceCount.toLocaleString()}
-                      </h3>
-                      <span className="summary-note">Archived appliance records</span>
-                    </div>
-                  </>
-                ) : null}
+                <div className="summary-card success">
+                  <div className="summary-card-top">
+                    <span className="summary-label">Goods</span>
+                    <span className="summary-icon"><FaBoxes /></span>
+                  </div>
+                  <h3 className="summary-value">
+                    {archivedSummary.goodsCount.toLocaleString()}
+                  </h3>
+                </div>
+
+                <div className="summary-card warning">
+                  <div className="summary-card-top">
+                    <span className="summary-label">Appliances</span>
+                    <span className="summary-icon"><FaBoxOpen /></span>
+                  </div>
+                  <h3 className="summary-value">
+                    {archivedSummary.applianceCount.toLocaleString()}
+                  </h3>
+                </div>
 
                 {isAdmin ? (
                   <div className="summary-card info">
@@ -3267,7 +3261,6 @@ useEffect(() => {
                     <h3 className="summary-value">
                       {archivedSummary.monetaryCount.toLocaleString()}
                     </h3>
-                    <span className="summary-note">Archived monetary records</span>
                   </div>
                 ) : null}
               </div>

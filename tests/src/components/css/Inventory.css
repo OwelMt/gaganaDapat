@@ -164,7 +164,7 @@
 }
 
 .inventory-summary-archived {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .summary-card {
@@ -1235,10 +1235,11 @@
 .release-request-list {
   display: grid;
   gap: 10px;
+  margin-top: 8px;
   max-height: 420px;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 4px;
+  padding: 0 8px 10px 0;
 }
 
 .release-request-card {
@@ -3420,4 +3421,519 @@
   .inventory-control-placeholder {
     grid-column: span 1;
   }
+}
+
+/* Dark mode: inventory list surfaces, filters, proof cards */
+:root[data-theme="dark"] .inventory-page .inventory-hero,
+:root[data-theme="dark"] .inventory-page .inventory-card,
+:root[data-theme="dark"] .inventory-page .inventory-summary-card,
+:root[data-theme="dark"] .inventory-page .inventory-workspace,
+:root[data-theme="dark"] .inventory-page .inventory-toolbar,
+:root[data-theme="dark"] .inventory-page .inventory-filter-toolbar-inventory,
+:root[data-theme="dark"] .inventory-page .inventory-table-wrap,
+:root[data-theme="dark"] .inventory-page .inventory-table-shell,
+:root[data-theme="dark"] .inventory-page .inventory-proof-card,
+:root[data-theme="dark"] .inventory-page .proof-card,
+:root[data-theme="dark"] .inventory-page .proof-preview-card,
+:root[data-theme="dark"] .inventory-page .inventory-file-card,
+:root[data-theme="dark"] .inventory-page .inventory-preview-card {
+  background: linear-gradient(145deg, rgba(13, 61, 34, 0.96), rgba(10, 50, 29, 0.98)) !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .inventory-page .inventory-filter-toolbar-inventory,
+:root[data-theme="dark"] .inventory-page .inventory-history-group,
+:root[data-theme="dark"] .inventory-page .inventory-filter-actions,
+:root[data-theme="dark"] .inventory-page .inventory-history-field-row {
+  background: rgba(5, 39, 22, 0.92) !important;
+  border-color: rgba(178, 219, 191, 0.2) !important;
+  color: #f3fff6 !important;
+  border-radius: 16px !important;
+}
+
+:root[data-theme="dark"] .inventory-page :is(input, select, textarea, .inventory-history-date, .inventory-controls select, .search-group input, .inventory-select, .inventory-input) {
+  background: rgba(5, 39, 22, 0.94) !important;
+  color: #f3fff6 !important;
+  border: 1px solid rgba(178, 219, 191, 0.24) !important;
+  border-radius: 12px !important;
+}
+
+:root[data-theme="dark"] .inventory-page :is(input, textarea)::placeholder {
+  color: #a8c4b0 !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .inventory-page .inventory-table,
+:root[data-theme="dark"] .inventory-page .inventory-table th,
+:root[data-theme="dark"] .inventory-page .inventory-table td {
+  background: transparent !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.18) !important;
+}
+
+:root[data-theme="dark"] .inventory-page .inventory-table th,
+:root[data-theme="dark"] .inventory-page :is(.inventory-history-title, .inventory-meta-pill, .inventory-title-meta, .inventory-table-label) {
+  color: #bfd8c6 !important;
+}
+
+:root[data-theme="dark"] .inventory-page :is(.btn, button, .inventory-history-clear, .inventory-action-btn, .inventory-filter-actions .btn) svg {
+  color: currentColor !important;
+  fill: currentColor !important;
+}
+
+:root[data-theme="dark"] .inventory-page :is(.category-pill, .inventory-category-pill, .inventory-status-pill, .inventory-meta-pill) {
+  background: rgba(220, 252, 231, 0.92) !important;
+  color: #065f2c !important;
+  border-color: rgba(134, 239, 172, 0.45) !important;
+}
+
+:root[data-theme="dark"] .inventory-page :is(.archive-btn, .btn-archive, .danger, .inventory-danger) {
+  background: rgba(239, 68, 68, 0.18) !important;
+  color: #fca5a5 !important;
+  border-color: rgba(248, 113, 113, 0.36) !important;
+}
+
+:root[data-theme="dark"] .inventory-page .release-shell-head .btn.btn-outline:disabled,
+:root[data-theme="dark"] .inventory-page .release-shell-head .btn.btn-secondary:disabled {
+  background: rgba(17, 78, 43, 0.86) !important;
+  color: #cfe9d6 !important;
+  border-color: rgba(178, 219, 191, 0.28) !important;
+  opacity: 1 !important;
+  box-shadow: none !important;
+}
+
+/* Dark mode: inventory edit/detail modals for goods, monetary, and appliances. */
+:root[data-theme="dark"] .inventory-modal-backdrop,
+:root[data-theme="dark"] .inventory-modal-backdrop-centered {
+  background: rgba(1, 19, 9, 0.72) !important;
+  backdrop-filter: blur(6px) !important;
+}
+
+:root[data-theme="dark"] .inventory-modal {
+  background:
+    radial-gradient(circle at top right, rgba(34, 197, 94, 0.1), transparent 30%),
+    linear-gradient(180deg, rgba(8, 38, 17, 0.98), rgba(11, 50, 29, 0.98)) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.24) !important;
+  box-shadow: 0 34px 86px rgba(0, 0, 0, 0.5) !important;
+}
+
+:root[data-theme="dark"] .inventory-modal-head {
+  background:
+    radial-gradient(circle at top right, rgba(34, 197, 94, 0.14), transparent 34%),
+    linear-gradient(135deg, rgba(12, 53, 31, 0.98), rgba(18, 76, 43, 0.95)) !important;
+  color: #f3fff6 !important;
+  border-bottom-color: rgba(178, 219, 191, 0.22) !important;
+}
+
+:root[data-theme="dark"] .inventory-modal-head h3,
+:root[data-theme="dark"] .inventory-modal :is(h3, h4, label, .field label, .form-label) {
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .inventory-modal-head p,
+:root[data-theme="dark"] .inventory-modal :is(.field-help, .helper-text, .muted, small, .char-count) {
+  color: #a8c4b0 !important;
+}
+
+:root[data-theme="dark"] .inventory-modal-close {
+  background: rgba(5, 39, 22, 0.94) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.3) !important;
+}
+
+:root[data-theme="dark"] .inventory-modal-grid,
+:root[data-theme="dark"] .inventory-modal-section,
+:root[data-theme="dark"] .inventory-edit-lock-banner,
+:root[data-theme="dark"] .inventory-modal .modal-stat {
+  background: rgba(5, 39, 22, 0.78) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+}
+
+:root[data-theme="dark"] .inventory-modal :is(input, select, textarea, .inventory-input, .inventory-select) {
+  background: rgba(3, 31, 16, 0.96) !important;
+  color: #f3fff6 !important;
+  -webkit-text-fill-color: #f3fff6 !important;
+  border: 1px solid rgba(178, 219, 191, 0.28) !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="dark"] .inventory-modal :is(input, select, textarea, .inventory-input, .inventory-select):focus {
+  background: rgba(5, 39, 22, 0.98) !important;
+  border-color: rgba(134, 239, 172, 0.58) !important;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.16) !important;
+  outline: none !important;
+}
+
+:root[data-theme="dark"] .inventory-modal :is(input, textarea)::placeholder {
+  color: #a8c4b0 !important;
+  -webkit-text-fill-color: #a8c4b0 !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .inventory-modal :is(select option, optgroup) {
+  background: #052716 !important;
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .inventory-modal-actions {
+  background: transparent !important;
+  border-top: 1px solid rgba(178, 219, 191, 0.18) !important;
+  border-radius: 0 !important;
+  padding-top: 16px !important;
+}
+
+:root[data-theme="dark"] .inventory-modal-actions .btn:not(.btn-primary):not(.btn-success):not(.btn-danger),
+:root[data-theme="dark"] .inventory-modal .btn-secondary {
+  background: rgba(17, 78, 43, 0.86) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.28) !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .inventory-modal-actions .btn:disabled,
+:root[data-theme="dark"] .inventory-modal .btn:disabled {
+  background: rgba(17, 78, 43, 0.62) !important;
+  color: #cfe9d6 !important;
+  border-color: rgba(178, 219, 191, 0.18) !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .inventory-modal :is(button, .btn) svg {
+  color: currentColor !important;
+  fill: currentColor !important;
+}
+
+/* Dark mode: food pack templates and release preparation journey. */
+:root[data-theme="dark"] .inventory-page :is(
+  .template-summary-card,
+  .template-summary-card.active,
+  .template-summary-card.blocked,
+  .template-detail-panel,
+  .release-summary-card,
+  .release-footer-box,
+  .release-journey-card,
+  .release-panel,
+  .release-panel-nested,
+  .release-footer-card,
+  .release-proof-review-card,
+  .release-review-card,
+  .release-review-card.complete,
+  .release-review-card.pending,
+  .release-selection-card,
+  .compact-template-card,
+  .template-builder-panel,
+  .template-builder-list-wrap,
+  .appliance-builder-list-wrap,
+  .release-proof-preview-card
+) {
+  background:
+    radial-gradient(circle at bottom right, rgba(34, 197, 94, 0.1), transparent 30%),
+    linear-gradient(180deg, rgba(10, 55, 28, 0.96), rgba(7, 44, 23, 0.98)) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.24) !important;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.22) !important;
+}
+
+:root[data-theme="dark"] .inventory-page .template-summary-card.blocked {
+  background:
+    radial-gradient(circle at bottom right, rgba(239, 68, 68, 0.12), transparent 30%),
+    linear-gradient(180deg, rgba(58, 31, 21, 0.96), rgba(31, 35, 20, 0.98)) !important;
+  border-color: rgba(251, 146, 60, 0.35) !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .inventory-page :is(
+  .template-summary-top strong,
+  .template-summary-meta b,
+  .template-detail-head h3,
+  .release-summary-card strong,
+  .release-footer-box strong,
+  .release-journey-head h3,
+  .release-footer-head h3,
+  .release-selection-head strong,
+  .release-journey-step-copy strong,
+  .release-journey-step-index,
+  .release-static-value,
+  .template-preview-head strong,
+  .release-check,
+  .release-proof-preview-meta strong,
+  .release-review-card strong,
+  .release-appliance-step-total strong,
+  .template-source-main strong
+) {
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .inventory-page :is(
+  .template-summary-top span:not(.badge),
+  .template-summary-meta label,
+  .template-detail-head p,
+  .release-summary-card span,
+  .release-summary-card small,
+  .release-footer-box span,
+  .release-journey-head p,
+  .release-footer-head p,
+  .release-panel-copy,
+  .release-selection-head span,
+  .release-selection-field label,
+  .release-remarks-wrap label,
+  .release-journey-step-copy small,
+  .template-preview-head span,
+  .release-proof-review-head p,
+  .release-proof-preview-meta span,
+  .release-review-card span,
+  .release-review-card small,
+  .release-appliance-step-total span,
+  .release-appliance-step-total small,
+  .template-source-main span,
+  .template-source-meta small,
+  .inventory-field-helper,
+  .inventory-textarea-meta
+) {
+  color: #a8c4b0 !important;
+}
+
+:root[data-theme="dark"] .inventory-page :is(
+  .template-summary-meta div,
+  .release-journey-step,
+  .release-journey-step.active,
+  .release-journey-step.complete,
+  .release-static-value,
+  .release-empty,
+  .release-proof-empty,
+  .template-source-row
+) {
+  background: rgba(5, 39, 22, 0.78) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+}
+
+:root[data-theme="dark"] .inventory-page .release-empty {
+  background:
+    linear-gradient(180deg, rgba(5, 39, 22, 0.82), rgba(8, 53, 28, 0.72)) !important;
+}
+
+:root[data-theme="dark"] .inventory-page .release-journey-step.active {
+  border-color: rgba(74, 222, 128, 0.72) !important;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14) !important;
+}
+
+:root[data-theme="dark"] .inventory-page .release-journey-step-index,
+:root[data-theme="dark"] .inventory-page :is(.release-journey-step.active, .release-journey-step.complete) .release-journey-step-index {
+  background: rgba(17, 78, 43, 0.92) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(134, 239, 172, 0.4) !important;
+}
+
+:root[data-theme="dark"] .inventory-page .template-source-row {
+  border-bottom-color: rgba(178, 219, 191, 0.14) !important;
+}
+
+:root[data-theme="dark"] .inventory-page .template-source-row:hover {
+  background: rgba(17, 78, 43, 0.86) !important;
+}
+
+:root[data-theme="dark"] .inventory-page .template-source-meta span {
+  background: rgba(34, 197, 94, 0.2) !important;
+  color: #bbf7d0 !important;
+}
+
+:root[data-theme="dark"] .inventory-page :is(.template-add-btn, .template-builder-modal .btn-outline) {
+  background: rgba(5, 39, 22, 0.9) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.38) !important;
+}
+
+:root[data-theme="dark"] .inventory-page .template-detail-panel .inventory-table thead th,
+:root[data-theme="dark"] .inventory-page .template-detail-panel .inventory-table tbody tr,
+:root[data-theme="dark"] .inventory-page .template-detail-panel .inventory-table tbody td {
+  background: rgba(5, 39, 22, 0.86) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.18) !important;
+}
+
+:root[data-theme="dark"] .inventory-page .template-detail-panel .inventory-table tbody tr:hover {
+  background: rgba(17, 78, 43, 0.82) !important;
+}
+
+:root[data-theme="dark"] .inventory-page :is(.release-feedback.error, .release-feedback.success) {
+  background: rgba(5, 39, 22, 0.82) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+}
+
+/* Dark mode gaps: release queue cards and all journey support stages. */
+:root[data-theme="dark"] .inventory-page :is(
+  .release-queue,
+  .release-request-card,
+  .release-request-card.active,
+  .release-request-card:hover,
+  .release-request-meta div,
+  .release-request-meta-compact b,
+  .release-appliance-request-card,
+  .release-appliance-step-total,
+  .release-appliance-request-meta b,
+  .release-footer-sticky
+) {
+  background:
+    radial-gradient(circle at bottom right, rgba(34, 197, 94, 0.1), transparent 30%),
+    linear-gradient(180deg, rgba(10, 55, 28, 0.96), rgba(7, 44, 23, 0.98)) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.24) !important;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.2) !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .inventory-page :is(
+  .release-queue-head h3,
+  .release-request-card strong,
+  .release-request-meta b,
+  .release-request-meta-compact b,
+  .release-request-support,
+  .release-appliance-request-card strong,
+  .release-appliance-request-meta b,
+  .release-appliance-qty-badge,
+  .release-appliance-step-total strong
+) {
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .inventory-page :is(
+  .release-queue-head span,
+  .release-queue-filter .release-selection-field span,
+  .release-request-card span,
+  .release-request-card small,
+  .release-request-meta label,
+  .release-appliance-request-card span,
+  .release-appliance-request-main small,
+  .release-appliance-step-total span,
+  .release-appliance-step-total small
+) {
+  color: #a8c4b0 !important;
+}
+
+/* Dark mode: food pack template modal is portaled outside .inventory-page. */
+:root[data-theme="dark"] .template-builder-modal :is(
+  .template-builder-panel,
+  .template-builder-list-wrap,
+  .template-builder-selection-list,
+  .release-selection-card,
+  .compact-template-card,
+  .release-empty,
+  .release-selection-field,
+  .template-source-row
+) {
+  background:
+    radial-gradient(circle at bottom right, rgba(34, 197, 94, 0.1), transparent 30%),
+    linear-gradient(180deg, rgba(10, 55, 28, 0.96), rgba(7, 44, 23, 0.98)) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.24) !important;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.22) !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .template-builder-modal :is(
+  .template-builder-head,
+  .release-panel-head,
+  .template-source-row
+) {
+  border-color: rgba(178, 219, 191, 0.18) !important;
+}
+
+:root[data-theme="dark"] .template-builder-modal :is(
+  .template-builder-head h3,
+  .release-panel-head h3,
+  .release-selection-head strong,
+  .template-source-main strong
+) {
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .template-builder-modal :is(
+  .release-panel-head span,
+  .release-selection-head span,
+  .release-selection-field label,
+  .template-source-main span,
+  .template-source-meta small
+) {
+  color: #a8c4b0 !important;
+}
+
+:root[data-theme="dark"] .template-builder-modal .template-source-meta span {
+  background: rgba(34, 197, 94, 0.2) !important;
+  color: #bbf7d0 !important;
+}
+
+:root[data-theme="dark"] .template-builder-modal .template-source-row {
+  border-bottom-color: rgba(178, 219, 191, 0.14) !important;
+}
+
+:root[data-theme="dark"] .template-builder-modal .template-source-row:hover {
+  background: rgba(17, 78, 43, 0.86) !important;
+}
+
+:root[data-theme="dark"] .template-builder-modal :is(.template-add-btn, .btn-outline, .btn-secondary) {
+  background: rgba(5, 39, 22, 0.9) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.38) !important;
+}
+
+
+/* Release preparation dark polish: keep the closed planner header and queue cards out of light mode. */
+.inventory-page .release-shell .release-shell-head .btn,
+.inventory-page .release-shell .release-shell-head .btn.btn-outline,
+.inventory-page .release-shell .release-shell-head .btn.btn-secondary,
+:root[data-theme="dark"] .inventory-page .release-shell .release-shell-head .btn,
+:root[data-theme="dark"] .inventory-page .release-shell .release-shell-head .btn.btn-outline,
+:root[data-theme="dark"] .inventory-page .release-shell .release-shell-head .btn.btn-secondary {
+  background: linear-gradient(180deg, rgba(17, 91, 49, 0.96), rgba(7, 54, 28, 0.98)) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.34) !important;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2) !important;
+  opacity: 1 !important;
+}
+
+.inventory-page .release-shell .release-shell-head .btn svg,
+.inventory-page .release-shell .release-shell-head .btn .btn-icon,
+:root[data-theme="dark"] .inventory-page .release-shell .release-shell-head .btn svg,
+:root[data-theme="dark"] .inventory-page .release-shell .release-shell-head .btn .btn-icon {
+  color: #d8f5df !important;
+  fill: currentColor !important;
+}
+
+.inventory-page .release-shell .release-shell-head .btn:hover:not(:disabled),
+:root[data-theme="dark"] .inventory-page .release-shell .release-shell-head .btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(23, 124, 64, 0.98), rgba(9, 69, 35, 0.98)) !important;
+  border-color: rgba(134, 239, 172, 0.5) !important;
+}
+
+.inventory-page .release-shell .release-shell-head .btn:disabled,
+:root[data-theme="dark"] .inventory-page .release-shell .release-shell-head .btn:disabled {
+  background: linear-gradient(180deg, rgba(15, 67, 37, 0.92), rgba(7, 43, 24, 0.94)) !important;
+  color: #bddbc5 !important;
+  border-color: rgba(178, 219, 191, 0.24) !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
+
+.inventory-page .release-request-list,
+:root[data-theme="dark"] .inventory-page .release-request-list {
+  padding: 8px 12px 16px 0 !important;
+  margin-top: 12px !important;
+}
+
+.inventory-page .release-request-card,
+.inventory-page .release-request-card.active,
+.inventory-page .release-request-card:hover,
+:root[data-theme="dark"] .inventory-page .release-request-card,
+:root[data-theme="dark"] .inventory-page .release-request-card.active,
+:root[data-theme="dark"] .inventory-page .release-request-card:hover {
+  background: linear-gradient(180deg, rgba(9, 58, 30, 0.98), rgba(6, 45, 24, 0.99)) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.28) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 22px rgba(0, 0, 0, 0.18) !important;
 }

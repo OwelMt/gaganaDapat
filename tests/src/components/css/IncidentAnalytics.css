@@ -902,3 +902,107 @@
     text-align: left;
   }
 }
+
+/* Dark mode: incident analytics tab parity */
+:root[data-theme="dark"] .analytics-page .incident-single-alert,
+:root[data-theme="dark"] .analytics-page .incident-record-window-card,
+:root[data-theme="dark"] .analytics-page .incident-record-window-item,
+:root[data-theme="dark"] .analytics-page .incident-kpi-card,
+:root[data-theme="dark"] .analytics-page .incident-clean-card,
+:root[data-theme="dark"] .analytics-page .incident-ai-card,
+:root[data-theme="dark"] .analytics-page .incident-health-card,
+:root[data-theme="dark"] .analytics-page .incident-health-compact-card,
+:root[data-theme="dark"] .analytics-page .incident-chart-card,
+:root[data-theme="dark"] .analytics-page .incident-signals-clean,
+:root[data-theme="dark"] .analytics-page .incident-insight-item,
+:root[data-theme="dark"] .analytics-page .incident-health-row,
+:root[data-theme="dark"] .analytics-page .incident-chart-value-row {
+  background: linear-gradient(145deg, rgba(13, 61, 34, 0.96), rgba(10, 50, 29, 0.98)) !important;
+  border-color: rgba(178, 219, 191, 0.2) !important;
+  color: #f3fff6 !important;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .incident-ai-summary,
+:root[data-theme="dark"] .analytics-page .incident-action-list,
+:root[data-theme="dark"] .analytics-page .incident-inline-empty {
+  background: rgba(5, 39, 22, 0.92) !important;
+  border-color: rgba(178, 219, 191, 0.2) !important;
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .incident-single-alert.warning,
+:root[data-theme="dark"] .analytics-page .incident-single-alert.notice,
+:root[data-theme="dark"] .analytics-page .incident-kpi-card.warning,
+:root[data-theme="dark"] .analytics-page .incident-kpi-card.urgent,
+:root[data-theme="dark"] .analytics-page .incident-health-compact-card.warning,
+:root[data-theme="dark"] .analytics-page .incident-health-row.warning {
+  background: rgba(70, 42, 9, 0.88) !important;
+  border-color: rgba(251, 191, 36, 0.42) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .incident-kpi-label,
+:root[data-theme="dark"] .analytics-page .incident-kpi-sub,
+:root[data-theme="dark"] .analytics-page .incident-card-subtitle,
+:root[data-theme="dark"] .analytics-page .incident-health-compact-sub,
+:root[data-theme="dark"] .analytics-page .incident-record-window-sub,
+:root[data-theme="dark"] .analytics-page .incident-single-alert-text {
+  color: #bfd8c6 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .incident-kpi-value,
+:root[data-theme="dark"] .analytics-page .incident-panel-title,
+:root[data-theme="dark"] .analytics-page .incident-health-compact-value,
+:root[data-theme="dark"] .analytics-page .incident-record-window-value,
+:root[data-theme="dark"] .analytics-page .incident-single-alert-title {
+  color: #f6fff8 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .incident-kpi-icon,
+:root[data-theme="dark"] .analytics-page .incident-single-alert-icon,
+:root[data-theme="dark"] .analytics-page .incident-health-compact-icon,
+:root[data-theme="dark"] .analytics-page .incident-record-window-icon {
+  background: rgba(34, 197, 94, 0.18) !important;
+  color: #67e899 !important;
+}
+
+/* Dark mode second pass: incident analytics inner cards */
+:root[data-theme="dark"] .analytics-page .incident-ai-summary,
+:root[data-theme="dark"] .analytics-page .incident-action-list,
+:root[data-theme="dark"] .analytics-page .incident-action-list.compact,
+:root[data-theme="dark"] .analytics-page .incident-ranking-list,
+:root[data-theme="dark"] .analytics-page .incident-health-value-list,
+:root[data-theme="dark"] .analytics-page .incident-chart-value-list,
+:root[data-theme="dark"] .analytics-page .incident-signal-grid-clean,
+:root[data-theme="dark"] .analytics-page .incident-signal-grid-clean > *,
+:root[data-theme="dark"] .analytics-page .incident-insight-item,
+:root[data-theme="dark"] .analytics-page .incident-record-window-grid {
+  background: rgba(5, 39, 22, 0.94) !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .incident-health-compact-card.warning,
+:root[data-theme="dark"] .analytics-page .incident-kpi-card.warning,
+:root[data-theme="dark"] .analytics-page .incident-kpi-card.urgent,
+:root[data-theme="dark"] .analytics-page .incident-insight-item--warning,
+:root[data-theme="dark"] .analytics-page .incident-insight-item--notice {
+  background: rgba(70, 42, 9, 0.88) !important;
+  border-color: rgba(251, 191, 36, 0.42) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .incident-insight-item--danger,
+:root[data-theme="dark"] .analytics-page .incident-insight-item--critical {
+  background: rgba(76, 20, 20, 0.88) !important;
+  border-color: rgba(248, 113, 113, 0.42) !important;
+}
+
+:root[data-theme="dark"] .analytics-page :is(.incident-action-list li, .incident-action-title, .incident-insight-title, .incident-insight-action, .incident-ranking-title, .incident-record-window-value) {
+  color: #f3fff6 !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .analytics-page :is(.incident-insight-message, .incident-ranking-meta, .incident-record-window-sub, .incident-health-compact-label, .incident-health-compact-sub) {
+  color: #bfd8c6 !important;
+  opacity: 1 !important;
+}

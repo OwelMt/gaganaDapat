@@ -872,3 +872,26 @@
     min-height: 240px;
   }
 }
+/* Dark mode: status words only, no rectangular highlight behind text. */
+:root[data-theme="dark"] .overview-command-status,
+:root[data-theme="dark"] .overview-command-status.warning,
+:root[data-theme="dark"] .overview-command-status.danger,
+:root[data-theme="dark"] .overview-command-status.success {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+:root[data-theme="dark"] .overview-command-status.warning {
+  color: #fbbf24 !important;
+}
+
+:root[data-theme="dark"] .overview-command-status.danger {
+  color: #fca5a5 !important;
+}
+
+:root[data-theme="dark"] .overview-command-status.success {
+  color: #8ff0ad !important;
+}

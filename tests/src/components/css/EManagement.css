@@ -3522,3 +3522,256 @@
   color: var(--ev-text) !important;
   border-color: rgba(157, 203, 168, 0.22) !important;
 }
+
+/* Dark mode modal pass: evacuation forms and shared modal cards */
+:root[data-theme="dark"] .evac-modal-card {
+  background: linear-gradient(180deg, rgba(8, 38, 17, 0.98), rgba(11, 50, 29, 0.98)) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.24) !important;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.48) !important;
+}
+
+:root[data-theme="dark"] .evac-modal-header {
+  background: linear-gradient(135deg, rgba(12, 53, 31, 0.98), rgba(18, 76, 43, 0.95)) !important;
+  border-bottom-color: rgba(178, 219, 191, 0.22) !important;
+}
+
+:root[data-theme="dark"] .evac-modal-form {
+  background: radial-gradient(circle at top right, rgba(34, 197, 94, 0.08), transparent 32%), #082611 !important;
+}
+
+:root[data-theme="dark"] .evac-form-section,
+:root[data-theme="dark"] .evac-form-section:nth-child(2),
+:root[data-theme="dark"] .evac-form-section:nth-child(3) {
+  background: linear-gradient(145deg, rgba(13, 61, 34, 0.96), rgba(10, 50, 29, 0.98)) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.24) !important;
+}
+
+:root[data-theme="dark"] .evac-form-section .section-title,
+:root[data-theme="dark"] .evac-form-section:nth-child(2) .section-title,
+:root[data-theme="dark"] .evac-form-section:nth-child(3) .section-title {
+  background: rgba(34, 197, 94, 0.18) !important;
+  color: #d7f8df !important;
+  border-color: rgba(134, 239, 172, 0.34) !important;
+}
+
+:root[data-theme="dark"] .evac-form-section:nth-child(3) .section-title {
+  background: rgba(251, 191, 36, 0.18) !important;
+  color: #fde68a !important;
+  border-color: rgba(251, 191, 36, 0.42) !important;
+}
+
+:root[data-theme="dark"] .check-chip {
+  background: rgba(5, 39, 22, 0.94) !important;
+  color: #d7f8df !important;
+  border-color: rgba(178, 219, 191, 0.26) !important;
+}
+
+:root[data-theme="dark"] .check-chip:has(input:checked),
+:root[data-theme="dark"] .check-chip.single-toggle:has(input:checked) {
+  background: rgba(20, 184, 166, 0.2) !important;
+  color: #ccfbf1 !important;
+  border-color: rgba(45, 212, 191, 0.5) !important;
+}
+
+:root[data-theme="dark"] .evac-modal-actions {
+  background: rgba(8, 38, 17, 0.96) !important;
+  border-top-color: rgba(178, 219, 191, 0.22) !important;
+}
+
+:root[data-theme="dark"] .evac-modal-card :is(input, select, textarea) {
+  background: rgba(5, 39, 22, 0.94) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.26) !important;
+}
+
+:root[data-theme="dark"] .evac-modal-card :is(input, textarea)::placeholder {
+  color: #a8c4b0 !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .evac-modal-close {
+  background: rgba(5, 39, 22, 0.94) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.28) !important;
+}
+
+/* Evacuation map heading/action alignment after removing the map legend. */
+.evac-map-panel .map-panel-head {
+  align-items: center !important;
+  min-height: auto !important;
+}
+
+.evac-map-panel .map-panel-title-block {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  width: 100% !important;
+}
+
+.evac-map-panel .map-panel-title-block h2 {
+  margin: 0 !important;
+  line-height: 1.1 !important;
+}
+
+.evac-map-panel .map-panel-controls-row {
+  width: auto !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+}
+
+.evac-map-panel .map-panel-actions {
+  margin-left: 0 !important;
+  align-items: center !important;
+}
+
+@media (max-width: 720px) {
+  .evac-map-panel .map-panel-title-block {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+  }
+
+  .evac-map-panel .map-panel-controls-row {
+    width: 100% !important;
+    justify-content: flex-start !important;
+  }
+}
+
+
+/* Dark mode: evacuation detail panel cards and occupancy controls. */
+:root[data-theme="dark"] .evac-dashboard-page :is(
+  .details-overview-block,
+  .details-hero,
+  .details-hero.refined,
+  .ops-guidance-card,
+  .detail-kpi-card,
+  .occupancy-kpi-card,
+  .ops-card,
+  .occupancy-control-card,
+  .meta-card,
+  .meta-row,
+  .remarks-box
+) {
+  background:
+    radial-gradient(circle at bottom right, rgba(34, 197, 94, 0.1), transparent 34%),
+    linear-gradient(180deg, rgba(10, 58, 31, 0.98), rgba(6, 43, 24, 0.99)) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.26) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 14px 28px rgba(0, 0, 0, 0.2) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page .ops-guidance-card.danger {
+  background:
+    radial-gradient(circle at bottom right, rgba(239, 68, 68, 0.2), transparent 38%),
+    linear-gradient(180deg, rgba(72, 25, 18, 0.96), rgba(47, 20, 15, 0.98)) !important;
+  border-color: rgba(248, 113, 113, 0.34) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page :is(
+  .details-hero h3,
+  .details-hero-title,
+  .details-hero-main,
+  .detail-kpi-card strong,
+  .occupancy-kpi-card strong,
+  .occupancy-status-head strong,
+  .meta-card h3,
+  .meta-row strong,
+  .remarks-box p
+) {
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page :is(
+  .details-hero-eyebrow,
+  .detail-kpi-card span,
+  .detail-kpi-card span svg,
+  .occupancy-kpi-card strong small,
+  .occupancy-kpi-card em,
+  .occupancy-status-head span,
+  .occupancy-input-wrap label,
+  .ops-card-title,
+  .meta-row span,
+  .remarks-empty
+) {
+  color: #a8c4b0 !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page :is(
+  .occupancy-mini-progress,
+  .occupancy-progress-track
+) {
+  background: rgba(5, 39, 22, 0.95) !important;
+  border-color: rgba(178, 219, 191, 0.18) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page :is(
+  .occupancy-step-btn,
+  .occupancy-auto-chip,
+  .occupancy-auto-note,
+  .occupancy-input-wrap input,
+  .status-action-btn,
+  .landing-toggle-btn,
+  .ghost-btn
+) {
+  background: rgba(5, 39, 22, 0.96) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.28) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page .occupancy-step-btn.add {
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.86), rgba(22, 101, 52, 0.96)) !important;
+  color: #ffffff !important;
+  border-color: rgba(134, 239, 172, 0.48) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page :is(.occupancy-step-btn:disabled, .status-action-btn:disabled) {
+  opacity: 1 !important;
+  color: #a8c4b0 !important;
+  background: rgba(8, 48, 27, 0.8) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page .status-action-grid-readonly .status-action-btn:not(.active) {
+  background: rgba(5, 39, 22, 0.9) !important;
+  color: #a8c4b0 !important;
+  border-color: rgba(178, 219, 191, 0.24) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page .status-action-btn.available.active {
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.85), rgba(22, 101, 52, 0.95)) !important;
+  color: #ffffff !important;
+  border-color: rgba(134, 239, 172, 0.52) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page .status-action-btn.limited.active {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.88), rgba(146, 64, 14, 0.95)) !important;
+  color: #fff7ed !important;
+  border-color: rgba(251, 191, 36, 0.52) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page .status-action-btn.full.active {
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.9), rgba(127, 29, 29, 0.96)) !important;
+  color: #fff7f7 !important;
+  border-color: rgba(248, 113, 113, 0.52) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page .facility-chip.active {
+  background: rgba(34, 197, 94, 0.16) !important;
+  color: #86efac !important;
+  border-color: rgba(134, 239, 172, 0.42) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page .facility-chip.inactive {
+  background: rgba(15, 58, 34, 0.88) !important;
+  color: #9bb1a1 !important;
+  border-color: rgba(178, 219, 191, 0.18) !important;
+}
+
+:root[data-theme="dark"] .evac-dashboard-page :is(.occupancy-input-wrap input:disabled, .occupancy-input-wrap input[disabled]) {
+  background: rgba(5, 39, 22, 0.96) !important;
+  color: #d7f8df !important;
+  opacity: 1 !important;
+}

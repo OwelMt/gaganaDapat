@@ -1062,3 +1062,106 @@
     grid-template-columns: auto 1fr auto;
   }
 }
+/* Dark mode: evacuation analytics tab parity */
+:root[data-theme="dark"] .analytics-page .evac-banner,
+:root[data-theme="dark"] .analytics-page .evac-panel,
+:root[data-theme="dark"] .analytics-page .evac-kpi-card,
+:root[data-theme="dark"] .analytics-page .evac-snapshot-card,
+:root[data-theme="dark"] .analytics-page .evac-ranking-row,
+:root[data-theme="dark"] .analytics-page .evac-insight-item,
+:root[data-theme="dark"] .analytics-page .evac-risk-row,
+:root[data-theme="dark"] .analytics-page .evac-deficiency-item {
+  background: linear-gradient(145deg, rgba(13, 61, 34, 0.96), rgba(10, 50, 29, 0.98)) !important;
+  border-color: rgba(178, 219, 191, 0.2) !important;
+  color: #f3fff6 !important;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-banner.warning,
+:root[data-theme="dark"] .analytics-page .evac-banner.notice,
+:root[data-theme="dark"] .analytics-page .evac-kpi-card.warning,
+:root[data-theme="dark"] .analytics-page .evac-snapshot-card.notice,
+:root[data-theme="dark"] .analytics-page .evac-insight-item--warning,
+:root[data-theme="dark"] .analytics-page .evac-deficiency-item.warning {
+  background: rgba(70, 42, 9, 0.88) !important;
+  border-color: rgba(251, 191, 36, 0.42) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-banner-icon,
+:root[data-theme="dark"] .analytics-page .evac-kpi-icon,
+:root[data-theme="dark"] .analytics-page .evac-snapshot-icon,
+:root[data-theme="dark"] .analytics-page .evac-insight-icon {
+  background: rgba(34, 197, 94, 0.18) !important;
+  color: #67e899 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-banner.warning .evac-banner-icon,
+:root[data-theme="dark"] .analytics-page .evac-banner.notice .evac-banner-icon,
+:root[data-theme="dark"] .analytics-page .evac-kpi-card.warning .evac-kpi-icon,
+:root[data-theme="dark"] .analytics-page .evac-insight-item--warning .evac-insight-icon {
+  background: rgba(251, 191, 36, 0.18) !important;
+  color: #fbbf24 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-banner-title,
+:root[data-theme="dark"] .analytics-page .evac-panel-title,
+:root[data-theme="dark"] .analytics-page .evac-kpi-value,
+:root[data-theme="dark"] .analytics-page .evac-snapshot-value,
+:root[data-theme="dark"] .analytics-page .evac-ranking-title {
+  color: #f6fff8 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-banner-text,
+:root[data-theme="dark"] .analytics-page .evac-card-subtitle,
+:root[data-theme="dark"] .analytics-page .evac-kpi-sub,
+:root[data-theme="dark"] .analytics-page .evac-snapshot-sub,
+:root[data-theme="dark"] .analytics-page .evac-ranking-meta {
+  color: #bfd8c6 !important;
+}
+
+/* Dark mode second pass: evacuation analytics inner summary/action boxes */
+:root[data-theme="dark"] .analytics-page .evac-summary-box,
+:root[data-theme="dark"] .analytics-page .evac-priority-box,
+:root[data-theme="dark"] .analytics-page .evac-snapshot-grid,
+:root[data-theme="dark"] .analytics-page .evac-risk-list,
+:root[data-theme="dark"] .analytics-page .evac-capacity-list,
+:root[data-theme="dark"] .analytics-page .evac-attention-list {
+  background: rgba(5, 39, 22, 0.94) !important;
+  border: 1px solid rgba(178, 219, 191, 0.22) !important;
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-priority-title,
+:root[data-theme="dark"] .analytics-page .evac-priority-list li,
+:root[data-theme="dark"] .analytics-page .evac-summary-box,
+:root[data-theme="dark"] .analytics-page .evac-panel-heading,
+:root[data-theme="dark"] .analytics-page .evac-risk-name {
+  color: #f3fff6 !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-risk-meta,
+:root[data-theme="dark"] .analytics-page .evac-panel-kicker,
+:root[data-theme="dark"] .analytics-page .evac-snapshot-label,
+:root[data-theme="dark"] .analytics-page .evac-snapshot-sub {
+  color: #bfd8c6 !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-snapshot-card.warning,
+:root[data-theme="dark"] .analytics-page .evac-kpi-card.warning,
+:root[data-theme="dark"] .analytics-page .evac-kpi-card.urgent,
+:root[data-theme="dark"] .analytics-page .evac-banner.warning,
+:root[data-theme="dark"] .analytics-page .evac-banner.notice {
+  background: rgba(70, 42, 9, 0.88) !important;
+  border-color: rgba(251, 191, 36, 0.42) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-risk-badge--notice,
+:root[data-theme="dark"] .analytics-page .evac-risk-badge--warning,
+:root[data-theme="dark"] .analytics-page .evac-badge--warning,
+:root[data-theme="dark"] .analytics-page .evac-badge--notice {
+  background: rgba(251, 191, 36, 0.18) !important;
+  color: #fbbf24 !important;
+  border-color: rgba(251, 191, 36, 0.34) !important;
+}

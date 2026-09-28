@@ -513,3 +513,252 @@
     padding: 20px !important;
   }
 }
+
+/* Dark mode: donation validation queue remaining white panels */
+:root[data-theme="dark"] .dqv-page .rrl-header-card,
+:root[data-theme="dark"] .dqv-page .rrl-card,
+:root[data-theme="dark"] .dqv-page .rrl-queue-card,
+:root[data-theme="dark"] .dqv-page .rrl-placeholder-card,
+:root[data-theme="dark"] .dqv-page .rrl-details-card-compact,
+:root[data-theme="dark"] .dqv-page .rrl-queue-item,
+:root[data-theme="dark"] .dqv-page .dqv-detail-card,
+:root[data-theme="dark"] .dqv-page .dqv-proof-card,
+:root[data-theme="dark"] .dqv-page .dqv-decision-card,
+:root[data-theme="dark"] .dqv-page .dqv-summary-card,
+:root[data-theme="dark"] .dqv-page .rrl-panel,
+:root[data-theme="dark"] .dqv-page .rrl-balance-chip,
+:root[data-theme="dark"] .dqv-page .rrl-meta-chip {
+  background: linear-gradient(145deg, rgba(13, 61, 34, 0.96), rgba(10, 50, 29, 0.98)) !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .dqv-page .rrl-total-card,
+:root[data-theme="dark"] .dqv-page .dqv-total-card,
+:root[data-theme="dark"] .dqv-page .dqv-amount-card,
+:root[data-theme="dark"] .dqv-page .dqv-reference-card,
+:root[data-theme="dark"] .dqv-page .dqv-snapshot-card,
+:root[data-theme="dark"] .dqv-page .dqv-proof-panel,
+:root[data-theme="dark"] .dqv-page .dqv-remarks-panel,
+:root[data-theme="dark"] .dqv-page .dqv-decision-panel,
+:root[data-theme="dark"] .dqv-page .rrl-remarks-box {
+  background: rgba(5, 39, 22, 0.92) !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .dqv-page .rrl-total-card.pending,
+:root[data-theme="dark"] .dqv-page .dqv-queue-pending,
+:root[data-theme="dark"] .dqv-page .rrl-status-banner-pending {
+  background: rgba(70, 42, 9, 0.88) !important;
+  border-color: rgba(251, 191, 36, 0.42) !important;
+  color: #fed7aa !important;
+}
+
+:root[data-theme="dark"] .dqv-page .rrl-total-card.success {
+  background: rgba(12, 61, 35, 0.92) !important;
+  border-color: rgba(74, 222, 128, 0.3) !important;
+}
+
+:root[data-theme="dark"] .dqv-page :is(input, select, textarea, .rrl-select) {
+  background: rgba(5, 39, 22, 0.94) !important;
+  color: #f3fff6 !important;
+  border: 1px solid rgba(178, 219, 191, 0.24) !important;
+  border-radius: 12px !important;
+}
+
+:root[data-theme="dark"] .dqv-page :is(input, textarea)::placeholder {
+  color: #a8c4b0 !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .dqv-page :is(.rrl-queue-requestno-wrap, .rrl-queue-inline-meta span, .dqv-detail-card span, .rrl-total-card-top, .dqv-muted) {
+  color: #bfd8c6 !important;
+}
+
+:root[data-theme="dark"] .dqv-page :is(.rrl-queue-barangay, .dqv-detail-card strong, .rrl-header-title, .rrl-section-head, .rrl-total-card strong) {
+  color: #f6fff8 !important;
+}
+
+:root[data-theme="dark"] .dqv-page :is(button, .rrl-btn, .dqv-btn) svg {
+  color: currentColor !important;
+  fill: currentColor !important;
+}
+
+:root[data-theme="dark"] .dqv-page :is(.rrl-btn-danger, .dqv-btn-danger, .dqv-reject-btn) {
+  background: rgba(239, 68, 68, 0.88) !important;
+  color: #ffffff !important;
+  border-color: rgba(248, 113, 113, 0.42) !important;
+}
+
+/* Dark mode second pass: donation queue preview/detail leftovers */
+:root[data-theme="dark"] .dqv-page :is(.dqv-proof-empty, .dqv-image-modal-card, .dqv-image-modal, .dqv-toolbar-simple, .rrl-queue-list, .rrl-toolbar, .rrl-toolbar-controls) {
+  background: rgba(5, 39, 22, 0.94) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+}
+
+:root[data-theme="dark"] .dqv-page :is(.dqv-proof-card img, .dqv-proof-card iframe) {
+  background: rgba(5, 39, 22, 0.94) !important;
+}
+
+:root[data-theme="dark"] .dqv-page :is(.dqv-queue-pending, .dqv-queue-resubmitted, .dqv-queue-not-received)::before {
+  background: currentColor !important;
+}
+
+:root[data-theme="dark"] .dqv-page :is(.rrl-btn-secondary, .dqv-image-modal-close) {
+  background: rgba(17, 78, 43, 0.84) !important;
+  color: #f3fff6 !important;
+  border-color: rgba(178, 219, 191, 0.26) !important;
+}
+
+/* Donation queue layout pass: align with Relief Request queue */
+.dqv-page .rrl-board {
+  grid-template-columns: 430px minmax(0, 1fr) !important;
+  align-items: stretch !important;
+}
+
+.dqv-page .rrl-board-left,
+.dqv-page .rrl-board-right {
+  min-height: 0 !important;
+  align-self: stretch !important;
+}
+
+.dqv-page .rrl-queue-card {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: min(72vh, 920px) !important;
+  overflow: hidden !important;
+}
+
+.dqv-page .rrl-details-card-compact {
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+.dqv-page .rrl-queue-list-wrap {
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  padding-right: 4px !important;
+}
+
+.dqv-page .rrl-queue-list {
+  gap: 12px !important;
+  padding-right: 0 !important;
+}
+
+.dqv-page .rrl-queue-item {
+  min-height: 152px !important;
+  padding: 18px 20px !important;
+  justify-content: space-between !important;
+}
+
+.dqv-page .rrl-queue-item .rrl-queue-top,
+.dqv-page .rrl-queue-item .rrl-queue-main {
+  min-width: 0 !important;
+}
+
+.dqv-page .rrl-queue-barangay {
+  color: #f6fff8 !important;
+  font-size: 20px !important;
+  line-height: 1.1 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.dqv-page .rrl-queue-disaster,
+.dqv-page .rrl-queue-requestno {
+  color: #d7f8df !important;
+  opacity: 1 !important;
+}
+
+.dqv-page .dqv-queue-bottom-clean {
+  align-items: flex-end !important;
+  gap: 12px !important;
+}
+
+.dqv-page .dqv-queue-amount-meta {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+}
+
+.dqv-page .dqv-queue-amount-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 28px !important;
+  padding: 0 14px !important;
+  border-radius: 999px !important;
+  background: rgba(220, 252, 231, 0.96) !important;
+  color: #04723b !important;
+  border: 1px solid rgba(134, 239, 172, 0.6) !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  white-space: nowrap !important;
+}
+
+.dqv-page .rrl-queue-datetime {
+  min-width: 96px !important;
+  color: #f6fff8 !important;
+}
+
+.dqv-page .rrl-queue-datetime strong,
+.dqv-page .rrl-queue-datetime span {
+  color: #f6fff8 !important;
+  opacity: 1 !important;
+}
+
+@media (max-width: 1100px) {
+  .dqv-page .rrl-board {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Donation queue equal-height pass: match the detail panel and scroll only the inner list. */
+.dqv-page .rrl-board {
+  align-items: stretch !important;
+  grid-auto-rows: minmax(640px, auto) !important;
+}
+
+.dqv-page .rrl-board-left,
+.dqv-page .rrl-board-right {
+  display: flex !important;
+  min-height: 0 !important;
+}
+
+.dqv-page .rrl-queue-card,
+.dqv-page .rrl-details-card-compact,
+.dqv-page .rrl-placeholder-card {
+  flex: 1 1 auto !important;
+  height: auto !important;
+  min-height: 100% !important;
+}
+
+.dqv-page .rrl-queue-card {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.dqv-page .rrl-queue-list-wrap {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: calc((152px * 6) + (12px * 5) + 8px) !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+}
+
+.dqv-page .rrl-queue-list {
+  min-height: 100% !important;
+}
+
+@media (max-width: 1100px) {
+  .dqv-page .rrl-board {
+    grid-auto-rows: auto !important;
+  }
+
+  .dqv-page .rrl-queue-card,
+  .dqv-page .rrl-details-card-compact,
+  .dqv-page .rrl-placeholder-card {
+    min-height: 420px !important;
+  }
+}

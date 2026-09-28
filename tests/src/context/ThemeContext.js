@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { API_BASE_URL } from "../config/api";
 
@@ -21,6 +22,11 @@ function buildThemeStorageKey(role, userId) {
   return `theme:${safeRole}:${safeUserId}`;
 }
 
+function isPublicThemeRoute(pathname = "") {
+  const normalizedPath = String(pathname || "/").trim().toLowerCase();
+  return normalizedPath === "/" || normalizedPath === "/login";
+}
+
 function getFallbackIdentity() {
   if (typeof window === "undefined") {
     return { role: "", userId: "" };
@@ -41,15 +47,18 @@ function getStoredThemeForIdentity(role, userId) {
     if (cached) return normalizeTheme(cached);
   }
 
-  const legacy = localStorage.getItem("theme");
-  return legacy ? normalizeTheme(legacy) : null;
+  return null;
 }
 
 export const useTheme = () => useContext(ThemeContext);
 
 export const ThemeProvider = ({ children }) => {
   const { user, setUser } = useAuth();
-  const fallbackIdentity = getFallbackIdentity();
+  const location = useLocation();
+  const publicThemeRoute = isPublicThemeRoute(location?.pathname);
+  const fallbackIdentity = publicThemeRoute
+    ? { role: "", userId: "" }
+    : getFallbackIdentity();
 
   const resolvedRole = String(user?.role || fallbackIdentity.role || "").toLowerCase();
   const resolvedUserId = String(user?.userId || fallbackIdentity.userId || "");
@@ -63,22 +72,32 @@ export const ThemeProvider = ({ children }) => {
   );
 
   useEffect(() => {
+    if (publicThemeRoute) {
+      return;
+    }
+
     const nextTheme = user?.themePreference
       ? normalizeTheme(user.themePreference)
       : getStoredThemeForIdentity(resolvedRole, resolvedUserId) || "dark";
 
     setTheme((current) => (current === nextTheme ? current : nextTheme));
-  }, [resolvedRole, resolvedUserId, user?.themePreference]);
+  }, [publicThemeRoute, resolvedRole, resolvedUserId, user?.themePreference]);
 
   useEffect(() => {
+    if (publicThemeRoute) {
+      document.documentElement.removeAttribute("data-theme");
+      localStorage.removeItem("theme");
+      return;
+    }
+
     const normalizedTheme = normalizeTheme(theme);
     document.documentElement.dataset.theme = normalizedTheme;
-    localStorage.setItem("theme", normalizedTheme);
+    localStorage.removeItem("theme");
 
     if (accountThemeKey) {
       localStorage.setItem(accountThemeKey, normalizedTheme);
     }
-  }, [accountThemeKey, theme]);
+  }, [accountThemeKey, publicThemeRoute, theme]);
 
   const persistThemePreference = async (nextTheme) => {
     const normalizedTheme = normalizeTheme(nextTheme);

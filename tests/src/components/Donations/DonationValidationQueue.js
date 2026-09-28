@@ -554,7 +554,6 @@ export default function DonationValidationQueue() {
                       filteredRows.map((row) => {
                         const isActive = selectedDonation?._id === row._id;
                         const toneClass = getQueueClass(row?.status);
-                        const donationTypeLabel = getDonationTypeLabel(row);
                         const donatedValue =
                           normalize(row?.inventoryType || row?.donationType) ===
                           "monetary"
@@ -595,21 +594,9 @@ export default function DonationValidationQueue() {
                               </div>
                             </div>
 
-                            <div className="rrl-queue-bottom">
-                              <div className="rrl-queue-inline-meta">
-                                <span>{donationTypeLabel}</span>
-                                <span>{donatedValue}</span>
-                                <span>
-                                  {row?.category
-                                    ? row.category
-                                    : row?.sourceType === "external"
-                                    ? "Donated"
-                                    : row?.sourceType === "internal"
-                                    ? "LGU"
-                                    : row?.sourceType === "government"
-                                    ? "NGO"
-                                    : row?.sourceType || "Donated"}
-                                </span>
+                            <div className="rrl-queue-bottom dqv-queue-bottom-clean">
+                              <div className="rrl-queue-inline-meta dqv-queue-amount-meta">
+                                <span className="dqv-queue-amount-pill">{donatedValue}</span>
                               </div>
 
                               <div className="rrl-queue-datetime">
