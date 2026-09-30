@@ -3028,6 +3028,45 @@
 }
 
 @media (max-width: 640px) {
+  .incident-dashboard-page {
+    inline-size: 100%;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: clip;
+    padding: 8px 8px 24px;
+    gap: 10px;
+    background:
+      radial-gradient(circle at 100% 0, rgba(34, 197, 94, 0.12), transparent 30%),
+      linear-gradient(180deg, #f3f8f4 0%, #edf5ef 100%);
+  }
+
+  .incident-dashboard-header {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    gap: 12px;
+    padding: 15px;
+    border-radius: 22px;
+  }
+
+  .incident-dashboard-heading .eyebrow {
+    margin-bottom: 5px;
+    font-size: 10px;
+  }
+
+  .incident-dashboard-heading,
+  .incident-dashboard-actions,
+  .incident-summary-grid,
+  .incident-top-filters,
+  .incident-main-layout,
+  .incident-details-panel {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
   .incident-command-header,
   .incident-command-shell {
     padding: 12px;
@@ -3050,7 +3089,9 @@
   }
 
   .incident-dashboard-heading h1 {
-    font-size: 23px;
+    font-size: 27px;
+    line-height: 1;
+    letter-spacing: -0.04em;
   }
 
   .incident-dashboard-heading p {
@@ -3058,12 +3099,231 @@
   }
 
   .incident-summary-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, calc((100% - 8px) / 2));
+    gap: 8px;
   }
 
   .incident-dashboard-actions {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .incident-dashboard-actions .ghost-btn {
+    min-width: 0;
+    width: 100%;
+    min-height: 46px;
+    padding: 8px;
+    border-radius: 14px;
+    font-size: 11px;
+    line-height: 1.2;
+    text-align: center;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .incident-summary-card {
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 108px;
+    padding: 11px;
+    border-radius: 18px;
+  }
+
+  .incident-summary-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 11px;
+  }
+
+  .incident-summary-label {
+    font-size: 10px;
+    line-height: 1.25;
+  }
+
+  .incident-summary-value {
+    margin: 7px 0 5px;
+    font-size: 23px;
+  }
+
+  .incident-summary-sub {
+    font-size: 10px;
+    line-height: 1.3;
+  }
+
+  .incident-top-filters {
+    gap: 9px;
+    padding: 12px;
+    border-radius: 18px;
+  }
+
+  .incident-filter-field input,
+  .incident-filter-field select {
+    height: 46px;
+    border-radius: 13px;
+    font-size: 13px;
+  }
+
+  .incident-main-layout.incident-three-panel-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .incident-left-panel,
+  .incident-map-panel,
+  .incident-right-panel,
+  .incident-details-panel {
+    width: 100%;
+    min-width: 0;
+    border-radius: 20px;
+  }
+
+  .incident-left-panel,
+  .incident-right-panel {
+    min-height: 0;
+    max-height: none;
+  }
+
+  .panel-head {
+    padding: 13px 14px;
+  }
+
+  .panel-head h2 {
+    font-size: 16px;
+  }
+
+  .panel-head p {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .incident-queue-list,
+  .incident-approved-list {
+    max-height: 300px;
+    padding: 10px;
+    padding-bottom: 18px;
+    gap: 8px;
+  }
+
+  .incident-queue-card {
+    min-height: 0;
+    padding: 11px 12px 11px 14px;
+    border-radius: 14px;
+  }
+
+  .incident-queue-title {
+    font-size: 15px;
+  }
+
+  .incident-queue-subtitle,
+  .incident-queue-foot {
+    font-size: 11px;
+  }
+
+  .incident-map-stage {
+    height: 340px;
+    min-height: 340px;
+  }
+
+  .incident-details-panel {
+    scroll-margin-top: 10px;
+  }
+
+  .incident-command-shell {
+    gap: 10px;
+    border-radius: 18px;
+  }
+
+  .incident-command-header {
+    gap: 10px;
+    border-radius: 15px;
+  }
+
+  .incident-command-copy h3 {
+    font-size: 26px;
+  }
+
+  .incident-command-subline {
+    align-items: flex-start;
+    font-size: 12px;
+  }
+
+  .incident-command-actions .export-incident-btn {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .incident-command-card {
+    padding: 12px;
+    border-radius: 15px;
+  }
+
+  .incident-command-evidence .incident-preview-image {
+    min-height: 210px;
+    max-height: 320px;
+    border-radius: 14px;
+  }
+
+  .incident-ai-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .incident-ai-detail-grid div:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .incident-evidence-ai-block .status-action-grid.ai-action-grid,
+  .incident-command-shell .incident-evidence-ai-block .status-action-grid.ai-action-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px;
+  }
+
+  .incident-evidence-ai-block .status-action-grid.ai-action-grid .status-action-btn,
+  .incident-command-shell .incident-evidence-ai-block .status-action-grid.ai-action-grid .status-action-btn {
+    min-height: 46px;
+    padding: 8px;
+    font-size: 12px;
+  }
+
+  .incident-evidence-ai-block .status-action-grid.ai-action-grid .status-action-btn:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .incident-command-workflow-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .incident-command-workflow-actions .top-response-btn,
+  .incident-delete-row .review-delete-btn {
+    min-height: 46px;
+    font-size: 13px;
+  }
+
+  .incident-action-modal {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .incident-action-modal-card {
+    width: 100%;
+    max-height: min(82dvh, 680px);
+    border-radius: 24px 24px 0 0;
+    overflow-y: auto;
+  }
+
+  .incident-action-modal-head {
+    padding: 18px 16px 14px;
+  }
+
+  .incident-action-modal-head h3 {
+    font-size: 21px;
+  }
+
+  .incident-action-modal-actions {
+    padding: 14px 16px max(20px, env(safe-area-inset-bottom));
   }
 
   .incident-unified-card {
