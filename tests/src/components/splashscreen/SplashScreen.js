@@ -10,13 +10,13 @@ import SagipBayanLogo from "../../assets/images/sagipbayanlogo.png";
  * Props:
  *  - durationMs?: number       // how long to show before calling onFinish (default 4000)
  *  - dotPeriodMs?: number      // speed of the dot animation (default 300)
- *  - message?: string          // text below the dots (default "Connecting to the main server")
+ *  - message?: string          // optional text below the dots
  *  - onFinish?: () => void     // called once when duration elapses
  */
 function SplashScreen({
   durationMs = 4000,
   dotPeriodMs = 300,
-  message = "Connecting to the main server",
+  message = "",
   onFinish,
 }) {
   const [dotCount, setDotCount] = useState(0);
@@ -65,8 +65,7 @@ function SplashScreen({
         ))}
       </div>
 
-      {/* Text */}
-      <h2 className="splash-text">{message}</h2>
+      {message ? <h2 className="splash-text">{message}</h2> : null}
     </div>
   );
 }

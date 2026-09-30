@@ -159,4 +159,142 @@ describe("Inventory", () => {
     expect(screen.getByRole("button", { name: /Appliances/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Monetary/i })).not.toBeInTheDocument();
   });
+
+  test("keeps selected template details inline instead of opening a mobile dialog", async () => {
+    mockRole = "drrmo";
+    const originalGet = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url, ...args) => {
+      if (String(url).includes("/api/food-pack-templates")) {
+        return Promise.resolve({
+          data: [
+            {
+              _id: "template-mobile-1",
+              name: "Mobile Test Pack",
+              description: "Template detail test",
+              items: [
+                {
+                  inventoryItemId: "goods-1",
+                  itemName: "Rice",
+                  category: "Food",
+                  quantityPerPack: 2,
+                  unit: "bags",
+                },
+              ],
+            },
+          ],
+        });
+      }
+
+      return originalGet(url, ...args);
+    });
+    const { container } = render(<Inventory />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Goods$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Release Preparation/i }));
+    const templateCard = await screen.findByRole("button", { name: /Mobile Test Pack/i });
+    fireEvent.click(templateCard);
+
+    const details = await waitFor(() => {
+      const panel = container.querySelector(".template-detail-panel");
+      expect(panel).not.toBeNull();
+      return panel;
+    });
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(details).toHaveTextContent("Rice");
+    expect(details).toHaveTextContent("Category");
+    expect(details).toHaveTextContent("Per Pack");
+    expect(details).toHaveTextContent("Expiration");
+    expect(details.querySelector(".table-wrapper")).toBeInTheDocument();
+  });
+
+  test("opens the release journey in a mobile dialog when an approved request is tapped", async () => {
+    mockRole = "drrmo";
+    const originalGet = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url, ...args) => {
+      if (String(url).includes("/api/relief-releases/approved-requests")) {
+        return Promise.resolve({
+          data: [
+            {
+              _id: "approved-mobile-1",
+              requestNo: "RR-2026-0099",
+              requestType: "foodpacks",
+              supportTypes: ["foodpacks"],
+              barangayName: "Mobile Barangay",
+              disaster: "Storm",
+              totals: { requestedFoodPacks: 12 },
+              fulfillment: { releasedFoodPacks: 0 },
+            },
+          ],
+        });
+      }
+
+      return originalGet(url, ...args);
+    });
+    window.matchMedia = jest.fn(() => ({
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    }));
+
+    const { container } = render(<Inventory />);
+    fireEvent.click(await screen.findByRole("button", { name: /Release Preparation/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Open Planner/i }));
+
+    const requestCard = await screen.findByRole("button", { name: /RR-2026-0099/i });
+    fireEvent.click(requestCard);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Release journey for RR-2026-0099",
+    });
+    expect(dialog).toBeInTheDocument();
+    expect(container.querySelector(".release-journey-mobile-dialog")).toBeNull();
+    expect(dialog).toHaveTextContent("Release Journey");
+    expect(dialog).toHaveTextContent("Mobile Barangay");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to approved requests" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /RR-2026-0099/i })).toBeInTheDocument();
+  });
+
+  test("keeps the release journey in the website layout at desktop widths", async () => {
+    mockRole = "drrmo";
+    const originalGet = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url, ...args) => {
+      if (String(url).includes("/api/relief-releases/approved-requests")) {
+        return Promise.resolve({
+          data: [
+            {
+              _id: "approved-desktop-1",
+              requestNo: "RR-2026-0100",
+              requestType: "foodpacks",
+              supportTypes: ["foodpacks"],
+              barangayName: "Desktop Barangay",
+              disaster: "Storm",
+              totals: { requestedFoodPacks: 8 },
+              fulfillment: { releasedFoodPacks: 0 },
+            },
+          ],
+        });
+      }
+
+      return originalGet(url, ...args);
+    });
+    window.matchMedia = jest.fn(() => ({
+      matches: false,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    }));
+
+    const { container } = render(<Inventory />);
+    fireEvent.click(await screen.findByRole("button", { name: /Release Preparation/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Open Planner/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /RR-2026-0100/i }));
+
+    await waitFor(() => {
+      expect(container.querySelector(".release-main")).toBeInTheDocument();
+    });
+    expect(container.querySelector(".release-journey-mobile-dialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(container.querySelector(".release-main")).toHaveTextContent("Release Journey");
+  });
 });

@@ -307,6 +307,8 @@ export default function EManagement() {
   const location = useLocation();
   const nameRef = useRef(null);
   const evacPageTopRef = useRef(null);
+  const taskPanelRef = useRef(null);
+  const shouldScrollTaskPanelRef = useRef(false);
   const notificationTimersRef = useRef({});
   const occupancyAutoSaveTimerRef = useRef(null);
 
@@ -1596,6 +1598,21 @@ const [savingOccupancy, setSavingOccupancy] = useState(false);
 
     flyTo(lat, lng, 17);
   }, [selectedPlace, flyTo]);
+
+  useEffect(() => {
+    if (!selectedId || !shouldScrollTaskPanelRef.current) return;
+    shouldScrollTaskPanelRef.current = false;
+
+    if (typeof window === "undefined") return;
+    if (!window.matchMedia("(max-width: 760px)").matches) return;
+
+    window.requestAnimationFrame(() => {
+      taskPanelRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }, [selectedId]);
 
   const validateForm = useCallback(() => {
     const cleanName = sanitizeInputText(formData.name, MAX_EVAC_NAME_LENGTH).trim();
@@ -3437,6 +3454,7 @@ useEffect(() => {
                 }}
                 onSelectPlace={(place) => {
                   if (!place?._id) return;
+                  shouldScrollTaskPanelRef.current = true;
                   setSelectedId(place._id);
                   setPanelView("details");
                   setMobileTaskPanelOpen(true);
@@ -3478,6 +3496,7 @@ useEffect(() => {
           </section>
 
           <aside
+            ref={taskPanelRef}
             className={`evac-right-panel ${
               mobileTaskPanelOpen ? "mobile-open" : "mobile-collapsed"
             }`}

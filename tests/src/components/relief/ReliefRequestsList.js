@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef } fr
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import {
+  FaArrowLeft,
   FaBell,
   FaCheck,
   FaClipboardCheck,
@@ -325,6 +326,7 @@ export default function ReliefRequestsList() {
   const [receivedRows, setReceivedRows] = useState([]);
   const [loadingQueue, setLoadingQueue] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [isMobileDetailsOpen, setIsMobileDetailsOpen] = useState(false);
 
   const [queueFilter, setQueueFilter] = useState('active');
   const [barangayFilter, setBarangayFilter] = useState('');
@@ -362,6 +364,22 @@ export default function ReliefRequestsList() {
       });
     };
   }, []);
+
+  useEffect(() => {
+    if (!isMobileDetailsOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setIsMobileDetailsOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isMobileDetailsOpen]);
 
   const removeNotification = useCallback((id) => {
     setNotifications((prev) => prev.filter((item) => item.id !== id));
@@ -629,6 +647,7 @@ export default function ReliefRequestsList() {
 
   useEffect(() => {
     if (!filteredRows.length) {
+      setIsMobileDetailsOpen(false);
       setSelectedRequest(null);
       setReviewDetails(null);
       setFeasibility(null);
@@ -952,6 +971,7 @@ export default function ReliefRequestsList() {
       lastSelectedRequestIdRef.current = null;
       setConfirmState(EMPTY_CONFIRM_STATE);
       setRejectReason('');
+      setIsMobileDetailsOpen(false);
       await fetchQueue();
       pushNotification('Request rejected successfully.', 'success');
     } catch (err) {
@@ -1032,6 +1052,10 @@ export default function ReliefRequestsList() {
 
   const handleSelectRequest = (row) => {
     if (!row?._id) return;
+    const mobileViewport = window.matchMedia
+      ? window.matchMedia('(max-width: 640px)').matches
+      : window.innerWidth <= 640;
+    setIsMobileDetailsOpen(mobileViewport);
     if (selectedRequest?._id === row._id) return;
 
     setSelectedRequest(row);
@@ -1224,7 +1248,12 @@ export default function ReliefRequestsList() {
               </section>
             </div>
 
-            <div className="rrl-board-right">
+            <div
+              className={`rrl-board-right ${isMobileDetailsOpen ? 'rrl-mobile-details-open' : ''}`}
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) setIsMobileDetailsOpen(false);
+              }}
+            >
               {!displayedRequest ? (
                 <section className="rrl-card rrl-placeholder-card">
                   <div className="rrl-placeholder-inner">
@@ -1234,8 +1263,21 @@ export default function ReliefRequestsList() {
               ) : (
                 <section
                   ref={detailsCardRef}
-                  className="rrl-card rrl-details-card rrl-details-card-compact"
+                  className="rrl-card rrl-details-card rrl-details-card-compact rrl-mobile-detail-sheet"
+                  role={isMobileDetailsOpen ? 'dialog' : undefined}
+                  aria-modal={isMobileDetailsOpen ? 'true' : undefined}
+                  aria-label={isMobileDetailsOpen ? 'Relief request details' : undefined}
                 >
+                  {isMobileDetailsOpen ? (
+                    <button
+                      type="button"
+                      className="rrl-mobile-detail-back"
+                      aria-label="Back to request queue"
+                      onClick={() => setIsMobileDetailsOpen(false)}
+                    >
+                      <FaArrowLeft />
+                    </button>
+                  ) : null}
                   <div className="rrl-details-head rrl-details-head-compact">
                     <div className="rrl-details-heading">
                       <div className="rrl-details-barangay">

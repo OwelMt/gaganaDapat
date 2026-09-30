@@ -1967,7 +1967,7 @@ const InventoryAdd = () => {
               <>
                 <div className="inventory-header-summary-head">
                   <div className="inventory-summary-title-group">
-                    <h1 className="inventory-title">Inventory Donations Overview</h1>
+                    <h1 className="inventory-title"><span className="inventory-title-desktop">Inventory Donations Overview</span><span className="inventory-title-mobile">Donations Overview</span></h1>
                     <div className="inventory-summary-meta">
                       <span className="inventory-top-pill subtle">Live inventory snapshot</span>
                     </div>
@@ -2859,7 +2859,7 @@ const InventoryAdd = () => {
                 </div>
               ) : null}
 
-              <div className="inventory-card">
+              <div className="inventory-card donation-list-card">
                 <div className="section-header compact">
                   <div>
                     <h2 className="section-title">
@@ -3388,3 +3388,7 @@ const InventoryAdd = () => {
 };
 
 export default InventoryAdd;
+
+
+
+

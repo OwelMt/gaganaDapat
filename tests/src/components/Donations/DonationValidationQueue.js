@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   FaBell,
+  FaArrowLeft,
   FaCheck,
   FaExclamationTriangle,
   FaExternalLinkAlt,
@@ -165,6 +166,7 @@ export default function DonationValidationQueue() {
   const [rows, setRows] = useState([]);
   const [loadingQueue, setLoadingQueue] = useState(true);
   const [selectedDonation, setSelectedDonation] = useState(null);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [donationDetails, setDonationDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -184,6 +186,22 @@ export default function DonationValidationQueue() {
       });
     };
   }, []);
+
+  useEffect(() => {
+    if (!isDetailsOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setIsDetailsOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isDetailsOpen]);
 
   const removeNotification = useCallback((id) => {
     setNotifications((prev) => prev.filter((item) => item.id !== id));
@@ -441,6 +459,7 @@ export default function DonationValidationQueue() {
       );
 
       if (confirmState.action === "not_received" || confirmState.action === "received") {
+        setIsDetailsOpen(false);
         setRows((prev) =>
           prev.filter((item) => item._id !== confirmState.donation._id)
         );
@@ -570,6 +589,10 @@ export default function DonationValidationQueue() {
                               setSelectedDonation(row);
                               setDonationDetails(null);
                               lastSelectedDonationRef.current = null;
+                              const mobileViewport = window.matchMedia
+                                ? window.matchMedia("(max-width: 640px)").matches
+                                : window.innerWidth <= 640;
+                              setIsDetailsOpen(mobileViewport);
                             }}
                           >
                             <div className="rrl-queue-top">
@@ -613,7 +636,12 @@ export default function DonationValidationQueue() {
               </section>
             </div>
 
-            <div className="rrl-board-right">
+            <div
+              className={`rrl-board-right ${isDetailsOpen ? "dqv-mobile-open" : ""}`}
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) setIsDetailsOpen(false);
+              }}
+            >
               {!displayedDonation ? (
                 <section className="rrl-card rrl-placeholder-card">
                   <div className="rrl-placeholder-inner">
@@ -621,7 +649,22 @@ export default function DonationValidationQueue() {
                   </div>
                 </section>
               ) : (
-                <section className="rrl-card rrl-details-card rrl-details-card-compact">
+                <section
+                  className="rrl-card rrl-details-card rrl-details-card-compact dqv-detail-dialog"
+                  role={isDetailsOpen ? "dialog" : undefined}
+                  aria-modal={isDetailsOpen ? "true" : undefined}
+                  aria-label={isDetailsOpen ? "Donation details" : undefined}
+                >
+                  {isDetailsOpen ? (
+                    <button
+                      type="button"
+                      className="dqv-detail-close"
+                      aria-label="Back to donation queue"
+                      onClick={() => setIsDetailsOpen(false)}
+                    >
+                      <FaArrowLeft />
+                    </button>
+                  ) : null}
                   <div className="rrl-details-head rrl-details-head-compact">
                     <div className="rrl-details-heading">
                       <div className="rrl-details-barangay">

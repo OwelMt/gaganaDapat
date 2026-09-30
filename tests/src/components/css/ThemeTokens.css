@@ -187,9 +187,11 @@
 }
 
 :root[data-theme="dark"] .admin-content-inner {
-  background: rgba(9, 29, 15, 0.82);
-  border-color: rgba(157, 203, 168, 0.14);
-  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.28);
+  /* This is a layout wrapper around every module, not a second card surface. */
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
 }
 
 :root[data-theme="dark"] .inventory-page,
@@ -1237,25 +1239,26 @@
   color: var(--app-text) !important;
 }
 
-:root[data-theme="dark"] .dashboard-page :is(.notification-button.danger, .notification-icon-button.archive, .ea-btn-danger, .archived-delete-btn, .delete, .archive, .danger, .critical, .error, .rejected, .full) {
+/* State names also label plain text; keep filled semantic states on controls and badges. */
+:root[data-theme="dark"] .dashboard-page :is(button, a, [role="button"], [class~="badge"], [class*="-badge "], [class$="-badge"], [class~="pill"], [class*="-pill "], [class$="-pill"], [class~="chip"], [class*="-chip "], [class$="-chip"], [class~="status"], [class*="-status "], [class$="-status"], [class~="status-banner"]):is(.notification-button.danger, .notification-icon-button.archive, .ea-btn-danger, .archived-delete-btn, .delete, .archive, .danger, .critical, .error, .rejected, .full) {
   background: var(--app-danger-bg) !important;
   color: var(--app-danger-text) !important;
   border-color: var(--app-danger-border) !important;
 }
 
-:root[data-theme="dark"] .dashboard-page :is(.warning, .notice, .needs-attention, .pending, .priority-high, .overview-command-status.warning, .overview-command-badge.warning, .overview-priority-item.warning .overview-priority-badge, .overview-module-card.warning .overview-module-status, .notification-pill.priority-high) {
+:root[data-theme="dark"] .dashboard-page :is(button, a, [role="button"], [class~="badge"], [class*="-badge "], [class$="-badge"], [class~="pill"], [class*="-pill "], [class$="-pill"], [class~="chip"], [class*="-chip "], [class$="-chip"], [class~="status"], [class*="-status "], [class$="-status"], [class~="status-banner"]):is(.warning, .notice, .needs-attention, .pending, .priority-high, .overview-command-status.warning, .overview-command-badge.warning, .overview-priority-item.warning .overview-priority-badge, .overview-module-card.warning .overview-module-status, .notification-pill.priority-high) {
   background: var(--app-warning-bg) !important;
   color: var(--app-warning-text) !important;
   border-color: var(--app-warning-border) !important;
 }
 
-:root[data-theme="dark"] .dashboard-page :is(.success, .approved, .resolved, .safe, .available, .notification-button.toggle-on, .module-toggle-pill.active, .overview-command-status.success, .overview-command-badge.success, .notification-pill.is-new, .notification-pill.priority-low) {
+:root[data-theme="dark"] .dashboard-page :is(button, a, [role="button"], [class~="badge"], [class*="-badge "], [class$="-badge"], [class~="pill"], [class*="-pill "], [class$="-pill"], [class~="chip"], [class*="-chip "], [class$="-chip"], [class~="status"], [class*="-status "], [class$="-status"], [class~="status-banner"]):is(.success, .approved, .resolved, .safe, .available, .notification-button.toggle-on, .module-toggle-pill.active, .overview-command-status.success, .overview-command-badge.success, .notification-pill.is-new, .notification-pill.priority-low) {
   background: var(--app-success-bg) !important;
   color: var(--app-success-text) !important;
   border-color: var(--app-success-border) !important;
 }
 
-:root[data-theme="dark"] .dashboard-page :is(.info, .neutral, .notification-pill.priority-normal, .overview-kpi-card.info .overview-kpi-icon, .overview-kpi-card.notice .overview-kpi-icon) {
+:root[data-theme="dark"] .dashboard-page :is(button, a, [role="button"], [class~="badge"], [class*="-badge "], [class$="-badge"], [class~="pill"], [class*="-pill "], [class$="-pill"], [class~="chip"], [class*="-chip "], [class$="-chip"], [class~="status"], [class*="-status "], [class$="-status"], [class~="status-banner"]):is(.info, .neutral, .notification-pill.priority-normal, .overview-kpi-card.info .overview-kpi-icon, .overview-kpi-card.notice .overview-kpi-icon) {
   background: var(--app-info-bg) !important;
   color: var(--app-info-text) !important;
   border-color: var(--app-info-border) !important;

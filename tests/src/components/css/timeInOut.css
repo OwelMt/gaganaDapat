@@ -441,14 +441,261 @@ html, body, #root {
 }
 
 @media (max-width: 640px) {
-  .tio-summary,
+  .tio-shell {
+    padding: 10px;
+  }
+
+  .tio-header-card {
+    padding: 13px;
+    margin-bottom: 10px;
+  }
+
+  .tio-header {
+    gap: 12px;
+  }
+
+  .tio-title-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+  }
+
+  .tio-title {
+    font-size: 21px;
+  }
+
+  .tio-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .tio-actions .tio-button {
+    justify-content: center;
+  }
+
   .tio-filters {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 11px;
+    margin-bottom: 10px;
+  }
+
+  .tio-filter-group:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .tio-filters > .tio-button {
+    width: 100%;
+  }
+
+  .tio-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+    margin-bottom: 10px;
+  }
+
+  .tio-summary-card {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 3px 8px;
+    min-height: 72px;
+    padding: 10px;
+    border-radius: 16px;
+  }
+
+  .tio-summary-icon {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    font-size: 12px;
+  }
+
+  .tio-summary-label {
+    grid-column: 2;
+    grid-row: 1;
+    font-size: 9px;
+    letter-spacing: 0.035em;
+  }
+
+  .tio-summary-value {
+    grid-column: 2;
+    grid-row: 2;
+    font-size: 22px;
+  }
+
+  .tio-main {
+    min-height: auto;
+  }
+
+  .tio-table-region {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    border-radius: 18px;
+  }
+
+  .tio-table-head {
+    gap: 7px;
+    padding: 13px;
+  }
+
+  .tio-table-title {
+    font-size: 17px;
+  }
+
+  .tio-table-meta {
+    white-space: normal;
+    font-size: 11px;
+  }
+
+  .tio-table-wrap {
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .tio-table,
+  .tio-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .tio-table thead {
+    display: none;
+  }
+
+  .tio-table tbody tr:not(.tio-empty-row) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 12px;
+    margin: 10px;
+    padding: 12px;
+    border: 1px solid rgba(20, 83, 45, 0.14);
+    border-radius: 16px;
+    background: linear-gradient(180deg, #ffffff 0%, #f6fbf7 100%);
+  }
+
+  .tio-table tbody tr:not(.tio-empty-row):hover td {
+    background: transparent;
+  }
+
+  .tio-table tbody tr:not(.tio-empty-row) td {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 4px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .tio-table tbody tr:not(.tio-empty-row) td::before {
+    content: attr(data-label);
+    color: #66806d;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 0.045em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .tio-table tbody tr:not(.tio-empty-row) td:first-child {
+    grid-column: 1 / -1;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(20, 83, 45, 0.12);
+    font-size: 15px;
+  }
+
+  .tio-table tbody tr:not(.tio-empty-row) td:first-child::before {
+    font-size: 9px;
+  }
+
+  .tio-status {
+    justify-self: start;
+  }
+
+  .tio-table tbody .tio-empty-row {
+    display: block;
+  }
+
+  .tio-table tbody .tio-empty-row td {
+    display: block;
+    padding: 20px 14px;
+    white-space: normal;
   }
 
   .tio-pagination {
-    justify-content: space-between;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 0 0 18px 18px;
+  }
+
+  .tio-pagination .tio-btn {
+    min-width: 0;
+    padding: 8px;
+    font-size: 11px;
+  }
+
+  .tio-pagination .tio-btn:last-child {
+    justify-self: end;
+  }
+
+  .tio-page {
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  :root[data-theme="dark"] .tio-app .tio-table tbody tr:not(.tio-empty-row) {
+    border-color: rgba(178, 219, 191, 0.22);
+    background: linear-gradient(145deg, rgba(13, 61, 34, 0.96), rgba(10, 50, 29, 0.98));
+  }
+
+  :root[data-theme="dark"] .tio-app .tio-table tbody tr:not(.tio-empty-row) td {
+    background: transparent;
+    color: #f3fff6;
+  }
+
+  :root[data-theme="dark"] .tio-app .tio-table tbody tr:not(.tio-empty-row) td::before {
+    color: #bfd8c6;
+  }
+}
+
+@media (max-width: 360px) {
+  .tio-summary-card {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 4px;
+  }
+
+  .tio-summary-icon,
+  .tio-summary-label,
+  .tio-summary-value {
+    grid-column: 1;
+  }
+
+  .tio-summary-icon {
+    grid-row: 1;
+  }
+
+  .tio-summary-label {
+    grid-row: 2;
+  }
+
+  .tio-summary-value {
+    grid-row: 3;
   }
 }
 

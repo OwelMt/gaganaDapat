@@ -2114,6 +2114,213 @@
   box-shadow: none !important;
 }
 
+/* On phones, show request details as a scrollable sheet above the queue. */
+@media (max-width: 640px) {
+  .rrl-page .rrl-board-right:not(.rrl-mobile-details-open) {
+    display: none !important;
+  }
+
+  .rrl-page .rrl-board-right.rrl-mobile-details-open {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 2147483000 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: max(12px, env(safe-area-inset-top)) 0 0 !important;
+    overflow: hidden !important;
+    background: rgba(0, 14, 7, 0.72) !important;
+    backdrop-filter: blur(7px);
+  }
+
+  .rrl-page .rrl-board-right.rrl-mobile-details-open .rrl-mobile-detail-sheet {
+    position: relative;
+    display: flex;
+    flex: 0 1 auto !important;
+    flex-direction: column;
+    width: min(100%, 600px) !important;
+    max-width: 600px !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: calc(100dvh - max(12px, env(safe-area-inset-top))) !important;
+    margin: 0 !important;
+    padding: 20px 16px max(20px, env(safe-area-inset-bottom)) !important;
+    border-radius: 24px 24px 0 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: auto;
+    scrollbar-gutter: stable;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-details-barangay {
+    padding-right: 44px;
+    font-size: clamp(26px, 7vw, 32px);
+    line-height: 1.05;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-details-disaster {
+    font-size: 16px;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-details-head-compact {
+    gap: 8px;
+    padding-bottom: 8px;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-status-banner {
+    min-height: 32px;
+    padding: 0 12px;
+    font-size: 11px;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-meta-strip,
+  .rrl-page .rrl-mobile-detail-sheet .rrl-balance-strip-request-only {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-meta-chip {
+    min-width: 0;
+    padding: 9px 10px;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-meta-chip strong {
+    font-size: 12px;
+    line-height: 1.25;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-balance-chip {
+    min-height: 82px;
+    padding: 11px 12px;
+    border-radius: 14px;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-balance-chip strong,
+  .rrl-page .rrl-mobile-detail-sheet .rrl-balance-chip-primary strong {
+    font-size: clamp(20px, 6vw, 28px) !important;
+    line-height: 1.1;
+    overflow-wrap: anywhere;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-review-layout-focused {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 10px;
+    overflow: visible;
+    padding-right: 0;
+    min-height: auto;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-review-main,
+  .rrl-page .rrl-mobile-detail-sheet .rrl-review-side,
+  .rrl-page .rrl-mobile-detail-sheet .rrl-review-full {
+    flex: 0 0 auto;
+    min-height: auto;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-review-main,
+  .rrl-page .rrl-mobile-detail-sheet .rrl-review-main > .rrl-panel {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-review-side {
+    order: -1;
+    position: static;
+    width: 100%;
+    align-self: stretch;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-decision-panel {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-decision-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-decision-actions .rrl-btn {
+    justify-content: center;
+    min-height: 46px;
+    padding: 9px 6px;
+    font-size: 12px;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-table-wrapper {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: scroll !important;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: auto;
+    scrollbar-width: thin;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-table-wrapper::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-table-wrapper::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(178, 219, 191, 0.55);
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-detail-table {
+    min-width: 1040px;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-section-head {
+    margin-bottom: 8px;
+  }
+
+  .rrl-page .rrl-mobile-detail-sheet .rrl-panel {
+    padding: 12px;
+  }
+
+  .rrl-page .rrl-board-right.rrl-mobile-details-open .rrl-mobile-detail-back {
+    position: absolute !important;
+    top: 16px !important;
+    right: 16px !important;
+    left: auto !important;
+    z-index: 5 !important;
+    display: inline-flex !important;
+    width: 42px !important;
+    min-width: 42px !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    align-items: center;
+    justify-content: center;
+    padding: 0 !important;
+    border: 1px solid rgba(178, 219, 191, 0.3);
+    border-radius: 999px;
+    background: rgba(17, 78, 43, 0.95);
+    color: #f3fff6;
+    cursor: pointer;
+  }
+}
+
+@media (max-width: 360px) {
+  .rrl-page .rrl-mobile-detail-sheet .rrl-decision-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Dark mode: confirmation modal can render outside the page wrapper. */
 :root[data-theme="dark"] .rrl-modal-backdrop {
   background: rgba(0, 12, 5, 0.66) !important;

@@ -1006,3 +1006,28 @@
   color: #bfd8c6 !important;
   opacity: 1 !important;
 }
+
+/* Dark mode: incident analytics empty states should stay dark on mobile cards. */
+:root[data-theme="dark"] .analytics-page .incident-ranking-card .analytics-empty-state,
+:root[data-theme="dark"] .analytics-page .incident-chart-card .analytics-empty-state,
+:root[data-theme="dark"] .analytics-page .incident-analytics-clean .analytics-empty-state {
+  background: linear-gradient(145deg, rgba(5, 39, 22, 0.96), rgba(10, 55, 31, 0.98)) !important;
+  border: 1px dashed rgba(143, 240, 173, 0.24) !important;
+  color: #f3fff6 !important;
+  box-shadow: inset 0 0 0 1px rgba(143, 240, 173, 0.06), 0 18px 34px rgba(0, 0, 0, 0.18) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .incident-ranking-card .analytics-empty-state-title,
+:root[data-theme="dark"] .analytics-page .incident-chart-card .analytics-empty-state-title,
+:root[data-theme="dark"] .analytics-page .incident-analytics-clean .analytics-empty-state-title {
+  color: #f3fff6 !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .incident-ranking-card .analytics-empty-state-copy,
+:root[data-theme="dark"] .analytics-page .incident-chart-card .analytics-empty-state-copy,
+:root[data-theme="dark"] .analytics-page .incident-analytics-clean .analytics-empty-state-copy {
+  color: #bfd8c6 !important;
+  opacity: 1 !important;
+}
+

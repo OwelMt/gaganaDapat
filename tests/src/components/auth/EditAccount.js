@@ -220,11 +220,6 @@ export default function EditAccount() {
     () => visibleAccounts.filter((account) => account.role === 'accountant').length,
     [visibleAccounts]
   );
-  const totalAdmin = useMemo(
-    () => visibleAccounts.filter((account) => account.role === 'admin').length,
-    [visibleAccounts]
-  );
-
   const getInitials = (value = '') => {
     const text = String(value || '').trim();
     if (!text) return '?';
@@ -508,7 +503,6 @@ export default function EditAccount() {
 
   const stats = [
     { label: 'Accounts', value: visibleAccounts.length, tone: 'green' },
-    { label: 'Admin', value: totalAdmin, tone: 'green' },
     { label: 'DRRMO', value: totalDrrmo, tone: 'blue' },
     { label: 'Accountant', value: totalAccountant, tone: 'amber' },
     { label: 'Barangay', value: totalBarangay, tone: 'emerald' }

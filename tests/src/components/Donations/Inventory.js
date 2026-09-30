@@ -229,6 +229,13 @@ export default function Inventory() {
   const [releaseProofFiles, setReleaseProofFiles] = useState([]);
   const [activeJourneyStep, setActiveJourneyStep] = useState("review");
   const [confirmedJourneySteps, setConfirmedJourneySteps] = useState([]);
+  const [isMobileReleaseJourney, setIsMobileReleaseJourney] = useState(() =>
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(max-width: 760px)").matches
+  );
+  const [mobileReleaseJourneyOpen, setMobileReleaseJourneyOpen] = useState(false);
+  const [releaseMainHostReady, setReleaseMainHostReady] = useState(false);
 
   const [applianceSearch, setApplianceSearch] = useState("");
   const [applianceSelections, setApplianceSelections] = useState([]);
@@ -252,6 +259,7 @@ export default function Inventory() {
   const [proofPreview, setProofPreview] = useState(null);
   const templateModalRef = useRef(null);
   const releaseProofInputRef = useRef(null);
+  const releaseMainHostRef = useRef(null);
   const expiredNoticeCountRef = useRef(0);
   const minExpirationDate = useMemo(() => getTodayInputDate(), []);
   const itemEditLocks = editingItemLocks || {};
@@ -2080,6 +2088,51 @@ useEffect(() => {
   };
 }, [templateModalOpen]);
 
+useEffect(() => {
+  if (typeof window.matchMedia !== "function") return undefined;
+
+  const media = window.matchMedia("(max-width: 760px)");
+  const updateMobileState = (event) => setIsMobileReleaseJourney(event.matches);
+  setIsMobileReleaseJourney(media.matches);
+
+  if (media.addEventListener) {
+    media.addEventListener("change", updateMobileState);
+    return () => media.removeEventListener("change", updateMobileState);
+  }
+
+  media.addListener(updateMobileState);
+  return () => media.removeListener(updateMobileState);
+}, []);
+
+useEffect(() => {
+  if (!operationsOpen || !plannerOpen) {
+    setReleaseMainHostReady(false);
+    setMobileReleaseJourneyOpen(false);
+    return;
+  }
+
+  setReleaseMainHostReady(Boolean(releaseMainHostRef.current));
+}, [operationsOpen, plannerOpen]);
+
+useEffect(() => {
+  if (!isMobileReleaseJourney || !mobileReleaseJourneyOpen || !selectedReleaseRequest) {
+    return undefined;
+  }
+
+  const previousOverflow = document.body.style.overflow;
+  const closeOnEscape = (event) => {
+    if (event.key === "Escape") setMobileReleaseJourneyOpen(false);
+  };
+
+  document.body.style.overflow = "hidden";
+  window.addEventListener("keydown", closeOnEscape);
+
+  return () => {
+    document.body.style.overflow = previousOverflow;
+    window.removeEventListener("keydown", closeOnEscape);
+  };
+}, [isMobileReleaseJourney, mobileReleaseJourneyOpen, selectedReleaseRequest]);
+
   const removeTemplateItem = (inventoryItemId) => {
     setTemplateItems((prev) =>
       prev.filter(
@@ -3113,7 +3166,10 @@ useEffect(() => {
             <div className="inventory-hero-head">
               <div className="inventory-title-group">
                 <h1 className="inventory-title">
-                  {canUseReleasePlanner ? "Inventory & Release Preparation" : "Inventory"}
+                  <span className="inventory-title-desktop">
+                    {canUseReleasePlanner ? "Inventory & Release Preparation" : "Inventory"}
+                  </span>
+                  <span className="inventory-title-mobile">Inventory</span>
                 </h1>
 
                 <div className="inventory-title-meta">
@@ -3162,8 +3218,11 @@ useEffect(() => {
                       <span className="summary-label">Monetary Total</span>
                       <span className="summary-icon"><FaMoneyBillWave /></span>
                     </div>
-                    <h3 className="summary-value">
-                      {formatMoney(activeSummary.totalMonetaryAmount)}
+                    <h3 className="summary-value monetary-total-value">
+                      <span className="monetary-total-currency">PHP</span>{" "}
+                      <span className="monetary-total-amount">
+                        {formatMoney(activeSummary.totalMonetaryAmount).replace(/^PHP\s*/, "")}
+                      </span>
                     </h3>
                   </div>
 
@@ -4032,7 +4091,12 @@ useEffect(() => {
                                     className={`release-request-card ${
                                       isActive ? "active" : ""
                                     }`}
-                                    onClick={() => setSelectedReleaseRequestId(request._id)}
+                                    onClick={() => {
+                                      setSelectedReleaseRequestId(request._id);
+                                      if (isMobileReleaseJourney) {
+                                        setMobileReleaseJourneyOpen(true);
+                                      }
+                                    }}
                                   >
                                     <strong>{request.barangayName || "-"}</strong>
                                     <span>{request.disaster || "-"}</span>
@@ -4063,7 +4127,57 @@ useEffect(() => {
                           )}
                         </aside>
 
-                        <section className="release-main">
+                        <div
+                          ref={releaseMainHostRef}
+                          className="release-main-host"
+                        />
+                        {releaseMainHostReady &&
+                        (!isMobileReleaseJourney || mobileReleaseJourneyOpen)
+                          ? createPortal(
+                            <div
+                              className={`release-main-portal ${
+                                isMobileReleaseJourney ? "is-mobile-open" : ""
+                              }`}
+                              onMouseDown={(event) => {
+                                if (event.target === event.currentTarget) {
+                                  setMobileReleaseJourneyOpen(false);
+                                }
+                              }}
+                            >
+                        <section
+                          className={`release-main ${
+                            isMobileReleaseJourney ? "release-journey-mobile-dialog" : ""
+                          }`}
+                          role={isMobileReleaseJourney ? "dialog" : undefined}
+                          aria-modal={isMobileReleaseJourney ? "true" : undefined}
+                          aria-label={
+                            isMobileReleaseJourney
+                              ? `Release journey for ${selectedReleaseRequest?.requestNo || "approved request"}`
+                              : undefined
+                          }
+                        >
+                          {isMobileReleaseJourney ? (
+                            <div className="release-journey-mobile-header">
+                              <div>
+                                <strong>Release Journey</strong>
+                                <span>
+                                  {selectedReleaseRequest?.requestNo || "Approved request"}
+                                  {selectedReleaseRequest?.barangayName
+                                    ? ` · ${selectedReleaseRequest.barangayName}`
+                                    : ""}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => setMobileReleaseJourneyOpen(false)}
+                                aria-label="Back to approved requests"
+                              >
+                                <FaTimes className="btn-icon" />
+                                Requests
+                              </button>
+                            </div>
+                          ) : null}
                           {!selectedReleaseRequest ? (
                             <div className="release-empty release-empty-main">
                               Select a request to prepare a release.
@@ -4834,6 +4948,12 @@ useEffect(() => {
                             </>
                           )}
                         </section>
+                            </div>,
+                            isMobileReleaseJourney
+                              ? document.body
+                              : releaseMainHostRef.current
+                          )
+                          : null}
                       </div>
                     ) : null}
 
@@ -4864,38 +4984,46 @@ useEffect(() => {
                 <div className="inventory-toolbar">
                   <div className="inventory-toolbar-top inventory-toolbar-top-split inventory-toolbar-top-clean">
                     <div className="inventory-toolbar-left-cluster inventory-toolbar-left-cluster-clean">
-                      <div className="type-switch inventory-type-switch-compact">
-                        {allowedViewTypes.includes("goods") ? (
-                          <button
-                            type="button"
-                            className={viewType === "goods" ? "active" : ""}
-                            onClick={() => setViewType("goods")}
-                          >
-                            <FaBoxes className="btn-icon" />
-                            Goods
-                          </button>
-                        ) : null}
-                        {allowedViewTypes.includes("monetary") ? (
-                          <button
-                            type="button"
-                            className={viewType === "monetary" ? "active" : ""}
-                            onClick={() => setViewType("monetary")}
-                          >
-                            <FaMoneyBillWave className="btn-icon" />
-                            Monetary
-                          </button>
-                        ) : null}
-                        {allowedViewTypes.includes("appliance") ? (
-                          <button
-                            type="button"
-                            className={viewType === "appliance" ? "active" : ""}
-                            onClick={() => setViewType("appliance")}
-                          >
-                            <FaBoxOpen className="btn-icon" />
-                            Appliances
-                          </button>
-                        ) : null}
-                      </div>
+                      {allowedViewTypes.length > 1 ? (
+                        <div
+                          className={`type-switch inventory-type-switch-compact ${
+                            allowedViewTypes.length === 2
+                              ? "inventory-type-switch-compact--two"
+                              : ""
+                          }`}
+                        >
+                          {allowedViewTypes.includes("goods") ? (
+                            <button
+                              type="button"
+                              className={viewType === "goods" ? "active" : ""}
+                              onClick={() => setViewType("goods")}
+                            >
+                              <FaBoxes className="btn-icon" />
+                              Goods
+                            </button>
+                          ) : null}
+                          {allowedViewTypes.includes("monetary") ? (
+                            <button
+                              type="button"
+                              className={viewType === "monetary" ? "active" : ""}
+                              onClick={() => setViewType("monetary")}
+                            >
+                              <FaMoneyBillWave className="btn-icon" />
+                              Monetary
+                            </button>
+                          ) : null}
+                          {allowedViewTypes.includes("appliance") ? (
+                            <button
+                              type="button"
+                              className={viewType === "appliance" ? "active" : ""}
+                              onClick={() => setViewType("appliance")}
+                            >
+                              <FaBoxOpen className="btn-icon" />
+                              Appliances
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="inventory-meta-row">

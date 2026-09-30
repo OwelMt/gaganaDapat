@@ -1,10 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import * as XLSX from "xlsx";
 import ReliefRequestForm from "./ReliefRequestForm";
+afterEach(() => Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 }));
 jest.mock("react-router-dom", () => { const navigate = jest.fn(); const location = { search: "" }; return { useNavigate: () => navigate, useLocation: () => location }; }, { virtual: true });
 jest.mock("../layout/DashboardShell", () => ({ __esModule: true, default: ({ children }) => <div>{children}</div> }));
 jest.mock("xlsx", () => ({ read: jest.fn(), utils: { sheet_to_json: jest.fn() } }));
 beforeEach(() => {
+  window.sessionStorage.clear();
   global.fetch = jest.fn(async (url) => ({ ok: true, json: async () => {
     if (url.includes("debug-session")) return { role: "barangay" };
     if (url.includes("barangays/me")) return { _id: "b1", barangayName: "Test" };
@@ -28,6 +30,20 @@ test("zero is a placeholder and Individuals excludes overlapping counts", async 
   fireEvent.change(male, { target: { value: "" } });
   expect(male).toHaveValue(null);
 });
+
+test("mobile preparation uses center cards and places live totals after the evacuation table", async () => {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+  const { container } = render(<ReliefRequestForm />);
+  fireEvent.click(await screen.findByRole("button", { name: "Prepare New Request" }));
+
+  expect(await screen.findByRole("spinbutton", { name: "Hall Male" })).toBeInTheDocument();
+  const tableCard = container.querySelector(".rrf-table-card");
+  const mobileRows = container.querySelector(".rrf-evac-mobile-list");
+  const mobileTotals = container.querySelector(".rrf-live-totals-mobile");
+  expect(mobileRows).toHaveTextContent("Hall");
+  expect(tableCard.compareDocumentPosition(mobileTotals) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 test("invalid Excel opens a correction modal without replacing current rows", async () => {
   const { container } = render(<ReliefRequestForm />);
   fireEvent.click(await screen.findByRole("button", { name: "Prepare New Request" }));

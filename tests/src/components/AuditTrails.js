@@ -354,12 +354,6 @@ export default function AuditTrails() {
               </div>
             </div>
 
-            <div className="audit-toolbar">
-              <span className="audit-toolbar-note">
-                Use this to verify actions like who released relief, who confirmed receipts,
-                and which module the activity came from.
-              </span>
-            </div>
           </div>
 
           {error ? <div className="audit-error-row">{error}</div> : null}

@@ -459,12 +459,31 @@ export default function ReliefRequestForm() {
     loaded: false
   });
   const [distributionEditorCards, setDistributionEditorCards] = useState([]);
+  const [isMobileDafacLayout, setIsMobileDafacLayout] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth <= 760
+  );
   const [distributionInlineErrors, setDistributionInlineErrors] = useState({});
   const [distributionSubmitting, setDistributionSubmitting] = useState(false);
   const [distributionImporting, setDistributionImporting] = useState(false);
   const [distributionPage, setDistributionPage] = useState(1);
   const [distributionConfirmed, setDistributionConfirmed] = useState(false);
   const [receiptProofFiles, setReceiptProofFiles] = useState([]);
+
+  useEffect(() => {
+    const updateMobileLayout = () => setIsMobileDafacLayout(window.innerWidth <= 760);
+    window.addEventListener('resize', updateMobileLayout);
+    return () => window.removeEventListener('resize', updateMobileLayout);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileDafacLayout || !distributionEditorCards.length) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isMobileDafacLayout, distributionEditorCards.length]);
 
   const fetchLatestBootstrapRows = useCallback(async () => {
     const res = await fetch(`${BASE_URL}/api/relief-requests/bootstrap`, {
@@ -2147,6 +2166,10 @@ export default function ReliefRequestForm() {
 
   const handleDistributionDraftField = (localId, path, value) => {
     clearDistributionFieldError(localId, path);
+    clearDistributionFieldError(localId, '_form');
+    if (path === 'headOfFamily.surname' || path === 'headOfFamily.firstName') {
+      clearDistributionFieldError(localId, 'headOfFamily');
+    }
     updateDistributionEditorCard(localId, (prev) => {
       const next = structuredClone(prev);
       const keys = path.split('.');
@@ -2395,54 +2418,55 @@ export default function ReliefRequestForm() {
 
   const validateDistributionDraft = (draft) => {
     const payload = buildDistributionPayload(draft);
+    const errors = {};
 
     if (!payload.serialNo) {
-      throw new Error('Serial number is required for the DAFAC record.');
+      errors.serialNo = 'Serial number is required for the DAFAC record.';
     }
 
     if (!payload.evacuationCenterName) {
-      throw new Error('Evacuation center is required.');
+      errors.evacuationCenterName = 'Evacuation center is required.';
     }
 
     if (!payload.headOfFamily.surname && !payload.headOfFamily.firstName) {
-      throw new Error('Head of family name is required.');
+      errors.headOfFamily = 'Enter the family head surname or first name.';
     }
 
     if (!payload.distributionDate) {
-      throw new Error('Distribution date is required.');
+      errors.distributionDate = 'Distribution date is required.';
     }
 
     if (payload.distributionDate < minAllowedDate) {
-      throw new Error('Distribution date cannot be in the past.');
+      errors.distributionDate = 'Distribution date cannot be in the past.';
     }
 
     if (!payload.signOff.familyHeadPrintedName) {
-      throw new Error('Family head printed name is required.');
+      errors['signOff.familyHeadPrintedName'] = 'Family head printed name is required.';
     }
 
     if (!payload.signOff.barangayOfficerPrintedName) {
-      throw new Error('Barangay officer printed name is required.');
+      errors['signOff.barangayOfficerPrintedName'] = 'Barangay officer printed name is required.';
     }
 
     if (dafacAidVisibility.showsFoodPacks && payload.distribution.foodPacksReceived <= 0) {
-      throw new Error('Enter how many food packs this family received.');
+      errors['distribution.foodPacksReceived'] = 'Enter how many food packs this family received.';
     }
 
     if (
       dafacAidVisibility.showsMonetary &&
       payload.distribution.monetaryAmountReceived <= 0
     ) {
-      throw new Error('Enter how much monetary assistance this family received.');
+      errors['distribution.monetaryAmountReceived'] = 'Enter how much monetary assistance this family received.';
     }
 
     if (
       dafacAidVisibility.showsAppliances &&
       payload.distribution.applianceUnitsReceived <= 0
     ) {
-      throw new Error('Enter how many appliance units this family received.');
+      errors['distribution.applianceUnitsReceived'] = 'Enter how many appliance units this family received.';
     }
 
-    return payload;
+    return { payload, errors };
   };
 
   const handleRowNumberChange = (index, field, value) => {
@@ -2953,7 +2977,15 @@ export default function ReliefRequestForm() {
       clearFeedback();
       resetDistributionConfirmation();
 
-      const payload = validateDistributionDraft(editorCard?.draft);
+      const { payload, errors } = validateDistributionDraft(editorCard?.draft);
+      if (Object.keys(errors).length) {
+        setDistributionInlineErrors((prev) => ({
+          ...prev,
+          [editorCard.localId]: errors
+        }));
+        setDistributionSubmitting(false);
+        return;
+      }
       const isEditing = editorCard?.mode === 'edit' && editorCard?.draft?._id;
       const endpoint = isEditing
         ? `${BASE_URL}/api/relief-distributions/${latestRequest._id}/records/${editorCard.draft._id}`
@@ -2982,16 +3014,10 @@ export default function ReliefRequestForm() {
     } catch (err) {
       console.error(err);
       const message = err.message || 'Failed to save the DAFAC record.';
-      if (
-        editorCard?.localId &&
-        (message === 'Distribution date cannot be in the past.' ||
-          message === 'Distribution date is required.')
-      ) {
-        setDistributionFieldError(editorCard.localId, 'distributionDate', message);
+      if (editorCard?.localId) {
+        setDistributionFieldError(editorCard.localId, '_form', message);
         setFormFeedback({ type: '', message: '' });
-      } else {
-        setErrorFeedback(message);
-      }
+      } else setErrorFeedback(message);
     } finally {
       setDistributionSubmitting(false);
     }
@@ -3364,6 +3390,23 @@ export default function ReliefRequestForm() {
   };
 
   const showEditorSection = showEditor || editMode;
+  const renderLiveTotals = (mobile = false) => (
+    <div className={`rrf-card rrf-summary-card rrf-summary-card-compact ${mobile ? 'rrf-live-totals-mobile' : ''}`}>
+      <div className="rrf-panel-head rrf-panel-head-tight">
+        <div><h2>Live Totals</h2></div>
+      </div>
+      <div className="rrf-summary-list">
+        <div className="rrf-summary-item"><span>Centers</span><strong>{activeRows.length}</strong></div>
+        <div className="rrf-summary-item"><span>Families</span><strong>{totals.families}</strong></div>
+        <div className="rrf-summary-item"><span>Individuals</span><strong>{totalIndividuals}</strong></div>
+        <div className="rrf-summary-item"><span title="Overlapping subgroup counts; a person may belong to more than one group.">Vulnerable</span><strong>{vulnerableCount}</strong></div>
+        <div className="rrf-summary-item emphasis"><span>Support Type</span><strong>{currentSupportTypeLabel}</strong></div>
+        <div className="rrf-summary-item emphasis"><span>Food Packs</span><strong>{includesFoodPacks ? totals.requestedFoodPacks : '-'}</strong></div>
+        <div className="rrf-summary-item emphasis"><span>Monetary</span><strong>{includesMonetary ? `PHP ${formatMoney(requestedMonetaryValue)}` : '-'}</strong></div>
+        <div className="rrf-summary-item emphasis"><span>Appliance Units</span><strong>{includesAppliance ? requestedApplianceQuantity : '-'}</strong></div>
+      </div>
+    </div>
+  );
   const isJourneyInMotion =
     !showEditorSection &&
     stageMeta.activeStep >= 2 &&
@@ -3770,54 +3813,7 @@ export default function ReliefRequestForm() {
                         </div>
 
                         <div className="rrf-editor-side">
-                          <div className="rrf-card rrf-summary-card rrf-summary-card-compact">
-                            <div className="rrf-panel-head rrf-panel-head-tight">
-                              <div>
-                                <h2>Live Totals</h2>
-                              </div>
-                            </div>
-
-                            <div className="rrf-summary-list">
-                              <div className="rrf-summary-item">
-                                <span>Centers</span>
-                                <strong>{activeRows.length}</strong>
-                              </div>
-                              <div className="rrf-summary-item">
-                                <span>Families</span>
-                                <strong>{totals.families}</strong>
-                              </div>
-                              <div className="rrf-summary-item">
-                                <span>Individuals</span>
-                                <strong>{totalIndividuals}</strong>
-                              </div>
-                              <div className="rrf-summary-item">
-                                <span title="Overlapping subgroup counts; a person may belong to more than one group.">Vulnerable</span>
-                                <strong>{vulnerableCount}</strong>
-                              </div>
-                              <div className="rrf-summary-item emphasis">
-                                <span>Support Type</span>
-                                <strong>{currentSupportTypeLabel}</strong>
-                              </div>
-                              <div className="rrf-summary-item emphasis">
-                                <span>Food Packs</span>
-                                <strong>
-                                  {includesFoodPacks ? totals.requestedFoodPacks : '-'}
-                                </strong>
-                              </div>
-                              <div className="rrf-summary-item emphasis">
-                                <span>Monetary</span>
-                                <strong>
-                                  {includesMonetary
-                                    ? `PHP ${formatMoney(requestedMonetaryValue)}`
-                                    : '-'}
-                                </strong>
-                              </div>
-                              <div className="rrf-summary-item emphasis">
-                                <span>Appliance Units</span>
-                                <strong>{includesAppliance ? requestedApplianceQuantity : '-'}</strong>
-                              </div>
-                            </div>
-                          </div>
+                          {renderLiveTotals()}
                         </div>
                       </div>
 
@@ -3829,6 +3825,7 @@ export default function ReliefRequestForm() {
                           </div>
                         </div>
 
+                        {!isMobileDafacLayout ? (
                         <div className="rrf-table-wrapper rrf-table-wrapper-tall">
                           <table className="rrf-table rrf-table-compact">
                             <thead>
@@ -3934,12 +3931,66 @@ export default function ReliefRequestForm() {
                             </tfoot>
                           </table>
                         </div>
+                        ) : null}
+                        {isMobileDafacLayout ? <div className="rrf-evac-mobile-list">
+                          {preparedRows.map((row, index) => (
+                            <article className={`rrf-evac-mobile-row ${!row.isActiveRow ? 'inactive' : ''}`} key={`mobile-${row.evacuationCenterName}-${index}`}>
+                              <div className="rrf-evac-mobile-head">
+                                <div>
+                                  <span>Center {index + 1}</span>
+                                  <strong>{row.evacuationCenterName || 'Unnamed center'}</strong>
+                                </div>
+                                <button
+                                  type="button"
+                                  className={`rrf-toggle-btn ${row.isActiveRow ? 'active' : ''}`}
+                                  onClick={() => handleToggleRow(index)}
+                                  aria-label={`${row.isActiveRow ? 'Deactivate' : 'Activate'} ${row.evacuationCenterName || `center ${index + 1}`}`}
+                                >
+                                  {row.isActiveRow ? 'On' : 'Off'}
+                                </button>
+                              </div>
+                              <div className="rrf-evac-mobile-fields">
+                                {numberFields.map((field) => (
+                                  <label key={`${field}-${index}`}>
+                                    <span>{RELIEF_COUNT_LABELS[field]}</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      value={row[field] || ''}
+                                      placeholder="0"
+                                      aria-label={`${row.evacuationCenterName} ${RELIEF_COUNT_LABELS[field]}`}
+                                      onChange={(event) => handleRowNumberChange(index, field, event.target.value)}
+                                      disabled={!row.isActiveRow || (field === 'requestedFoodPacks' && !includesFoodPacks)}
+                                    />
+                                  </label>
+                                ))}
+                                <div className="rrf-evac-mobile-individuals">
+                                  <span>Individuals</span>
+                                  <strong>{getAffectedPeopleCountForRow(row)}</strong>
+                                </div>
+                                <label className="rrf-evac-mobile-remarks">
+                                  <span>Row Remarks</span>
+                                  <input
+                                    type="text"
+                                    value={row.rowRemarks || ''}
+                                    onChange={(event) => handleRowRemarksChange(index, event.target.value)}
+                                    disabled={!row.isActiveRow}
+                                    placeholder="Optional"
+                                  />
+                                </label>
+                              </div>
+                            </article>
+                          ))}
+                        </div> : null}
                         {inlineErrors.requestedFoodPacks || inlineErrors.rows ? (
                           <small className="rrf-inline-error rrf-inline-error-block">
                             {inlineErrors.rows || inlineErrors.requestedFoodPacks}
                           </small>
                         ) : null}
                       </div>
+
+                      {renderLiveTotals(true)}
 
                       <div className="rrf-submit-row">
                         <button
@@ -4480,8 +4531,18 @@ export default function ReliefRequestForm() {
                                   }
 
                                   const editorCard = entry.editorCard;
-                                  return (
-                                  <div key={entry.key} className="rrf-dafac-editor-card">
+                                  const editorCardContent = (
+                                  <div
+                                    key={entry.key}
+                                    className={`rrf-dafac-editor-card ${
+                                      isMobileDafacLayout ? 'rrf-dafac-modal-card' : ''
+                                    }`}
+                                    role={isMobileDafacLayout ? 'dialog' : undefined}
+                                    aria-modal={isMobileDafacLayout ? 'true' : undefined}
+                                    aria-label={
+                                      isMobileDafacLayout ? 'DAFAC family distribution' : undefined
+                                    }
+                                  >
                                     <div className="rrf-dafac-editor-head">
                                       <p className="rrf-dafac-editor-note">
                                         {editorCard.mode === 'edit'
@@ -4492,6 +4553,8 @@ export default function ReliefRequestForm() {
                                         type="button"
                                         className="rrf-btn rrf-btn-secondary rrf-btn-small"
                                         onClick={() => closeDistributionEditor(editorCard.localId)}
+                                        aria-label="Close DAFAC editor"
+                                        autoFocus={isMobileDafacLayout}
                                       >
                                         Close
                                         <FaTimes />
@@ -4504,6 +4567,7 @@ export default function ReliefRequestForm() {
                                         <input
                                           type="text"
                                           value={editorCard.draft.serialNo}
+                                          aria-invalid={Boolean(distributionInlineErrors[editorCard.localId]?.serialNo)}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,
@@ -4512,14 +4576,9 @@ export default function ReliefRequestForm() {
                                             )
                                           }
                                         />
-                                        {(distributionInlineErrors[editorCard.localId]?.distributionDate ||
-                                          (editorCard.draft.distributionDate &&
-                                          editorCard.draft.distributionDate < minAllowedDate
-                                            ? 'Distribution date cannot be in the past.'
-                                            : '')) ? (
+                                        {distributionInlineErrors[editorCard.localId]?.serialNo ? (
                                           <small className="rrf-inline-error">
-                                            {distributionInlineErrors[editorCard.localId]?.distributionDate ||
-                                              'Distribution date cannot be in the past.'}
+                                            {distributionInlineErrors[editorCard.localId].serialNo}
                                           </small>
                                         ) : null}
                                       </div>
@@ -4527,6 +4586,7 @@ export default function ReliefRequestForm() {
                                         <label>Evacuation Center</label>
                                         <select
                                           value={editorCard.draft.evacuationCenterName}
+                                          aria-invalid={Boolean(distributionInlineErrors[editorCard.localId]?.evacuationCenterName)}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,
@@ -4547,6 +4607,11 @@ export default function ReliefRequestForm() {
                                             </option>
                                           ))}
                                         </select>
+                                        {distributionInlineErrors[editorCard.localId]?.evacuationCenterName ? (
+                                          <small className="rrf-inline-error">
+                                            {distributionInlineErrors[editorCard.localId].evacuationCenterName}
+                                          </small>
+                                        ) : null}
                                       </div>
                                       <div className="rrf-field">
                                         <label>Site Label</label>
@@ -4568,6 +4633,7 @@ export default function ReliefRequestForm() {
                                           type="date"
                                           value={editorCard.draft.distributionDate}
                                           min={minAllowedDate}
+                                          aria-invalid={Boolean(distributionInlineErrors[editorCard.localId]?.distributionDate)}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,
@@ -4576,12 +4642,18 @@ export default function ReliefRequestForm() {
                                             )
                                           }
                                         />
+                                        {distributionInlineErrors[editorCard.localId]?.distributionDate ? (
+                                          <small className="rrf-inline-error">
+                                            {distributionInlineErrors[editorCard.localId].distributionDate}
+                                          </small>
+                                        ) : null}
                                       </div>
                                       <div className="rrf-field">
                                         <label>Surname</label>
                                         <input
                                           type="text"
                                           value={editorCard.draft.headOfFamily.surname}
+                                          aria-invalid={Boolean(distributionInlineErrors[editorCard.localId]?.headOfFamily)}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,
@@ -4590,6 +4662,11 @@ export default function ReliefRequestForm() {
                                             )
                                           }
                                         />
+                                        {distributionInlineErrors[editorCard.localId]?.headOfFamily ? (
+                                          <small className="rrf-inline-error">
+                                            {distributionInlineErrors[editorCard.localId].headOfFamily}
+                                          </small>
+                                        ) : null}
                                       </div>
                                       <div className="rrf-field">
                                         <label>First Name</label>
@@ -4630,6 +4707,7 @@ export default function ReliefRequestForm() {
                                             type="number"
                                             min="0"
                                             value={editorCard.draft.distribution.foodPacksReceived}
+                                            aria-invalid={Boolean(distributionInlineErrors[editorCard.localId]?.['distribution.foodPacksReceived'])}
                                             onChange={(e) =>
                                               handleDistributionDraftField(
                                                 editorCard.localId,
@@ -4638,6 +4716,11 @@ export default function ReliefRequestForm() {
                                               )
                                             }
                                           />
+                                          {distributionInlineErrors[editorCard.localId]?.['distribution.foodPacksReceived'] ? (
+                                            <small className="rrf-inline-error">
+                                              {distributionInlineErrors[editorCard.localId]['distribution.foodPacksReceived']}
+                                            </small>
+                                          ) : null}
                                         </div>
                                       ) : null}
                                       {dafacAidVisibility.showsMonetary ? (
@@ -4648,6 +4731,7 @@ export default function ReliefRequestForm() {
                                             min="0"
                                             step="0.01"
                                             value={editorCard.draft.distribution.monetaryAmountReceived}
+                                            aria-invalid={Boolean(distributionInlineErrors[editorCard.localId]?.['distribution.monetaryAmountReceived'])}
                                             onChange={(e) =>
                                               handleDistributionDraftField(
                                                 editorCard.localId,
@@ -4656,6 +4740,11 @@ export default function ReliefRequestForm() {
                                               )
                                             }
                                           />
+                                          {distributionInlineErrors[editorCard.localId]?.['distribution.monetaryAmountReceived'] ? (
+                                            <small className="rrf-inline-error">
+                                              {distributionInlineErrors[editorCard.localId]['distribution.monetaryAmountReceived']}
+                                            </small>
+                                          ) : null}
                                         </div>
                                       ) : null}
                                       {dafacAidVisibility.showsAppliances ? (
@@ -4665,6 +4754,7 @@ export default function ReliefRequestForm() {
                                             type="number"
                                             min="0"
                                             value={editorCard.draft.distribution.applianceUnitsReceived}
+                                            aria-invalid={Boolean(distributionInlineErrors[editorCard.localId]?.['distribution.applianceUnitsReceived'])}
                                             onChange={(e) =>
                                               handleDistributionDraftField(
                                                 editorCard.localId,
@@ -4673,6 +4763,11 @@ export default function ReliefRequestForm() {
                                               )
                                             }
                                           />
+                                          {distributionInlineErrors[editorCard.localId]?.['distribution.applianceUnitsReceived'] ? (
+                                            <small className="rrf-inline-error">
+                                              {distributionInlineErrors[editorCard.localId]['distribution.applianceUnitsReceived']}
+                                            </small>
+                                          ) : null}
                                         </div>
                                       ) : null}
                                     </div>
@@ -4756,6 +4851,7 @@ export default function ReliefRequestForm() {
                                         <input
                                           type="text"
                                           value={editorCard.draft.signOff.familyHeadPrintedName}
+                                          aria-invalid={Boolean(distributionInlineErrors[editorCard.localId]?.['signOff.familyHeadPrintedName'])}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,
@@ -4764,12 +4860,18 @@ export default function ReliefRequestForm() {
                                             )
                                           }
                                         />
+                                        {distributionInlineErrors[editorCard.localId]?.['signOff.familyHeadPrintedName'] ? (
+                                          <small className="rrf-inline-error">
+                                            {distributionInlineErrors[editorCard.localId]['signOff.familyHeadPrintedName']}
+                                          </small>
+                                        ) : null}
                                       </div>
                                       <div className="rrf-field">
                                         <label>Barangay Officer</label>
                                         <input
                                           type="text"
                                           value={editorCard.draft.signOff.barangayOfficerPrintedName}
+                                          aria-invalid={Boolean(distributionInlineErrors[editorCard.localId]?.['signOff.barangayOfficerPrintedName'])}
                                           onChange={(e) =>
                                             handleDistributionDraftField(
                                               editorCard.localId,
@@ -4778,6 +4880,11 @@ export default function ReliefRequestForm() {
                                             )
                                           }
                                         />
+                                        {distributionInlineErrors[editorCard.localId]?.['signOff.barangayOfficerPrintedName'] ? (
+                                          <small className="rrf-inline-error">
+                                            {distributionInlineErrors[editorCard.localId]['signOff.barangayOfficerPrintedName']}
+                                          </small>
+                                        ) : null}
                                       </div>
                                     </div>
 
@@ -4798,6 +4905,12 @@ export default function ReliefRequestForm() {
                                       />
                                     </div>
 
+                                    {distributionInlineErrors[editorCard.localId]?._form ? (
+                                      <p className="rrf-inline-error rrf-inline-error-block" role="alert">
+                                        {distributionInlineErrors[editorCard.localId]._form}
+                                      </p>
+                                    ) : null}
+
                                     <div className="rrf-inline-actions rrf-inline-actions-right">
                                       <button
                                         type="button"
@@ -4811,6 +4924,25 @@ export default function ReliefRequestForm() {
                                     </div>
                                   </div>
                                   );
+
+                                  if (isMobileDafacLayout && typeof document !== 'undefined') {
+                                    return createPortal(
+                                      <div
+                                        className="rrf-dafac-modal-backdrop"
+                                        onMouseDown={(event) => {
+                                          if (event.target === event.currentTarget) {
+                                            closeDistributionEditor(editorCard.localId);
+                                          }
+                                        }}
+                                      >
+                                        {editorCardContent}
+                                      </div>,
+                                      document.body,
+                                      entry.key
+                                    );
+                                  }
+
+                                  return editorCardContent;
                                 })}
 
                                 {Array.from({ length: distributionGridState.addCardCount }).map((_, index) => (
@@ -4819,6 +4951,7 @@ export default function ReliefRequestForm() {
                                     type="button"
                                     className="rrf-dafac-add-card"
                                     onClick={openCreateDistributionEditor}
+                                    aria-label="Add DAFAC family record"
                                   >
                                     <span>+</span>
                                   </button>

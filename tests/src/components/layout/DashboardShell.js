@@ -23,7 +23,10 @@ export default function DashboardShell({ children, variant }) {
   const [username, setUsername] = useState("");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [mobileTopbarHidden, setMobileTopbarHidden] = useState(false);
   const profileMenuRef = useRef(null);
+  const mainRef = useRef(null);
+  const lastScrollTopRef = useRef(0);
   const { theme, toggleTheme } = useTheme();
 
   const BASE_URL = API_BASE_URL;
@@ -99,6 +102,44 @@ export default function DashboardShell({ children, variant }) {
 
   useEffect(() => {
     setMobileOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    const scrollNode = mainRef.current;
+    if (!scrollNode) return undefined;
+
+    lastScrollTopRef.current = scrollNode.scrollTop || 0;
+    setMobileTopbarHidden(false);
+
+    const handleShellScroll = () => {
+      if (window.innerWidth > 768) {
+        setMobileTopbarHidden(false);
+        lastScrollTopRef.current = scrollNode.scrollTop || 0;
+        return;
+      }
+
+      const currentTop = scrollNode.scrollTop || 0;
+      const previousTop = lastScrollTopRef.current;
+      const delta = currentTop - previousTop;
+
+      if (currentTop < 16) {
+        setMobileTopbarHidden(false);
+      } else if (delta > 8) {
+        setMobileTopbarHidden(true);
+      } else if (delta < -6) {
+        setMobileTopbarHidden(false);
+      }
+
+      lastScrollTopRef.current = Math.max(currentTop, 0);
+    };
+
+    scrollNode.addEventListener("scroll", handleShellScroll, { passive: true });
+    window.addEventListener("resize", handleShellScroll);
+
+    return () => {
+      scrollNode.removeEventListener("scroll", handleShellScroll);
+      window.removeEventListener("resize", handleShellScroll);
+    };
   }, [pathname]);
 
   useEffect(() => {
@@ -191,15 +232,6 @@ export default function DashboardShell({ children, variant }) {
         mobileOpen ? "has-mobile-sidebar" : ""
       }`}
     >
-      <button
-        type="button"
-        className="mobile-sidebar-toggle"
-        onClick={() => setMobileOpen(true)}
-        aria-label="Open sidebar"
-      >
-        ☰
-      </button>
-
       {mobileOpen && (
         <button
           type="button"
@@ -222,11 +254,25 @@ export default function DashboardShell({ children, variant }) {
       </div>
 
       <main
+        ref={mainRef}
         className={`admin-main ${
           usesExtendedScrollLayout ? "evac-shell-scroll" : ""
         }`}
       >
-        <header className="dashboard-topbar">
+        <header
+          className={`dashboard-topbar ${
+            mobileTopbarHidden ? "is-mobile-hidden" : ""
+          }`}
+        >
+          <button
+            type="button"
+            className="mobile-sidebar-toggle"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open sidebar"
+          >
+            ☰
+          </button>
+
           <div className="shell-system-brand" aria-label="System identity">
             <strong className="shell-system-title">
               Jaen Disaster Information and Management System.

@@ -225,3 +225,204 @@
   color: #d7f8df !important;
   border-color: rgba(178, 219, 191, 0.24) !important;
 }
+
+/* Compact announcement management into a readable, thumb-friendly phone layout. */
+@media (max-width: 640px) {
+  .an-page .gl-shell {
+    gap: 12px;
+  }
+
+  .an-page .gl-header-card {
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .an-page .gl-header-head {
+    gap: 10px;
+  }
+
+  .an-page .gl-header-title {
+    font-size: clamp(24px, 7vw, 30px);
+    line-height: 1.08;
+  }
+
+  .an-page .gl-header-actions {
+    width: 100%;
+  }
+
+  .an-page .gl-header-actions .gl-btn {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .an-page .gl-legend-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    margin: 0;
+  }
+
+  .an-page .gl-legend-item {
+    min-width: 0;
+    min-height: 30px;
+    justify-content: flex-start;
+    padding: 0 9px;
+    font-size: 10px;
+  }
+
+  .an-page .gl-totals-row-five {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .an-page .gl-total-card {
+    min-width: 0;
+    min-height: 76px;
+    padding: 11px 12px;
+    border-radius: 16px;
+  }
+
+  .an-page .gl-total-card-top {
+    gap: 6px;
+    font-size: 10px;
+  }
+
+  .an-page .gl-total-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .an-page .gl-total-card > strong {
+    font-size: 24px;
+  }
+
+  .an-page .gl-list-card-fixed {
+    padding: 14px;
+  }
+
+  .an-page .gl-toolbar {
+    gap: 10px;
+    padding-bottom: 10px;
+  }
+
+  .an-page .gl-toolbar-top {
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .an-page .gl-list-toolbar-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    width: 100%;
+  }
+
+  .an-page .gl-list-toolbar-actions .gl-sort-select,
+  .an-page .gl-list-toolbar-actions .gl-toolbar-toggle-btn {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    margin: 0;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .an-page .gl-list-grid {
+    gap: 10px;
+  }
+
+  .an-page .gl-item-card {
+    min-height: 0;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 16px;
+  }
+
+  .an-page .gl-item-top {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .an-page .gl-item-title {
+    font-size: 18px;
+  }
+
+  .an-page .gl-item-meta {
+    gap: 5px;
+    margin-top: 7px;
+  }
+
+  .an-page .gl-item-badge {
+    min-height: 22px;
+    padding: 4px 7px;
+    font-size: 9px;
+  }
+
+  .an-page .gl-item-views {
+    min-width: auto;
+    flex: 0 0 auto;
+    justify-content: flex-end;
+    padding-top: 3px;
+    font-size: 11px;
+  }
+
+  .an-page .gl-item-body {
+    grid-template-columns: minmax(0, 1fr) 72px;
+    gap: 9px;
+    margin-top: 2px;
+  }
+
+  .an-page .gl-item-body:has(.gl-item-media-empty) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .an-page .gl-item-media-col:has(.gl-item-media-empty) {
+    display: none;
+  }
+
+  .an-page .gl-item-description {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .an-page .gl-item-actions-inline {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    margin-top: 10px;
+  }
+
+  .an-page .gl-item-actions-inline .gl-btn {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    gap: 6px;
+    padding: 8px 6px;
+    font-size: 11px;
+  }
+
+  .an-page .gl-item-media-empty {
+    min-height: 0;
+    height: 72px;
+    gap: 4px;
+    font-size: 10px;
+  }
+
+  .an-page .gl-item-media-empty svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .an-page .gl-thumb-button-large,
+  .an-page .gl-thumb-large {
+    width: 72px;
+    height: 72px;
+    max-width: 72px;
+    border-radius: 12px;
+  }
+}

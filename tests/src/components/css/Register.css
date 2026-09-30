@@ -615,3 +615,25 @@ select.premium-input {
   color: #a8c4b0 !important;
   opacity: 1 !important;
 }
+
+/* Keep the primary action dark in dark mode; the shared registration tokens
+   intentionally use light text colors and are unsuitable as a button gradient. */
+:root[data-theme="dark"] .register-page .submit-btn {
+  background: linear-gradient(180deg, #16803d 0%, #0d5f2c 100%) !important;
+  color: #f1fff5 !important;
+  -webkit-text-fill-color: #f1fff5 !important;
+  border: 1px solid rgba(143, 240, 173, 0.28) !important;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.28) !important;
+}
+
+:root[data-theme="dark"] .register-page .submit-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #1a9147 0%, #116b34 100%) !important;
+  box-shadow: 0 16px 28px rgba(0, 0, 0, 0.34) !important;
+}
+
+:root[data-theme="dark"] .register-page .submit-btn:disabled {
+  background: linear-gradient(180deg, #176b37 0%, #0c4a25 100%) !important;
+  color: #c6dccb !important;
+  -webkit-text-fill-color: #c6dccb !important;
+  opacity: 0.78 !important;
+}

@@ -494,3 +494,559 @@
     border-radius: 14px;
   }
 }
+
+/* Mobile analytics shell: designed as a phone dashboard, not a squeezed desktop. */
+@media (max-width: 640px) {
+  .analytics-page {
+    padding: 8px 8px 18px !important;
+    background:
+      radial-gradient(circle at 92% 8%, rgba(34, 197, 94, 0.12), transparent 30%),
+      linear-gradient(180deg, #062b16 0%, #031b0d 100%) !important;
+  }
+
+  .analytics-page .analytics-scroll {
+    overflow-x: hidden;
+  }
+
+  .analytics-page .analytics-container {
+    gap: 10px;
+  }
+
+  .analytics-page .analytics-tabs-shell {
+    position: sticky;
+    top: 6px;
+    z-index: 5;
+    order: -2;
+    margin: 0 0 10px;
+    padding: 8px;
+    border-radius: 22px;
+    background: rgba(6, 48, 24, 0.94) !important;
+    border: 1px solid rgba(143, 240, 173, 0.18) !important;
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
+    backdrop-filter: blur(16px);
+  }
+
+  .analytics-page .analytics-tabs {
+    display: flex !important;
+    grid-template-columns: none !important;
+    gap: 6px;
+    overflow-x: hidden !important;
+    overflow-y: visible;
+    padding: 0;
+    scroll-snap-type: none;
+    -webkit-overflow-scrolling: auto;
+  }
+
+  .analytics-page .analytics-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .analytics-page .analytics-tab {
+    flex: 1 1 0;
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 50px !important;
+    padding: 0 !important;
+    border-radius: 17px !important;
+    scroll-snap-align: none;
+    background: rgba(255, 255, 255, 0.08) !important;
+    overflow: visible !important;
+  }
+
+  .analytics-page .analytics-tab.is-active {
+    flex-basis: 0;
+    background: linear-gradient(180deg, #22c55e, #159447) !important;
+    box-shadow: 0 12px 24px rgba(34, 197, 94, 0.24) !important;
+  }
+
+  .analytics-page .analytics-tab-title {
+    display: none !important;
+  }
+
+  .analytics-page .analytics-tab-icon {
+    width: 28px !important;
+    height: 28px !important;
+    flex: 0 0 28px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 18px !important;
+    overflow: visible !important;
+  }
+
+  .analytics-page .analytics-header--dashboard {
+    padding: 20px 16px !important;
+    border-radius: 24px !important;
+    margin: 0 0 10px !important;
+    background:
+      radial-gradient(circle at 100% 100%, rgba(34, 197, 94, 0.1), transparent 38%),
+      linear-gradient(180deg, rgba(8, 64, 32, 0.98), rgba(4, 42, 20, 0.98)) !important;
+    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.24) !important;
+  }
+
+  .analytics-page .analytics-badge-row {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .analytics-page .analytics-badge {
+    font-size: 10px;
+    line-height: 1;
+    padding: 7px 10px;
+  }
+
+  .analytics-page .analytics-title {
+    font-size: clamp(24px, 7.2vw, 30px) !important;
+    line-height: 1.08 !important;
+    letter-spacing: -0.04em;
+    margin-top: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .analytics-page .analytics-header-subtitle {
+    max-width: 32ch;
+    font-size: 13.5px !important;
+    line-height: 1.55;
+    margin-top: 10px;
+  }
+
+  .analytics-page .analytics-export-btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px;
+    border-radius: 15px;
+  }
+}
+
+
+
+/* Mobile analytics modules: app-style cards instead of squeezed desktop dashboards. */
+@media (max-width: 640px) {
+  .analytics-page .analytics-tab-content,
+  .analytics-page .analytics-tab-content > *,
+  .analytics-page :is(
+    .inventory-analytics,
+    .donation-analytics,
+    .relief-analytics,
+    .incident-analytics,
+    .evac-analytics
+  ) {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  .analytics-page :is(
+    .inventory-kpi-grid-clean,
+    .donation-kpi-grid-clean,
+    .relief-kpi-grid-clean,
+    .incident-kpi-grid-clean,
+    .evac-kpi-grid,
+    .inventory-main-grid-clean,
+    .donation-main-grid-clean,
+    .relief-main-grid-clean,
+    .incident-main-grid-clean,
+    .evac-main-grid,
+    .inventory-graph-grid-clean,
+    .donation-graph-grid-clean,
+    .relief-graph-grid-clean,
+    .incident-graph-grid-clean,
+    .evac-chart-grid,
+    .evac-trend-grid,
+    .evac-phase2-grid,
+    .relief-ranking-grid,
+    .incident-ranking-grid,
+    .evac-ranking-grid,
+    .donation-ranking-grid,
+    .inventory-signal-grid-clean,
+    .donation-signal-grid-clean,
+    .relief-signal-stack-clean,
+    .incident-signal-grid-clean,
+    .evac-insight-stack,
+    .inventory-health-compact-grid,
+    .donation-health-compact-grid,
+    .relief-health-compact-grid,
+    .incident-health-compact-grid,
+    .incident-record-window-grid,
+    .evac-snapshot-grid
+  ) {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .analytics-page :is(
+    .a-card,
+    .inventory-clean-card,
+    .donation-clean-card,
+    .relief-clean-card,
+    .incident-clean-card,
+    .evac-panel,
+    .inventory-chart-card,
+    .donation-chart-card,
+    .relief-chart-card,
+    .incident-chart-card,
+    .evac-chart-card,
+    .inventory-signals-clean,
+    .donation-signals-clean,
+    .relief-signals-clean,
+    .incident-signals-clean,
+    .evac-ai-panel,
+    .evac-phase-card,
+    .evac-ranking-card
+  ) {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: auto !important;
+    border-radius: 22px !important;
+    padding: 16px !important;
+    overflow: hidden !important;
+  }
+
+  .analytics-page :is(
+    .inventory-kpi-card,
+    .donation-kpi-card,
+    .relief-kpi-card,
+    .incident-kpi-card,
+    .evac-kpi-card,
+    .inventory-health-compact-card,
+    .donation-health-compact-card,
+    .relief-health-compact-card,
+    .incident-health-compact-card,
+    .evac-snapshot-card,
+    .incident-record-window-item
+  ) {
+    width: 100% !important;
+    min-width: 0 !important;
+    border-radius: 18px !important;
+    padding: 14px !important;
+  }
+
+  .analytics-page :is(
+    .a-card-head,
+    .inventory-panel-head,
+    .donation-panel-head,
+    .relief-panel-head,
+    .incident-panel-head,
+    .evac-card-head,
+    .evac-panel-top
+  ) {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+
+  .analytics-page :is(
+    .a-card-title,
+    .inventory-panel-title,
+    .donation-panel-title,
+    .relief-panel-title,
+    .incident-panel-title,
+    .evac-card-title,
+    .evac-panel-heading
+  ) {
+    font-size: clamp(18px, 5vw, 22px) !important;
+    line-height: 1.12 !important;
+    letter-spacing: -0.035em !important;
+  }
+
+  .analytics-page :is(
+    .inventory-card-subtitle,
+    .donation-card-subtitle,
+    .relief-card-subtitle,
+    .incident-card-subtitle,
+    .evac-card-subtitle,
+    .evac-panel-kicker
+  ) {
+    font-size: 12.5px !important;
+    line-height: 1.45 !important;
+  }
+
+  .analytics-page :is(
+    .a-chart-body,
+    .evac-chart-body,
+    .overview-chart-box
+  ) {
+    height: 230px !important;
+    min-height: 230px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .analytics-page :is(
+    .incident-doughnut-body,
+    .overview-chart-box--doughnut
+  ) {
+    height: 210px !important;
+    min-height: 210px !important;
+  }
+
+  .analytics-page :is(
+    .inventory-chart-value-list,
+    .donation-chart-value-list,
+    .relief-chart-value-list,
+    .incident-chart-value-list,
+    .inventory-health-value-list,
+    .relief-health-value-list,
+    .incident-health-value-list,
+    .evac-risk-list,
+    .evac-capacity-list,
+    .evac-attention-list,
+    .evac-deficiency-list
+  ) {
+    gap: 10px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .analytics-page :is(
+    .relief-ranking-row,
+    .incident-ranking-row,
+    .evac-ranking-row
+  ) {
+    grid-template-columns: 42px minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 10px 12px !important;
+    padding: 14px !important;
+    border-radius: 18px !important;
+  }
+
+  .analytics-page :is(
+    .relief-ranking-value,
+    .incident-ranking-value,
+    .evac-ranking-value
+  ) {
+    grid-column: 2 !important;
+    justify-self: start !important;
+    margin-top: -2px !important;
+    max-width: 100% !important;
+    white-space: normal !important;
+  }
+
+  .analytics-page :is(
+    .relief-ranking-title,
+    .incident-ranking-title,
+    .evac-ranking-title,
+    .relief-ranking-meta,
+    .incident-ranking-meta,
+    .evac-ranking-meta
+  ) {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+
+  .analytics-page :is(
+    .inventory-insight-item,
+    .donation-insight-item,
+    .relief-insight-item,
+    .incident-insight-item,
+    .evac-insight-item
+  ) {
+    width: 100% !important;
+    min-width: 0 !important;
+    border-radius: 18px !important;
+    padding: 14px !important;
+  }
+
+  .analytics-page :is(
+    .inventory-insight-top,
+    .donation-insight-top,
+    .relief-insight-top,
+    .incident-insight-top,
+    .evac-insight-top
+  ) {
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+
+  .analytics-page :is(
+    .inventory-insight-badge,
+    .donation-insight-badge,
+    .relief-insight-badge,
+    .incident-insight-badge,
+    .evac-insight-badge
+  ) {
+    flex: 0 0 auto !important;
+    max-width: 42% !important;
+    text-align: center !important;
+  }
+}
+
+/* Light-theme mobile analytics should become light, not remain the dark app skin. */
+@media (max-width: 640px) {
+  :root[data-theme="light"] .analytics-page {
+    background:
+      radial-gradient(circle at 92% 8%, rgba(34, 197, 94, 0.12), transparent 30%),
+      linear-gradient(180deg, #f7fcf8 0%, #e5f3e9 100%) !important;
+  }
+
+  :root[data-theme="light"] .analytics-page .analytics-tabs-shell {
+    background: rgba(255, 255, 255, 0.86) !important;
+    border-color: rgba(22, 101, 52, 0.14) !important;
+    box-shadow: 0 14px 30px rgba(15, 90, 32, 0.12) !important;
+  }
+
+  :root[data-theme="light"] .analytics-page .analytics-tab {
+    background: rgba(20, 83, 45, 0.08) !important;
+    color: #14532d !important;
+  }
+
+  :root[data-theme="light"] .analytics-page .analytics-tab.is-active {
+    background: linear-gradient(180deg, #22c55e, #159447) !important;
+    color: #ffffff !important;
+  }
+
+  :root[data-theme="light"] .analytics-page .analytics-header--dashboard {
+    background:
+      radial-gradient(circle at 100% 100%, rgba(34, 197, 94, 0.1), transparent 38%),
+      linear-gradient(180deg, rgba(247, 252, 248, 0.98), rgba(229, 243, 233, 0.98)) !important;
+    border-color: rgba(22, 101, 52, 0.14) !important;
+    box-shadow: 0 18px 36px rgba(15, 90, 32, 0.12) !important;
+  }
+
+  :root[data-theme="light"] .analytics-page .analytics-title {
+    color: #063b1b !important;
+  }
+
+  :root[data-theme="light"] .analytics-page .analytics-header-subtitle {
+    color: #2f6f46 !important;
+  }
+
+  :root[data-theme="light"] .overview-mobile-app {
+    color: #052e16;
+  }
+
+  :root[data-theme="light"] .overview-mobile-hero,
+  :root[data-theme="light"] .overview-mobile-brief,
+  :root[data-theme="light"] .overview-mobile-section {
+    background:
+      radial-gradient(circle at 100% 100%, rgba(34, 197, 94, 0.11), transparent 36%),
+      linear-gradient(160deg, rgba(255, 255, 255, 0.98), rgba(235, 249, 239, 0.98)) !important;
+    border-color: rgba(22, 101, 52, 0.14) !important;
+    box-shadow: 0 18px 38px rgba(15, 90, 32, 0.12) !important;
+  }
+
+  :root[data-theme="light"] .overview-mobile-kicker,
+  :root[data-theme="light"] .overview-mobile-section-head span,
+  :root[data-theme="light"] .overview-mobile-priority-label {
+    background: rgba(22, 163, 74, 0.12) !important;
+    color: #15803d !important;
+  }
+
+  :root[data-theme="light"] .overview-mobile-hero h3,
+  :root[data-theme="light"] .overview-mobile-brief h3,
+  :root[data-theme="light"] .overview-mobile-section-head h3,
+  :root[data-theme="light"] .overview-mobile-priority h4,
+  :root[data-theme="light"] .overview-mobile-empty strong,
+  :root[data-theme="light"] .overview-mobile-signal-main strong,
+  :root[data-theme="light"] .overview-mobile-module-top strong {
+    color: #052e16 !important;
+  }
+
+  :root[data-theme="light"] .overview-mobile-score {
+    background: rgba(22, 163, 74, 0.1) !important;
+    border-color: rgba(22, 101, 52, 0.16) !important;
+  }
+
+  :root[data-theme="light"] .overview-mobile-score strong,
+  :root[data-theme="light"] .overview-mobile-module-top b {
+    color: #15803d !important;
+  }
+
+  :root[data-theme="light"] .overview-mobile-score span,
+  :root[data-theme="light"] .overview-mobile-status-line,
+  :root[data-theme="light"] .overview-mobile-sync,
+  :root[data-theme="light"] .overview-mobile-signal-main small,
+  :root[data-theme="light"] .overview-mobile-priority p,
+  :root[data-theme="light"] .overview-mobile-module p,
+  :root[data-theme="light"] .overview-mobile-empty span,
+  :root[data-theme="light"] .overview-mobile-brief p,
+  :root[data-theme="light"] .overview-mobile-brief strong {
+    color: #2f6f46 !important;
+  }
+
+  :root[data-theme="light"] .overview-mobile-signal,
+  :root[data-theme="light"] .overview-mobile-priority,
+  :root[data-theme="light"] .overview-mobile-module,
+  :root[data-theme="light"] .overview-mobile-empty {
+    background: rgba(255, 255, 255, 0.72) !important;
+    border-color: rgba(22, 101, 52, 0.12) !important;
+  }
+
+  :root[data-theme="light"] .overview-mobile-signal-icon {
+    background: rgba(22, 163, 74, 0.12) !important;
+    color: #15803d !important;
+  }
+
+  :root[data-theme="light"] .overview-mobile-signal-main span,
+  :root[data-theme="light"] .overview-mobile-module-top span {
+    color: #5f7f69 !important;
+  }
+
+  :root[data-theme="light"] .overview-mobile-brief-icon {
+    background: #fef3c7 !important;
+    color: #b45309 !important;
+  }
+}
+
+/* Prevent wider analytics tab icons, like the evacuation bed, from being clipped on mobile. */
+@media (max-width: 640px) {
+  .analytics-page .analytics-tab-icon {
+    width: 28px !important;
+    height: 28px !important;
+    flex: 0 0 28px !important;
+    overflow: visible !important;
+  }
+
+  .analytics-page .analytics-tab-icon svg {
+    width: 1.08em !important;
+    height: 1.08em !important;
+    max-width: none !important;
+    overflow: visible !important;
+  }
+}
+
+/* Mobile analytics header: title follows active tab, no desktop badges or description. */
+@media (max-width: 640px) {
+  .analytics-page .analytics-header--dashboard .analytics-badge-row,
+  .analytics-page .analytics-header--dashboard .analytics-header-subtitle {
+    display: none !important;
+  }
+
+  .analytics-page .analytics-title-desktop {
+    display: none !important;
+  }
+
+  .analytics-page .analytics-title-mobile {
+    display: inline !important;
+  }
+}
+
+@media (min-width: 641px) {
+  .analytics-page .analytics-title-mobile {
+    display: none !important;
+  }
+}
+
+/* Dark mode: shared analytics empty states must never fall back to pale cards. */
+:root[data-theme="dark"] .analytics-page .analytics-empty-state {
+  background: linear-gradient(145deg, rgba(5, 39, 22, 0.96), rgba(10, 55, 31, 0.98)) !important;
+  border: 1px dashed rgba(143, 240, 173, 0.24) !important;
+  color: #f3fff6 !important;
+  box-shadow: inset 0 0 0 1px rgba(143, 240, 173, 0.06), 0 18px 34px rgba(0, 0, 0, 0.18) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .analytics-empty-state-title {
+  color: #f3fff6 !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .analytics-empty-state-copy {
+  color: #bfd8c6 !important;
+  opacity: 1 !important;
+}
+

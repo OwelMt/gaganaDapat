@@ -841,3 +841,48 @@
   fill: currentColor !important;
   opacity: 1 !important;
 }
+
+/* Dark mode: inventory AI signal items must not stay white. */
+:root[data-theme="dark"] .analytics-page .inventory-insight-item,
+:root[data-theme="dark"] .analytics-page .inventory-insight-item--success,
+:root[data-theme="dark"] .analytics-page .inventory-insight-item--warning,
+:root[data-theme="dark"] .analytics-page .inventory-insight-item--critical {
+  background:
+    radial-gradient(circle at 100% 100%, rgba(143, 240, 173, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(9, 52, 27, 0.98), rgba(5, 36, 18, 0.98)) !important;
+  border-color: rgba(143, 240, 173, 0.18) !important;
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.22) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-insight-title {
+  color: #f1fff5 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-insight-message {
+  color: #c7dfcd !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-insight-action {
+  color: #8ff0ad !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-insight-badge--success {
+  background: rgba(34, 197, 94, 0.18) !important;
+  color: #8ff0ad !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-insight-badge--info {
+  background: rgba(59, 130, 246, 0.2) !important;
+  color: #bfdbfe !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-insight-badge--notice,
+:root[data-theme="dark"] .analytics-page .inventory-insight-badge--warning {
+  background: rgba(245, 158, 11, 0.2) !important;
+  color: #fbbf24 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .inventory-insight-badge--critical {
+  background: rgba(239, 68, 68, 0.22) !important;
+  color: #fca5a5 !important;
+}

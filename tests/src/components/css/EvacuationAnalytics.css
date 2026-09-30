@@ -1165,3 +1165,102 @@
   color: #fbbf24 !important;
   border-color: rgba(251, 191, 36, 0.34) !important;
 }
+
+/* Dark mode final contrast pass: evacuation analytics mobile/readability. */
+:root[data-theme="dark"] .analytics-page .evac-card-title,
+:root[data-theme="dark"] .analytics-page .evac-insight-title,
+:root[data-theme="dark"] .analytics-page .evac-ranking-title,
+:root[data-theme="dark"] .analytics-page .evac-panel-heading,
+:root[data-theme="dark"] .analytics-page .evac-panel-title {
+  color: #f6fff8 !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-card-subtitle,
+:root[data-theme="dark"] .analytics-page .evac-insight-message,
+:root[data-theme="dark"] .analytics-page .evac-ranking-meta,
+:root[data-theme="dark"] .analytics-page .evac-kpi-sub,
+:root[data-theme="dark"] .analytics-page .evac-snapshot-sub {
+  color: #d8eadf !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-insight-action,
+:root[data-theme="dark"] .analytics-page .evac-insight-action strong {
+  color: #7ee69e !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-ranking-value {
+  background: rgba(143, 240, 173, 0.16) !important;
+  border-color: rgba(143, 240, 173, 0.34) !important;
+  color: #f3fff6 !important;
+  box-shadow: inset 0 0 0 1px rgba(143, 240, 173, 0.08) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-insight-item--success,
+:root[data-theme="dark"] .analytics-page .evac-insight-item--info,
+:root[data-theme="dark"] .analytics-page .evac-insight-item--notice,
+:root[data-theme="dark"] .analytics-page .evac-insight-item--warning,
+:root[data-theme="dark"] .analytics-page .evac-insight-item--critical {
+  color: #f3fff6 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-insight-badge--success {
+  background: #dcfce7 !important;
+  color: #166534 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-insight-badge--info {
+  background: #dbeafe !important;
+  color: #1d4ed8 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-insight-badge--notice,
+:root[data-theme="dark"] .analytics-page .evac-insight-badge--warning {
+  background: #ffedd5 !important;
+  color: #b54708 !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-insight-badge--critical {
+  background: #fee2e2 !important;
+  color: #b42318 !important;
+}
+
+/* Dark mode final cleanup: evacuation deficiency rows and custom empty states. */
+:root[data-theme="dark"] .analytics-page .evac-empty-state {
+  background: linear-gradient(145deg, rgba(5, 39, 22, 0.96), rgba(10, 55, 31, 0.98)) !important;
+  border-color: rgba(143, 240, 173, 0.24) !important;
+  color: #f3fff6 !important;
+  box-shadow: inset 0 0 0 1px rgba(143, 240, 173, 0.06), 0 18px 34px rgba(0, 0, 0, 0.18) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-empty-state-title,
+:root[data-theme="dark"] .analytics-page .evac-deficiency-label {
+  color: #f6fff8 !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-empty-state-copy,
+:root[data-theme="dark"] .analytics-page .evac-deficiency-text {
+  color: #d8eadf !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-deficiency-item.success,
+:root[data-theme="dark"] .analytics-page .evac-deficiency-item.info,
+:root[data-theme="dark"] .analytics-page .evac-deficiency-item.notice {
+  background: linear-gradient(145deg, rgba(13, 61, 34, 0.96), rgba(10, 50, 29, 0.98)) !important;
+  border-color: rgba(178, 219, 191, 0.22) !important;
+}
+
+:root[data-theme="dark"] .analytics-page .evac-deficiency-item.warning {
+  background: rgba(70, 42, 9, 0.88) !important;
+  border-color: rgba(251, 191, 36, 0.42) !important;
+}
+

@@ -1035,7 +1035,111 @@ export default function Overview() {
 
   return (
     <div className="overview-analytics">
-      <section className="overview-command-card">
+      <div className="overview-mobile-app" aria-label="Mobile operations overview">
+        <section className={`overview-mobile-hero ${overallTone}`}>
+          <div className="overview-mobile-hero-top">
+            <div>
+              <span className="overview-mobile-kicker">Command Center</span>
+              <h3>Today's Operations</h3>
+            </div>
+            <div className={`overview-mobile-score ${overallTone}`}>
+              <strong>{loading ? "-" : readinessScores.overall}</strong>
+              <span>score</span>
+            </div>
+          </div>
+
+          <p className="overview-mobile-status-line">
+            Status: <strong className={overallTone}>{loading ? "loading" : overallLabel}</strong>
+          </p>
+
+          <div className="overview-mobile-sync">
+            <FaClockRotateLeft />
+            {refreshing ? "Refreshing overview..." : `Updated ${formatDateTime(lastUpdated)}`}
+          </div>
+        </section>
+
+        <section className={`overview-mobile-brief ${aiOverviewInsight.tone}`}>
+          <div className="overview-mobile-brief-icon">
+            <FaWandMagicSparkles />
+          </div>
+          <div>
+            <span className="overview-mobile-kicker">AI Brief</span>
+            <h3>{aiOverviewInsight.title}</h3>
+            <p>{aiOverviewInsight.text}</p>
+            <strong>{aiOverviewInsight.action}</strong>
+          </div>
+        </section>
+
+        <section className="overview-mobile-section">
+          <div className="overview-mobile-section-head">
+            <span>01</span>
+            <h3>Key signals</h3>
+          </div>
+          <div className="overview-mobile-signal-list">
+            {kpis.map((item) => (
+              <article key={item.label} className={`overview-mobile-signal ${item.tone}`}>
+                <div className="overview-mobile-signal-icon">{item.icon}</div>
+                <div className="overview-mobile-signal-main">
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                  <small>{item.sub}</small>
+                </div>
+                {item.urgent ? <em>!</em> : null}
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="overview-mobile-section">
+          <div className="overview-mobile-section-head">
+            <span>02</span>
+            <h3>Attention queue</h3>
+          </div>
+          {priorityItems.length > 0 ? (
+            <div className="overview-mobile-priority-list">
+              {priorityItems.map((item, index) => (
+                <article key={`${item.title}-${index}`} className={`overview-mobile-priority ${item.tone}`}>
+                  <div className="overview-mobile-priority-label">{item.badge}</div>
+                  <h4>{item.title}</h4>
+                  <p>{item.text}</p>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="overview-mobile-empty">
+              <strong>No urgent priority detected</strong>
+              <span>Major operations warnings will appear here first.</span>
+            </div>
+          )}
+        </section>
+
+        <section className="overview-mobile-section">
+          <div className="overview-mobile-section-head">
+            <span>03</span>
+            <h3>Module readiness</h3>
+          </div>
+          <div className="overview-mobile-module-list">
+            {moduleHealth.map((item) => (
+              <article key={item.title} className={`overview-mobile-module ${item.tone}`}>
+                <div className="overview-mobile-module-top">
+                  <div>
+                    <span>{item.title}</span>
+                    <strong>{item.status}</strong>
+                  </div>
+                  <b>{item.score}%</b>
+                </div>
+                <div className="overview-mobile-module-bar">
+                  <i style={{ width: `${Math.max(4, Math.min(100, item.score))}%` }} />
+                </div>
+                <p>{item.copy}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <div className="overview-desktop-analytics">
+        <section className="overview-command-card">
         <div className="overview-command-main">
           <div className={`overview-score-ring ${overallTone}`}>
             <span>{loading ? "—" : readinessScores.overall}</span>
@@ -1217,6 +1321,8 @@ export default function Overview() {
           />
         </div>
       </section>
+      </div>
     </div>
   );
 }
+

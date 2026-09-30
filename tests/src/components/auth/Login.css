@@ -247,6 +247,7 @@ body,
   position: relative;
   display: flex;
   align-items: center;
+  overflow: hidden;
   min-height: var(--login-field-h);
   background: var(--login-surface-strong);
   border: 1px solid var(--login-border);
@@ -276,7 +277,9 @@ body,
 }
 
 .form-card input {
-  width: 100%;
+  flex: 1 1 0%;
+  width: 0;
+  min-width: 0;
   height: var(--login-field-h);
   box-sizing: border-box;
   border: none;
@@ -285,6 +288,22 @@ body,
   padding: 0 14px 0 0;
   font-size: 15px;
   color: #0b1d19;
+}
+
+.form-card input:-webkit-autofill,
+.form-card input:-webkit-autofill:hover,
+.form-card input:-webkit-autofill:focus,
+.form-card input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px var(--login-surface-strong) inset;
+  -webkit-text-fill-color: var(--login-text);
+  caret-color: var(--login-text);
+  transition: background-color 9999s ease-out 0s;
+}
+
+.form-card input:-moz-autofill {
+  box-shadow: 0 0 0 1000px var(--login-surface-strong) inset;
+  color: var(--login-text);
+  caret-color: var(--login-text);
 }
 
 .form-card input::placeholder {
@@ -567,5 +586,124 @@ body,
 
   .input-icon {
     width: 42px;
+  }
+}
+
+/* Mobile login: compact hero copy so the form stays readable. */
+@media (max-width: 640px) {
+  .login-page {
+    background: #0d2f1a;
+  }
+
+  .login-split {
+    min-height: 100svh;
+  }
+
+  .login-left-carousel {
+    min-height: 280px;
+    border-radius: 0 0 24px 24px;
+  }
+
+  .carousel-overlay {
+    justify-content: center;
+    align-items: center;
+    gap: 14px;
+    padding: 22px 22px 56px;
+    text-align: center;
+    background:
+      linear-gradient(180deg, rgba(5, 31, 16, 0.18), rgba(5, 31, 16, 0.74)),
+      linear-gradient(90deg, rgba(5, 31, 16, 0.2), rgba(5, 31, 16, 0.12));
+  }
+
+  .carousel-logos {
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .carousel-logos img {
+    height: clamp(62px, 18vw, 84px);
+  }
+
+  .carousel-logos img.logo-sagip {
+    height: clamp(82px, 24vw, 116px);
+  }
+
+  .carousel-copy {
+    display: flex;
+    justify-content: center;
+    width: min(100%, 320px);
+  }
+
+  .carousel-badge,
+  .carousel-tag {
+    display: none;
+  }
+
+  .carousel-title {
+    width: 100%;
+    margin: 0;
+    font-size: clamp(20px, 6vw, 25px);
+    line-height: 1.05;
+    letter-spacing: 0.1px;
+    text-wrap: balance;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  }
+
+  .login-right-form {
+    align-items: flex-start;
+    padding: 0 16px 18px;
+  }
+
+  .form-card {
+    margin-top: -40px;
+    padding: 20px 18px 16px;
+    border-radius: 24px;
+  }
+
+  .gov-strip {
+    margin-bottom: 16px;
+  }
+
+  .login-card-head {
+    margin-bottom: 14px;
+  }
+
+  .login-kicker {
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+
+  .card-title {
+    font-size: clamp(24px, 7vw, 29px);
+    margin-bottom: 6px;
+  }
+
+  .login-subtitle {
+    font-size: 13px;
+    line-height: 1.45;
+  }
+}
+
+@media (max-width: 420px) {
+  .login-left-carousel {
+    min-height: 264px;
+  }
+
+  .carousel-overlay {
+    padding: 18px 16px 52px;
+  }
+
+  .carousel-copy {
+    width: min(100%, 260px);
+  }
+
+  .login-right-form {
+    padding: 0 16px 16px;
+  }
+
+  .form-card {
+    margin-top: -38px;
+    padding: 18px 14px 16px;
   }
 }

@@ -73,6 +73,9 @@ export default function AdminAnalytics() {
   const activeExport = exportConfig[activeTab];
 
   const pageTitle = getAnalyticsPageTitle(role);
+  const mobilePageTitle = activeTabMeta?.label?.includes("Analytics")
+    ? activeTabMeta.label
+    : `${activeTabMeta?.label || "Overview"} Analytics`;
 
   const handleExportAnalyticsPdf = async () => {
     if (!activeExport || exportingPdf) return;
@@ -105,7 +108,7 @@ export default function AdminAnalytics() {
                   </span>
                 </div>
 
-                <h2 className="analytics-title">{pageTitle}</h2>
+                <h2 className="analytics-title"><span className="analytics-title-desktop">{pageTitle}</span><span className="analytics-title-mobile">{mobilePageTitle}</span></h2>
 
                 <p className="analytics-header-subtitle">
                   {role === "accountant"
@@ -166,3 +169,4 @@ export default function AdminAnalytics() {
     </DashboardShell>
   );
 }
+
