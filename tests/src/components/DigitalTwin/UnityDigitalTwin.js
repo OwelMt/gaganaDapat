@@ -609,8 +609,9 @@ export default function UnityDigitalTwin() {
           ) : records.length === 0 ? (
             <div className="digital-twin-table-empty">No water-level information found.</div>
           ) : (
-            <div className="digital-twin-table-wrap">
-              <table className="digital-twin-table">
+            <>
+              <div className="digital-twin-table-wrap">
+                <table className="digital-twin-table">
                 <thead>
                   <tr>
                     <th>{isDailyMode ? "Date" : "Period"}</th>
@@ -658,8 +659,66 @@ export default function UnityDigitalTwin() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
-            </div>
+                </table>
+              </div>
+
+              <div className="digital-twin-mobile-record-list" aria-label="Water-level records">
+                {records.map((record) => (
+                  <article className="digital-twin-mobile-record" key={`mobile-${record.id}`}>
+                    <div className="digital-twin-mobile-record-head">
+                      <div>
+                        <span>{isDailyMode ? "Daily reading" : "Water-level period"}</span>
+                        <strong>{getRecordLabel(record, period)}</strong>
+                      </div>
+                      <span className={`digital-twin-table-badge ${getStatusTone(record.latestStatus)}`}>
+                        {getStatusLabel(record.latestStatus)}
+                      </span>
+                    </div>
+
+                    <div className="digital-twin-mobile-record-levels">
+                      <div>
+                        <span>Average</span>
+                        <strong>{formatLevel(record.averageLevel)}</strong>
+                      </div>
+                      <div>
+                        <span>Highest</span>
+                        <strong>{formatLevel(record.highestLevel)}</strong>
+                      </div>
+                    </div>
+
+                    <p>{getRecordSummary(record)}</p>
+                    <details>
+                      <summary>View reading details</summary>
+                      <dl>
+                        <div>
+                          <dt>Date covered</dt>
+                          <dd>{getRecordRange(record, period)}</dd>
+                        </div>
+                        <div>
+                          <dt>Citizen guidance</dt>
+                          <dd>{getRecordExplanation(record)}</dd>
+                        </div>
+                        <div>
+                          <dt>Last updated</dt>
+                          <dd>{formatDateTime(record.latestTimestamp)}</dd>
+                        </div>
+                      </dl>
+                    </details>
+
+                    {isDailyMode && canDeleteDailyHistoryRecord(record) ? (
+                      <button
+                        type="button"
+                        className="digital-twin-row-delete digital-twin-mobile-delete"
+                        onClick={() => handleDelete(record)}
+                        disabled={deletingId === record.id}
+                      >
+                        {deletingId === record.id ? "Deleting..." : "Delete daily record"}
+                      </button>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            </>
           )}
         </section>
       </div>

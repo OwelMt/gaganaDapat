@@ -12,6 +12,7 @@ import {
   FaArrowDown,
   FaArrowUp,
   FaBell,
+  FaBars,
   FaCloudSun,
   FaEdit,
   FaEnvelope,
@@ -37,6 +38,9 @@ import jaenlogo from "../../assets/images/jaenlogo-landing.png";
 import hero1 from "../../assets/images/hero1.jpg";
 import hero2 from "../../assets/images/hero2.jpg";
 import hero3 from "../../assets/images/hero3.jpg";
+import mobileHeroMockup from "../../assets/images/mobile-showcase/login-map-mockup.png";
+import mobileDownloadMockup from "../../assets/images/mobile-showcase/download-now-mockup.png";
+import mobileFeaturesMockup from "../../assets/images/mobile-showcase/awesome-features-mockup.png";
 import { API_BASE_URL } from "../../config/api";
 
 const loadEvacMap = () => import("../map/Map");
@@ -152,6 +156,18 @@ const TWIN_NAV_ITEMS = [
   { id: "virtual-twin", label: "Virtual Twin" },
 ];
 
+const MOBILE_NAV_DETAILS = {
+  home: { icon: FaHome, detail: "Public safety overview" },
+  weather: { icon: FaCloudSun, detail: "Local forecast and rainfall" },
+  "public-evac-map": { icon: FaMapMarkedAlt, detail: "Safe places and routes" },
+  "hazard-focus": { icon: FaShieldAlt, detail: "Barangay hazard conditions" },
+  "incident-focus": { icon: FaBell, detail: "Current public reports" },
+  updates: { icon: FaEnvelope, detail: "Official notices" },
+  "footer-info": { icon: FaPhoneAlt, detail: "Emergency contacts" },
+  "digital-twin": { icon: FaEye, detail: "Live water-level view" },
+  "virtual-twin": { icon: FaMap, detail: "Flood scenario simulation" },
+};
+
 function safeJsonParse(value, fallback) {
   try {
     return JSON.parse(value);
@@ -162,6 +178,33 @@ function safeJsonParse(value, fallback) {
 
 function safeLower(value) {
   return String(value || "").toLowerCase().trim();
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
+function getLandingValidationErrors(content) {
+  const errors = {};
+  (content?.announcements || []).forEach((item, index) => {
+    if (!String(item?.title || "").trim()) {
+      errors[`announcements.${index}.title`] = "Update title is required.";
+    }
+  });
+  (content?.tips || []).forEach((item, index) => {
+    if (!String(item?.text || "").trim()) {
+      errors[`tips.${index}.text`] = "Preparedness reminder is required.";
+    }
+  });
+  (content?.hotlines || []).forEach((item, index) => {
+    if (item?.type === "email" && !isValidEmail(item?.number)) {
+      errors[`hotlines.${index}.number`] = "Enter a valid email address.";
+    }
+  });
+  if (content?.office?.email && !isValidEmail(content.office.email)) {
+    errors["office.email"] = "Enter a valid office email address.";
+  }
+  return errors;
 }
 
 function scheduleIdleTask(task, delay = 250) {
@@ -399,11 +442,13 @@ export default function Dashboard() {
 
   const [searchText, setSearchText] = useState("");
   const [activeSection, setActiveSection] = useState("home");
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingHeroImage, setIsUploadingHeroImage] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [validationErrors, setValidationErrors] = useState({});
   const [userRole, setUserRole] = useState("");
   const [isVisitorMode, setIsVisitorMode] = useState(false);
 
@@ -422,6 +467,13 @@ export default function Dashboard() {
   const [publicIncidents, setPublicIncidents] = useState([]);
   const [incidentsLoading, setIncidentsLoading] = useState(true);
   const [incidentsError, setIncidentsError] = useState("");
+  const [publicOperations, setPublicOperations] = useState({
+    summary: {},
+    activities: [],
+    generatedAt: null,
+  });
+  const [operationsLoading, setOperationsLoading] = useState(true);
+  const [operationsError, setOperationsError] = useState("");
   const [activeTwinView, setActiveTwinView] = useState("");
   const [shouldLoadMapExperience, setShouldLoadMapExperience] = useState(false);
 
@@ -677,6 +729,35 @@ export default function Dashboard() {
   }, [canEdit, isEditorOpen]);
 
   useEffect(() => {
+    const revealItems = Array.from(
+      document.querySelectorAll(".mobile-scroll-reveal")
+    );
+
+    if (!revealItems.length) return undefined;
+
+    const prefersReducedMotion =
+      typeof window.matchMedia !== "function" ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (prefersReducedMotion || !("IntersectionObserver" in window)) {
+      revealItems.forEach((item) => item.classList.add("is-revealed"));
+      return undefined;
+    }
+
+    const revealObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          entry.target.classList.toggle("is-revealed", entry.isIntersecting);
+        });
+      },
+      { rootMargin: "0px 0px -10% 0px", threshold: 0.14 }
+    );
+
+    revealItems.forEach((item) => revealObserver.observe(item));
+    return () => revealObserver.disconnect();
+  }, []);
+
+  useEffect(() => {
     if (!activeHeroImages.length) {
       setCurrentHero(0);
       return;
@@ -771,6 +852,8 @@ export default function Dashboard() {
   };
 
   function handleNavClick(id) {
+    setIsMobileMenuOpen(false);
+
     if (id === "digital-twin" || id === "virtual-twin") {
       openTwinView(id);
       return;
@@ -1065,6 +1148,29 @@ export default function Dashboard() {
     }
   }
 
+  async function fetchPublicOperations() {
+    setOperationsLoading(true);
+    setOperationsError("");
+
+    try {
+      const res = await fetch(`${BASE_URL}/api/public-site/operations`);
+      if (!res.ok) throw new Error("Failed to load MDRRMO operations.");
+
+      const data = await res.json();
+      setPublicOperations({
+        summary: data?.summary || {},
+        activities: Array.isArray(data?.activities) ? data.activities : [],
+        generatedAt: data?.generatedAt || null,
+      });
+    } catch (err) {
+      console.error("fetchPublicOperations error:", err);
+      setOperationsError("MDRRMO operations are unavailable right now.");
+      setPublicOperations({ summary: {}, activities: [], generatedAt: null });
+    } finally {
+      setOperationsLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadPublicContent();
     fetchWeather();
@@ -1072,6 +1178,7 @@ export default function Dashboard() {
     const cancelIdleTask = scheduleIdleTask(() => {
       detectRole();
       fetchPublicIncidents();
+      fetchPublicOperations();
     });
 
     return cancelIdleTask;
@@ -1133,6 +1240,17 @@ export default function Dashboard() {
       ref[keys[keys.length - 1]] = value;
       return next;
     });
+    setValidationErrors((prev) => {
+      const next = { ...prev };
+      if (path === "office.email") {
+        const message = value && !isValidEmail(value)
+          ? "Enter a valid office email address."
+          : "";
+        if (message) next[path] = message;
+        else delete next[path];
+      }
+      return next;
+    });
   }
 
   function updateArrayItem(section, index, field, value) {
@@ -1148,6 +1266,27 @@ export default function Dashboard() {
         ...prev,
         [section]: nextItems,
       };
+    });
+    setValidationErrors((prev) => {
+      const next = { ...prev };
+      const key = `${section}.${index}.${field}`;
+      const current = draftContent?.[section]?.[index] || {};
+      const updated = { ...current, [field]: value };
+      let message = "";
+      if (section === "tips" && field === "text" && !String(value || "").trim()) {
+        message = "Preparedness reminder is required.";
+      }
+      if (section === "announcements" && field === "title" && !String(value || "").trim()) {
+        message = "Update title is required.";
+      }
+      if (section === "hotlines" && (field === "number" || field === "type") && updated.type === "email" && !isValidEmail(updated.number)) {
+        next[`hotlines.${index}.number`] = "Enter a valid email address.";
+      } else if (section === "hotlines" && (field === "number" || field === "type")) {
+        delete next[`hotlines.${index}.number`];
+      }
+      if (message) next[key] = message;
+      else delete next[key];
+      return next;
     });
   }
 
@@ -1168,7 +1307,7 @@ export default function Dashboard() {
     });
   }
 
-  function removeItem(section, id) {
+  function removeItem(section, idOrIndex) {
     setDraftContent((prev) => {
       const currentItems = prev[section] || [];
 
@@ -1176,30 +1315,47 @@ export default function Dashboard() {
 
       return {
         ...prev,
-        [section]: currentItems.filter((item) => item.id !== id),
+        [section]: currentItems.filter((item, index) =>
+          typeof idOrIndex === "number" ? index !== idOrIndex : item.id !== idOrIndex
+        ),
       };
     });
+    setValidationErrors((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([key]) => !key.startsWith(`${section}.`))
+      )
+    );
   }
 
   function startInlineEditing() {
     setDraftContent(siteContent);
     setSaveMessage("");
+    setValidationErrors({});
     setIsEditorOpen(true);
   }
 
   function closeInlineEditing() {
     setDraftContent(siteContent);
     setSaveMessage("");
+    setValidationErrors({});
     setIsEditorOpen(false);
   }
 
   function resetDraftContent() {
     setDraftContent(siteContent);
+    setValidationErrors({});
     setSaveMessage("Draft reset to current saved content.");
   }
 
   async function saveSiteContent() {
     if (!canEdit) return;
+
+    const errors = getLandingValidationErrors(draftContent);
+    if (Object.keys(errors).length) {
+      setValidationErrors(errors);
+      setSaveMessage("Fix the highlighted fields before saving.");
+      return;
+    }
 
     setIsSaving(true);
     setSaveMessage("");
@@ -1451,7 +1607,19 @@ export default function Dashboard() {
 
             <div className="header-right">
               <div className="header-public-actions">
-                <form className="header-search-wrap" onSubmit={handleSearchSubmit}>
+                <div className="mobile-search-row">
+                  <button
+                    type="button"
+                    className="mobile-menu-toggle"
+                    aria-label={isMobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+                    aria-expanded={isMobileMenuOpen}
+                    aria-controls="landing-mobile-navigation"
+                    onClick={() => setIsMobileMenuOpen((isOpen) => !isOpen)}
+                  >
+                    {isMobileMenuOpen ? <FaTimes aria-hidden="true" /> : <FaBars aria-hidden="true" />}
+                  </button>
+
+                  <form className="header-search-wrap" onSubmit={handleSearchSubmit}>
                   <div className="header-search-shell">
                     <FaSearch className="header-search-icon" aria-hidden="true" />
                     <input
@@ -1465,6 +1633,7 @@ export default function Dashboard() {
                     />
                   </div>
                 </form>
+                </div>
               </div>
 
               {isPrivilegedUser && (
@@ -1532,7 +1701,10 @@ export default function Dashboard() {
           </div>
 
           <div className="dashboard-nav-shell">
-            <nav className="nav-links" aria-label="Primary navigation">
+            <nav
+              className="nav-links"
+              aria-label="Primary navigation"
+            >
               {NAV_ITEMS.map((item) => (
                 <button
                   key={item.id}
@@ -1562,7 +1734,73 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
+
         </header>
+
+          <div
+            className={`landing-mobile-nav-layer ${
+              isMobileMenuOpen ? "is-open" : ""
+            }`}
+            aria-hidden={!isMobileMenuOpen}
+          >
+            <button
+              type="button"
+              className="landing-mobile-nav-backdrop"
+              aria-label="Close navigation menu"
+              tabIndex={isMobileMenuOpen ? 0 : -1}
+              onClick={() => setIsMobileMenuOpen(false)}
+            />
+            <aside
+              id="landing-mobile-navigation"
+              className="landing-mobile-nav-drawer"
+              aria-label="Site navigation"
+            >
+              <div className="landing-mobile-nav-brand">
+                <img src={jaenlogo} alt="Jaen MDRRMO" />
+                <div>
+                  <span>JAEN MDRRMO</span>
+                  <strong>Public Safety Portal</strong>
+                </div>
+              </div>
+              <div className="landing-mobile-nav-heading">
+                <div>
+                  <span>Navigate</span>
+                  <small><i aria-hidden="true" /> Live public information</small>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close navigation menu"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  <FaTimes aria-hidden="true" />
+                </button>
+              </div>
+              <nav className="landing-mobile-nav-list" aria-label="Mobile navigation">
+                {[...NAV_ITEMS, ...TWIN_NAV_ITEMS].map((item, index) => {
+                  const navDetail = MOBILE_NAV_DETAILS[item.id];
+                  const Icon = navDetail?.icon || FaMap;
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={activeSection === item.id ? "active" : ""}
+                      style={{ "--mobile-nav-index": index }}
+                      tabIndex={isMobileMenuOpen ? 0 : -1}
+                      onClick={() => handleNavClick(item.id)}
+                    >
+                      <span className="landing-mobile-nav-icon" aria-hidden="true"><Icon /></span>
+                      <span className="landing-mobile-nav-copy">
+                        <strong>{item.label}</strong>
+                        <small>{navDetail?.detail}</small>
+                      </span>
+                      <span className="landing-mobile-nav-arrow" aria-hidden="true">›</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </aside>
+          </div>
 
         {isTwinViewActive ? (
           <section className="landing-twin-shell" id={activeTwinView}>
@@ -2479,7 +2717,7 @@ export default function Dashboard() {
                               onClick={() =>
                                 removeItem(
                                   "announcements",
-                                  draftContent.announcements[index]?.id
+                                  draftContent.announcements[index]?.id ?? index
                                 )
                               }
                               disabled={
@@ -2495,7 +2733,7 @@ export default function Dashboard() {
                             <span>Title</span>
                             <input
                               type="text"
-                              className="landing-inline-input"
+                              className={`landing-inline-input ${validationErrors[`announcements.${index}.title`] ? "landing-inline-input-error" : ""}`}
                               value={
                                 draftContent.announcements[index]?.title || ""
                               }
@@ -2510,6 +2748,7 @@ export default function Dashboard() {
                               }
                               placeholder="Announcement title"
                             />
+                            {validationErrors[`announcements.${index}.title`] && <span className="landing-field-error" role="alert">{validationErrors[`announcements.${index}.title`]}</span>}
                           </label>
 
                           <label className="inline-edit-field">
@@ -2583,7 +2822,7 @@ export default function Dashboard() {
                         <div className="preparedness-inline-edit">
                           <input
                             type="text"
-                            className="landing-inline-input"
+                            className={`landing-inline-input ${validationErrors[`tips.${index}.text`] ? "landing-inline-input-error" : ""}`}
                             value={draftContent.tips[index]?.text || ""}
                             maxLength={120}
                             onChange={(e) =>
@@ -2596,12 +2835,13 @@ export default function Dashboard() {
                             }
                             placeholder="Preparedness reminder"
                           />
+                          {validationErrors[`tips.${index}.text`] && <span className="landing-field-error" role="alert">{validationErrors[`tips.${index}.text`]}</span>}
 
                           <button
                             type="button"
                             className="inline-delete-btn"
                             onClick={() =>
-                              removeItem("tips", draftContent.tips[index]?.id)
+                                removeItem("tips", draftContent.tips[index]?.id ?? index)
                             }
                             disabled={(draftContent.tips || []).length <= 1}
                             title="Remove tip"
@@ -2618,6 +2858,126 @@ export default function Dashboard() {
               </section>
             </section>
           </div>
+
+          <section className="public-operations-section" id="operations">
+            <div className="landing-wide-shell">
+              <div className="landing-section-head landing-section-head-spread">
+                <div>
+                  <span className="section-kicker">From Jaen MDRRMO</span>
+                  <h2>MDRRMO Operations and Activities</h2>
+                  <p>Public-safe summaries of response, relief, donation, and resource-readiness records maintained by the MDRRMO.</p>
+                </div>
+                <div className="public-operations-updated">
+                  {publicOperations.generatedAt ? `Updated ${formatDateTime(publicOperations.generatedAt)}` : "Live operational summary"}
+                </div>
+              </div>
+
+              {operationsLoading ? (
+                <div className="panel-empty">Loading MDRRMO operations...</div>
+              ) : operationsError ? (
+                <div className="panel-empty error">{operationsError}</div>
+              ) : (
+                <>
+                  <div className="public-operations-summary">
+                    <article><FaBell /><span>Active public incidents</span><strong>{formatNumber(publicOperations.summary.activePublicIncidents)}</strong></article>
+                    <article><FaCheckCircle /><span>Resolved in 30 days</span><strong>{formatNumber(publicOperations.summary.resolvedLast30Days)}</strong></article>
+                    <article><FaHome /><span>Families served</span><strong>{formatNumber(publicOperations.summary.familiesServed)}</strong></article>
+                    <article><FaShieldAlt /><span>Verified donations</span><strong>{formatNumber(publicOperations.summary.donationRecordsLast30Days)}</strong></article>
+                    <article><FaMapMarkedAlt /><span>Ready resource categories</span><strong>{formatNumber(publicOperations.summary.readyResourceCategories)}</strong></article>
+                  </div>
+                  <div className="public-operations-feed">
+                    {(publicOperations.activities || []).length ? publicOperations.activities.map((activity) => (
+                      <article className="public-operation-card" key={activity.id}>
+                        <div className="public-operation-card-top"><span>{activity.category}</span><b>{activity.status}</b></div>
+                        <h3>{activity.title}</h3>
+                        <p>{activity.summary}</p>
+                        <div className="public-operation-meta"><span>{activity.location || "Jaen"}</span><time dateTime={activity.updatedAt || undefined}>{activity.updatedAt ? formatDateTime(activity.updatedAt) : "Recently updated"}</time></div>
+                      </article>
+                    )) : <div className="public-operations-empty">No public operational activity has been posted yet.</div>}
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
+
+          <section className="mobile-showcase" aria-labelledby="mobile-showcase-title">
+            <div className="mobile-showcase-hero">
+              <div className="landing-wide-shell mobile-showcase-hero-grid">
+                <div className="mobile-showcase-intro mobile-scroll-reveal">
+                  <span className="mobile-showcase-eyebrow">SagipBayan Mobile</span>
+                  <h2 id="mobile-showcase-title">Safety information that moves with you.</h2>
+                  <p>
+                    Access Jaen hazard information, evacuation routes, incident reporting,
+                    and public-safety updates from one mobile experience.
+                  </p>
+                  <a className="mobile-showcase-cta" href="#mobile-download" onClick={(event) => { event.preventDefault(); scrollToId("mobile-download"); }}>
+                    Download Now <span aria-hidden="true">→</span>
+                  </a>
+                </div>
+
+                <div className="mobile-showcase-hero-phones mobile-scroll-reveal reveal-delay-1" aria-label="SagipBayan mobile app previews">
+                  <img className="mobile-showcase-hero-mockup" src={mobileHeroMockup} alt="SagipBayan login and Jaen hazard map shown on mobile phones" />
+                </div>
+              </div>
+            </div>
+
+            <div className="landing-wide-shell mobile-showcase-body">
+              <div className="mobile-showcase-about" id="mobile-download">
+                <div className="mobile-showcase-copy mobile-scroll-reveal">
+                  <span className="mobile-showcase-label">Download the app</span>
+                  <h3>Carry SagipBayan wherever you go</h3>
+                  <p>
+                    Access essential safety information, evacuation tools, incident reporting,
+                    and community updates directly from your mobile device.
+                  </p>
+                </div>
+
+                <div className="mobile-platform-grid mobile-scroll-reveal reveal-delay-1">
+                  <a className="mobile-platform-card mobile-platform-download" href="https://testflight.apple.com/join/jJTS4hpa" target="_blank" rel="noreferrer"><span className="platform-mark">iOS</span><strong>Download</strong><small>Via TestFlight</small></a>
+                  <a className="mobile-platform-card mobile-platform-download" href="https://expo.dev/artifacts/eas/E5dS-gC_nFfQKsEHfW4DDwEX2oNb0UYnoExXtMnDETY.apk" download="SagipBayan.apk"><span className="platform-mark platform-mark-android">A</span><strong>Download</strong><small>Android APK</small></a>
+                  <article className="mobile-platform-card"><FaMapMarkedAlt /><strong>Live maps</strong><small>Jaen-focused</small></article>
+                  <article className="mobile-platform-card"><FaShieldAlt /><strong>Safety tools</strong><small>Built for response</small></article>
+                </div>
+              </div>
+
+              <div className="mobile-showcase-detail">
+                <div className="mobile-showcase-duo mobile-scroll-reveal" aria-label="SagipBayan account and evacuation previews">
+                  <img className="mobile-showcase-download-mockup" src={mobileDownloadMockup} alt="SagipBayan account and evacuation screens on mobile phones" />
+                </div>
+                <div className="mobile-showcase-copy mobile-showcase-copy-detail mobile-scroll-reveal reveal-delay-1">
+                  <span className="mobile-showcase-label">Made for Jaen</span>
+                  <h3>From awareness to safer action</h3>
+                  <p>View municipal boundaries, locate evacuation places, report incidents, and follow road-based navigation with timely hazard guidance.</p>
+                  <div className="mobile-showcase-pills"><span>Evacuation routing</span><span>Incident reporting</span><span>Hazard awareness</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mobile-feature-wave">
+              <svg className="mobile-feature-wave-bg" viewBox="0 0 1440 800" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                <defs><linearGradient id="mobileFeatureGradient" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#006f47" /><stop offset="58%" stopColor="#08a85b" /><stop offset="100%" stopColor="#8ddd3d" /></linearGradient></defs>
+                <path d="M0 150 C115 178 170 112 282 52 C398 -10 530 8 676 7 C914 4 1168 24 1440 138 L1440 800 L0 800 Z" fill="url(#mobileFeatureGradient)" />
+              </svg>
+              <div className="landing-wide-shell mobile-feature-content">
+                <div className="mobile-feature-heading mobile-scroll-reveal"><span>SagipBayan mobile</span><h3>Awesome Features</h3></div>
+                <div className="mobile-feature-showcase">
+                  <div className="mobile-feature-list mobile-feature-list-left mobile-scroll-reveal">
+                    <article><FaMapMarkedAlt /><div><strong>Hazard Map</strong><small>View local hazard information</small></div></article>
+                    <article><FaMap /><div><strong>Evacuation Places</strong><small>Locate safer destinations</small></div></article>
+                    <article><FaShieldAlt /><div><strong>Safety Marking</strong><small>Share your safety status</small></div></article>
+                    <article><FaSms /><div><strong>Incident Reporting</strong><small>Report emergencies with details</small></div></article>
+                  </div>
+                  <img className="mobile-features-mockup mobile-scroll-reveal reveal-delay-1" src={mobileFeaturesMockup} alt="SagipBayan flood virtual twin mobile preview" />
+                  <div className="mobile-feature-list mobile-feature-list-right mobile-scroll-reveal reveal-delay-2">
+                    <article><FaMapMarkedAlt /><div><strong>Dynamic Pathfinding</strong><small>Follow road-based evacuation routes</small></div></article>
+                    <article><FaBell /><div><strong>Disaster Notifications</strong><small>Receive timely safety updates</small></div></article>
+                    <article><FaCloudSun /><div><strong>Weather Monitoring</strong><small>Stay aware of local conditions</small></div></article>
+                    <article><FaCheckCircle /><div><strong>Relief Assistance</strong><small>Access donation and relief support</small></div></article>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
 
           <footer className="dashboard-footer site-footer" id="footer-info">
             <div className="landing-wide-shell">
@@ -2772,7 +3132,7 @@ export default function Dashboard() {
                                     onClick={() =>
                                       removeItem(
                                         "hotlines",
-                                        draftContent.hotlines[index]?.id
+                                        draftContent.hotlines[index]?.id ?? index
                                       )
                                     }
                                     disabled={
@@ -2788,7 +3148,7 @@ export default function Dashboard() {
                                   <span>Contact Detail</span>
                                   <input
                                     type="text"
-                                    className="landing-inline-input"
+                                    className={`landing-inline-input ${validationErrors[`hotlines.${index}.number`] ? "landing-inline-input-error" : ""}`}
                                     value={
                                       draftContent.hotlines[index]?.number || ""
                                     }
@@ -2803,6 +3163,7 @@ export default function Dashboard() {
                                     }
                                     placeholder="Phone, SMS, email, or link"
                                   />
+                                  {validationErrors[`hotlines.${index}.number`] && <span className="landing-field-error" role="alert">{validationErrors[`hotlines.${index}.number`]}</span>}
                                 </label>
                               </>
                             ) : (
@@ -2874,7 +3235,7 @@ export default function Dashboard() {
                           <span>Email Address</span>
                           <input
                             type="text"
-                            className="landing-inline-input"
+                            className={`landing-inline-input ${validationErrors["office.email"] ? "landing-inline-input-error" : ""}`}
                             value={draftContent.office.email}
                             maxLength={80}
                             onChange={(e) =>
@@ -2882,6 +3243,7 @@ export default function Dashboard() {
                             }
                             placeholder="Office email"
                           />
+                          {validationErrors["office.email"] && <span className="landing-field-error" role="alert">{validationErrors["office.email"]}</span>}
                         </label>
                       ) : (
                         <span>{pageContent.office.email}</span>

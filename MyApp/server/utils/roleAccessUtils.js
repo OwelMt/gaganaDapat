@@ -26,7 +26,11 @@ const canManageInventoryType = (role, type) => {
   const normalizedRole = normalizeRole(role);
   const normalizedType = String(type || "").trim().toLowerCase();
 
-  if (normalizedRole === ROLE_ADMIN || normalizedRole === ROLE_ACCOUNTANT) {
+  if (normalizedRole === ROLE_ADMIN) {
+    return ["goods", "appliance", "monetary"].includes(normalizedType);
+  }
+
+  if (normalizedRole === ROLE_ACCOUNTANT) {
     return normalizedType === "monetary";
   }
 
@@ -74,7 +78,11 @@ const canManageDonationType = (role, inventoryType) => {
   const normalizedRole = normalizeRole(role);
   const normalizedType = String(inventoryType || "").trim().toLowerCase();
 
-  if (normalizedRole === ROLE_ADMIN || normalizedRole === ROLE_ACCOUNTANT) {
+  if (normalizedRole === ROLE_ADMIN) {
+    return ["goods", "appliance", "monetary"].includes(normalizedType);
+  }
+
+  if (normalizedRole === ROLE_ACCOUNTANT) {
     return normalizedType === "monetary";
   }
 
@@ -88,7 +96,7 @@ const canManageDonationType = (role, inventoryType) => {
 const getDonationAccessError = (role, inventoryType) => {
   if (canManageDonationType(role, inventoryType)) return "";
   if (isAdminRole(role)) {
-    return "Admin can only manage monetary donations in this queue.";
+    return "Admin can manage goods, appliance, and monetary donations.";
   }
   if (isAccountantRole(role)) {
     return "Accountant can only manage monetary donations in this queue.";

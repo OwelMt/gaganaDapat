@@ -898,7 +898,16 @@ const pageStyles = `
     }
 
     .vt-stage {
-      min-height: 68dvh;
+      min-height: min(68dvh, 560px);
+    }
+
+    .vt-description {
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .vt-toolbar-actions .vt-button {
+      flex: 1 1 140px;
     }
   }
 
@@ -921,7 +930,23 @@ const pageStyles = `
     }
 
     .vt-page:not(.is-embedded) .vt-stage {
-      min-height: 62dvh;
+      min-height: 360px;
+    }
+
+    .vt-header-card,
+    .vt-content,
+    .vt-info-panel {
+      border-radius: 18px;
+    }
+
+    .vt-toolbar-actions {
+      gap: 8px;
+    }
+
+    .vt-footer-note {
+      padding-right: 8px;
+      padding-left: 8px;
+      font-size: 11px;
     }
   }
 

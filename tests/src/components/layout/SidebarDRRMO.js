@@ -15,6 +15,7 @@ import {
   FaSun,
   FaMoon,
   FaBullhorn,
+  FaBookOpen,
 } from "react-icons/fa";
 
 import logo from "../../assets/images/sagipbayanlogo.png";
@@ -310,6 +311,13 @@ export default function SidebarDRRMO({
           to: "/",
           label: "Landing Page",
           Icon: FaComments,
+          exact: true,
+          badge: 0,
+        },
+        {
+          to: "/drrmo/user-manual",
+          label: "User Manual",
+          Icon: FaBookOpen,
           exact: true,
           badge: 0,
         },

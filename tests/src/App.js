@@ -33,6 +33,10 @@ import UnityDigitalTwin from './components/DigitalTwin/UnityDigitalTwin';
 import YoloWaterMonitor from './components/YoloWaterMonitor';
 import UnityDigitalTwin1 from './components/DigitalTwin/UnityDigitalTwin1';
 import FloodVirtualTwin1 from './components/FloodVirtualTwin1';
+import AdminUserManual from './components/admin/AdminUserManual';
+import DrrmoUserManual from './components/drrmo/DrrmoUserManual';
+import AccountantUserManual from './components/accountant/AccountantUserManual';
+import BarangayUserManual from './components/barangay/BarangayUserManual';
 
 import DonationValidationQueue from './components/Donations/DonationValidationQueue';
 import SplashScreen from './components/splashscreen/SplashScreen';
@@ -214,6 +218,7 @@ const ROUTES = [
   { path: "/barangay/relief-status", element: <ReliefTracking />, roles: BARANGAY_ONLY },
   { path: "/barangay/evacuation-centers", element: <EManagement />, roles: BARANGAY_ONLY },
   { path: "/barangay/notifications", element: <Notification />, roles: BARANGAY_ONLY },
+  { path: "/barangay/user-manual", element: <BarangayUserManual />, roles: BARANGAY_ONLY },
   { path: "/drrmo/dashboard", element: <DRRMODashboard />, roles: DRRMO_ONLY },
   { path: "/drrmo/relief-lists", element: <ReliefRequestsList />, roles: DRRMO_ONLY },
   { path: "/drrmo/relief-status", element: <ReliefTracking />, roles: ADMIN_DRRMO },
@@ -225,6 +230,7 @@ const ROUTES = [
   { path: "/drrmo/incident-report", element: <IncidentReport />, roles: ADMIN_DRRMO },
   { path: "/drrmo/analytics", element: <AdminAnalytics />, roles: ADMIN_DRRMO },
   { path: "/drrmo/notifications", element: <Notification />, roles: ADMIN_DRRMO },
+  { path: "/drrmo/user-manual", element: <DrrmoUserManual />, roles: DRRMO_ONLY },
   { path: "/admin/dashboard", element: <AdminDashboard />, roles: ADMIN_ONLY },
   { path: "/admin/relief-lists", element: <ReliefRequestsList />, roles: ADMIN_ONLY },
   { path: "/admin/register", element: <Register />, roles: ADMIN_ONLY },
@@ -240,6 +246,7 @@ const ROUTES = [
   { path: "/admin/analytics", element: <AdminAnalytics />, roles: ADMIN_ONLY },
   { path: "/admin/announcements", element: <Announcement />, roles: ADMIN_ONLY },
   { path: "/admin/guidelines", element: <HomeGuidelines />, roles: ADMIN_ONLY },
+  { path: "/admin/user-manual", element: <AdminUserManual />, roles: ADMIN_ONLY },
   { path: "/admin/notifications", element: <Notification />, roles: ADMIN_ONLY },
   { path: "/accountant/dashboard", element: <AccountantDashboard />, roles: ACCOUNTANT_ONLY },
   { path: "/accountant/analytics", element: <AdminAnalytics />, roles: ACCOUNTANT_ONLY },
@@ -248,8 +255,9 @@ const ROUTES = [
   { path: "/accountant/donations/queue", element: <DonationValidationQueue />, roles: ACCOUNTANT_ONLY },
   { path: "/accountant/relief-lists", element: <ReliefRequestsList />, roles: ACCOUNTANT_ONLY },
   { path: "/accountant/notifications", element: <Notification />, roles: ACCOUNTANT_ONLY },
-  { path: "/drrmo/digital-twin", element: <UnityDigitalTwin />, roles: ADMIN_DRRMO },
-  { path: "/digital-twin-mobile", element: <UnityDigitalTwin1 /> },
+  { path: "/accountant/user-manual", element: <AccountantUserManual />, roles: ACCOUNTANT_ONLY },
+  { path: "/drrmo/digital-twin", element: <UnityDigitalTwin />, roles: DRRMO_ONLY },
+  { path: "/digital-twin-mobile", element: <UnityDigitalTwin1 />, roles: DRRMO_ONLY },
   { path: "/virtual-twin-mobile", element: <FloodVirtualTwin1 /> },
   { path: "/flood-virtual-twin-mobile", element: <FloodVirtualTwin1 /> },
   { path: "/idk", element: <HomeGuidelines />, roles: ALL_AUTH },

@@ -142,6 +142,7 @@ export function canChangeInventoryItemType() {
 }
 
 export function getDonationQueueTypeForRole(role) {
+  if (isAdminRole(role)) return "all";
   return isDrrmoRole(role) ? "non_monetary" : "monetary";
 }
 

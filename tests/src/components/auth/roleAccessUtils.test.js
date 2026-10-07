@@ -81,6 +81,7 @@ describe("roleAccessUtils", () => {
   });
 
   it("treats accountant like the monetary queue owner for donation and relief flows", () => {
+    expect(getDonationQueueTypeForRole("admin")).toBe("all");
     expect(getDonationQueueTypeForRole("accountant")).toBe("monetary");
     expect(getDonationQueueOwnerLabel("accountant")).toBe("Accountant");
     expect(getReliefBasePathForRole("accountant")).toBe("/accountant");

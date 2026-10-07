@@ -51,6 +51,12 @@ test("accountant can manage only monetary-only relief requests", () => {
 });
 
 test("admin can manage every relief request support type", () => {
+  assert.equal(canManageInventoryType("admin", "goods"), true);
+  assert.equal(canManageInventoryType("admin", "appliance"), true);
+  assert.equal(canManageInventoryType("admin", "monetary"), true);
+  assert.equal(canManageDonationType("admin", "goods"), true);
+  assert.equal(canManageDonationType("admin", "appliance"), true);
+  assert.equal(canManageDonationType("admin", "monetary"), true);
   assert.equal(canManageReliefRequest("admin", ["monetary"]), true);
   assert.equal(canManageReliefRequest("admin", ["foodpacks"]), true);
   assert.equal(canManageReliefRequest("admin", ["appliance"]), true);

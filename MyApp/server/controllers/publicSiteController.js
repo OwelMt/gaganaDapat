@@ -1,6 +1,10 @@
 const mongoose = require("mongoose");
 const PublicSite = require("../models/PublicSite");
 const Notification = require("../models/Notification");
+const Incident = require("../models/Incident");
+const Donation = require("../models/Donation");
+const InventoryItem = require("../models/InventoryItem");
+const ReliefDistributionRecord = require("../models/ReliefDistributionRecord");
 const cloudinary = require("../config/cloudinary");
 const createNotification = require("../utils/createNotification");
 
@@ -370,6 +374,86 @@ const getPublicSite = async (req, res) => {
   }
 };
 
+const getPublicOperations = async (req, res) => {
+  try {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const [
+      activePublicIncidents,
+      resolvedLast30Days,
+      familiesServed,
+      donationRecordsLast30Days,
+      readyResourceCategories,
+      recentDistributions,
+    ] = await Promise.all([
+      Incident.countDocuments({
+        isPublic: true,
+        status: { $nin: ["resolved", "closed"] },
+      }),
+      Incident.countDocuments({
+        isPublic: true,
+        status: "resolved",
+        updatedAt: { $gte: thirtyDaysAgo },
+      }),
+      ReliefDistributionRecord.countDocuments({
+        distributionStatus: "completed",
+        isArchived: false,
+      }),
+      Donation.countDocuments({
+        status: { $in: ["accepted", "received", "delivered"] },
+        updatedAt: { $gte: thirtyDaysAgo },
+      }),
+      InventoryItem.distinct("category", {
+        isArchive: false,
+        type: { $in: ["goods", "appliance"] },
+        quantity: { $gt: 0 },
+      }),
+      ReliefDistributionRecord.find({
+        distributionStatus: "completed",
+        isArchived: false,
+      })
+        .sort({ distributionDate: -1, updatedAt: -1 })
+        .limit(6)
+        .lean(),
+    ]);
+
+    const activities = recentDistributions.map((record) => {
+      const location = trimString(record?.barangayName, 120, "Jaen") || "Jaen";
+      const updatedAt = record?.distributionDate || record?.updatedAt || record?.createdAt;
+
+      return {
+        id: String(record?._id || record?.id || `${location}-${updatedAt || "recent"}`),
+        category: "Relief Distribution",
+        status: "Completed",
+        title: `Relief assistance completed in ${location}`,
+        summary: "1 family record served.",
+        location,
+        updatedAt: updatedAt ? new Date(updatedAt).toISOString() : null,
+      };
+    });
+
+    return res.status(200).json({
+      summary: {
+        activePublicIncidents,
+        resolvedLast30Days,
+        familiesServed,
+        donationRecordsLast30Days,
+        readyResourceCategories: Array.isArray(readyResourceCategories)
+          ? readyResourceCategories.length
+          : 0,
+      },
+      activities,
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("getPublicOperations error:", error);
+    return res.status(500).json({
+      message: "Failed to load public operations.",
+    });
+  }
+};
+
 const updatePublicSite = async (req, res) => {
   try {
     const payload = sanitizePayload(req.body || {});
@@ -704,6 +788,7 @@ const updatePublicSiteHeroImageCaption = async (req, res) => {
 
 module.exports = {
   getPublicSite,
+  getPublicOperations,
   updatePublicSite,
   resetPublicSite,
   updateIncidentFeedMode,

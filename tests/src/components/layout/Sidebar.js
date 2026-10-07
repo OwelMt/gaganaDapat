@@ -288,6 +288,17 @@ export default function Sidebar({
           exact: true,
           badge: 0,
         },
+        ...(isAccountant
+          ? [
+              {
+                to: "/accountant/user-manual",
+                label: "User Manual",
+                Icon: FaBookOpen,
+                exact: true,
+                badge: 0,
+              },
+            ]
+          : []),
       ],
     },
     {
@@ -371,6 +382,13 @@ export default function Sidebar({
                 exact: true,
                 badge: guidelinesUnreadCount,
                 badgeKey: "guidelines",
+              },
+              {
+                to: "/admin/user-manual",
+                label: "User Manual",
+                Icon: FaBookOpen,
+                exact: true,
+                badge: 0,
               },
               {
                 to: "/admin/time-in-time-out",

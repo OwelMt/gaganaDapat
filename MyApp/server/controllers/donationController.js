@@ -638,9 +638,7 @@ async function getDonations(req, res) {
     const isValidationQueueScope =
       normalizeLower(req.query.scope, 60) === "validation_queue";
     const roleScopedType =
-      isValidationQueueScope && sessionRole === "admin"
-        ? "monetary"
-        : isValidationQueueScope && sessionRole === "drrmo"
+      isValidationQueueScope && sessionRole === "drrmo"
         ? "non_monetary"
         : "";
 

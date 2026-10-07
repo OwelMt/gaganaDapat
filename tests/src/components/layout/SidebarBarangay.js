@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useTheme } from "../../context/ThemeContext";
-import { FaBell } from "react-icons/fa";
+import { FaBell, FaBookOpen } from "react-icons/fa";
 
 import logo from "../../assets/images/sagipbayanlogo.png";
 import reliefwhite from "../../assets/images/reliefwhite.png";
@@ -260,6 +260,12 @@ export default function SidebarBarangay({
           badge: reliefUnreadCount,
           badgeKey: "relief",
         },
+        {
+          to: "/barangay/user-manual",
+          label: "User Manual",
+          Icon: FaBookOpen,
+          badge: 0,
+        },
       ],
     },
     {
@@ -373,7 +379,11 @@ export default function SidebarBarangay({
                       (isActive ? " active" : "")
                     }
                   >
-                    <img src={item.icon} className="sidebar-icon" alt="" />
+                    {item.Icon ? (
+                      <item.Icon className="sidebar-fa-icon" aria-hidden="true" />
+                    ) : (
+                      <img src={item.icon} className="sidebar-icon" alt="" />
+                    )}
 
                     {!collapsed && (
                       <>

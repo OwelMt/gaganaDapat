@@ -150,7 +150,7 @@ export default function Inventory() {
   const releaseActorLabel = getReliefReviewerLabel(role);
   const canSeeCentralInventory = isAdmin || isDrrmo || isAccountant;
   const canRelease = isAdmin || isDrrmo || isAccountant;
-  const canManageTemplates = isDrrmo;
+  const canManageTemplates = isAdmin || isDrrmo;
   const allowedViewTypes = useMemo(
     () => getInventoryViewTypes(role),
     [role]

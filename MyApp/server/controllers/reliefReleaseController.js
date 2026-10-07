@@ -201,7 +201,11 @@ const canRoleManageReleaseRequest = (role = "", request = {}) => {
   const normalizedRole = normalizeRole(role);
   const supportTypes = getSupportTypesFromRequest(request);
 
-  if (normalizedRole === "admin" || normalizedRole === "accountant") {
+  if (normalizedRole === "admin") {
+    return true;
+  }
+
+  if (normalizedRole === "accountant") {
     return hasSupportType(supportTypes, SUPPORT_TYPE_MONETARY);
   }
 
@@ -925,8 +929,8 @@ const createReliefRelease = async (req, res) => {
       await session.abortTransaction();
       return res.status(403).json({
         message:
-          sessionRole === "admin" || sessionRole === "accountant"
-            ? `${sessionRole === "accountant" ? "Accountant" : "Admin"} can only release requests with monetary assistance.`
+          sessionRole === "accountant"
+            ? "Accountant can only release requests with monetary assistance."
             : "DRRMO can only release food pack or appliance requests.",
       });
     }
@@ -1004,12 +1008,12 @@ const createReliefRelease = async (req, res) => {
     }
 
     if (
-      (sessionRole === "admin" || sessionRole === "accountant") &&
+      sessionRole === "accountant" &&
       (isReleasingFoodPacks || isReleasingAppliances)
     ) {
       await session.abortTransaction();
       return res.status(400).json({
-        message: `${sessionRole === "accountant" ? "Accountant" : "Admin"} release planning only supports monetary assistance.`,
+        message: "Accountant release planning only supports monetary assistance.",
       });
     }
 

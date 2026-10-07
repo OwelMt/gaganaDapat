@@ -1022,3 +1022,382 @@
   color: #ffb4a8 !important;
   border-color: rgba(255, 180, 168, 0.34) !important;
 }
+
+/* DRRMO Digital Twin: phone-first layout with contained Unity and a usable data table. */
+@media (max-width: 760px) {
+  .digital-twin-page { width: 100%; min-width: 0; gap: 14px; }
+  .digital-twin-hero, .digital-twin-main-panel, .digital-twin-side-card, .digital-twin-table-panel { border-radius: 20px; padding: 16px; }
+  .digital-twin-hero h1 { font-size: clamp(1.75rem, 8vw, 2.2rem); }
+  .digital-twin-hero p { font-size: 0.88rem; line-height: 1.55; }
+  .digital-twin-guidance-grid, .digital-twin-filter-bar, .digital-twin-metric-grid, .digital-twin-workspace, .digital-twin-reading-grid { grid-template-columns: 1fr; }
+  .digital-twin-metric-card { min-height: 106px; padding: 15px 17px; border-radius: 18px; }
+  .digital-twin-metric-card strong { margin-top: 7px; font-size: 1.85rem; }
+  .digital-twin-metric-card small { margin-top: 7px; font-size: 0.75rem; }
+  .digital-twin-panel-head, .digital-twin-side-head, .digital-twin-table-header { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .digital-twin-panel-head h2, .digital-twin-table-header h2 { font-size: 1.38rem; }
+  .digital-twin-toolbar, .digital-twin-camera-picker, .digital-twin-camera-picker select, .digital-twin-refresh-btn { width: 100%; }
+  .digital-twin-camera-picker select { min-width: 0; }
+  .digital-twin-frame-wrap { min-height: 0; height: auto; margin-top: 14px; border-radius: 18px; aspect-ratio: 4 / 3; }
+  .digital-twin-frame { width: 100%; height: 100%; min-height: 0; }
+  .digital-twin-reading-grid { margin-top: 12px; gap: 10px; }
+  .digital-twin-reading-grid div { padding: 13px; }
+  .digital-twin-reading-grid strong { margin-top: 7px; font-size: 1.45rem; }
+  .digital-twin-table-panel { margin-top: 14px; }
+  .digital-twin-table-wrap { margin-top: 14px; max-width: 100%; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+  .digital-twin-table { min-width: 960px; }
+  .digital-twin-table thead th, .digital-twin-table tbody td { padding: 12px 14px; }
+}
+
+/* Phone module layout: compact, touch-friendly panels rather than a scaled desktop page. */
+.digital-twin-mobile-record-list {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .digital-twin-page,
+  .digital-twin-page * {
+    min-width: 0;
+  }
+
+  .digital-twin-page {
+    gap: 12px;
+    overflow-x: clip;
+  }
+
+  .digital-twin-guidance-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .digital-twin-guidance-card {
+    min-height: 0;
+    padding: 15px 16px 16px;
+    border-radius: 20px;
+  }
+
+  .digital-twin-guidance-card::after {
+    width: 72px;
+    height: 72px;
+  }
+
+  .digital-twin-guidance-card strong {
+    margin-top: 10px;
+    font-size: 1rem;
+    line-height: 1.35;
+  }
+
+  .digital-twin-guidance-card p {
+    margin-top: 7px;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  .digital-twin-filter-bar {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  .digital-twin-filter-field {
+    gap: 7px;
+  }
+
+  .digital-twin-filter-field input,
+  .digital-twin-filter-field select {
+    width: 100%;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .digital-twin-filter-actions {
+    display: grid;
+    grid-template-columns: 0.8fr 1.2fr;
+    gap: 10px;
+  }
+
+  .digital-twin-secondary-btn,
+  .digital-twin-primary-btn {
+    min-height: 44px;
+    padding: 0 12px;
+  }
+
+  .digital-twin-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .digital-twin-metric-card {
+    min-height: 112px;
+    padding: 15px 14px 13px 17px;
+    border-radius: 18px;
+  }
+
+  .digital-twin-metric-card strong {
+    margin-top: 8px;
+    font-size: clamp(1.42rem, 7vw, 1.8rem);
+  }
+
+  .digital-twin-metric-card small {
+    margin-top: 7px;
+    font-size: 0.68rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .digital-twin-workspace {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .digital-twin-main-panel,
+  .digital-twin-side-card,
+  .digital-twin-table-panel {
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  .digital-twin-panel-head {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .digital-twin-panel-head h2,
+  .digital-twin-side-head h3,
+  .digital-twin-table-header h2 {
+    font-size: 1.25rem;
+    line-height: 1.2;
+  }
+
+  .digital-twin-toolbar,
+  .digital-twin-camera-picker,
+  .digital-twin-camera-picker select {
+    width: 100%;
+  }
+
+  .digital-twin-camera-picker select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .digital-twin-frame-wrap {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    margin-top: 12px;
+    border-radius: 16px;
+    aspect-ratio: 16 / 10;
+  }
+
+  .digital-twin-frame {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .digital-twin-side-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .digital-twin-status-chip {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+  }
+
+  .digital-twin-reading-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .digital-twin-reading-grid div {
+    min-height: 91px;
+    padding: 13px;
+    border-radius: 15px;
+  }
+
+  .digital-twin-reading-grid strong {
+    margin-top: 7px;
+    font-size: 1.28rem;
+    overflow-wrap: anywhere;
+  }
+
+  .digital-twin-table-panel {
+    margin-top: 0;
+  }
+
+  .digital-twin-table-header {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .digital-twin-refresh-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .digital-twin-table-wrap {
+    display: none;
+  }
+
+  .digital-twin-mobile-record-list {
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .digital-twin-mobile-record {
+    padding: 14px;
+    border: 1px solid rgba(15, 76, 58, 0.14);
+    border-radius: 17px;
+    background: #f7fcf8;
+  }
+
+  .digital-twin-mobile-record-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .digital-twin-mobile-record-head > div {
+    display: grid;
+    gap: 4px;
+  }
+
+  .digital-twin-mobile-record-head > div > span,
+  .digital-twin-mobile-record-levels span,
+  .digital-twin-mobile-record dt {
+    color: #6d8176;
+    font-size: 0.65rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .digital-twin-mobile-record-head strong {
+    color: #12372a;
+    font-size: 1rem;
+    line-height: 1.25;
+  }
+
+  .digital-twin-mobile-record-levels {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 13px;
+  }
+
+  .digital-twin-mobile-record-levels > div {
+    display: grid;
+    gap: 5px;
+    padding: 10px;
+    border-radius: 12px;
+    background: #eaf6ed;
+  }
+
+  .digital-twin-mobile-record-levels strong {
+    color: #12372a;
+    font-size: 1.1rem;
+  }
+
+  .digital-twin-mobile-record > p {
+    margin: 12px 0 0;
+    color: #587366;
+    font-size: 0.79rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .digital-twin-mobile-record details {
+    margin-top: 11px;
+    border-top: 1px solid rgba(15, 76, 58, 0.12);
+    padding-top: 10px;
+  }
+
+  .digital-twin-mobile-record summary {
+    color: #18703e;
+    font-size: 0.78rem;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .digital-twin-mobile-record dl {
+    display: grid;
+    gap: 10px;
+    margin: 12px 0 0;
+  }
+
+  .digital-twin-mobile-record dl div {
+    display: grid;
+    gap: 4px;
+  }
+
+  .digital-twin-mobile-record dd {
+    margin: 0;
+    color: #39594b;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .digital-twin-mobile-delete {
+    width: 100%;
+    min-height: 40px;
+    margin-top: 12px;
+  }
+}
+
+@media (max-width: 760px) {
+  :root[data-theme="dark"] .digital-twin-mobile-record {
+    border-color: rgba(143, 240, 173, 0.22);
+    background: rgba(5, 43, 22, 0.56);
+  }
+
+  :root[data-theme="dark"] .digital-twin-mobile-record-head > div > span,
+  :root[data-theme="dark"] .digital-twin-mobile-record-levels span,
+  :root[data-theme="dark"] .digital-twin-mobile-record dt {
+    color: #b7cdbd;
+  }
+
+  :root[data-theme="dark"] .digital-twin-mobile-record-head strong,
+  :root[data-theme="dark"] .digital-twin-mobile-record-levels strong {
+    color: #ffffff;
+  }
+
+  :root[data-theme="dark"] .digital-twin-mobile-record-levels > div {
+    background: rgba(143, 240, 173, 0.08);
+  }
+
+  :root[data-theme="dark"] .digital-twin-mobile-record > p {
+    color: #d7e5db;
+  }
+
+  :root[data-theme="dark"] .digital-twin-mobile-record details {
+    border-top-color: rgba(143, 240, 173, 0.16);
+  }
+
+  :root[data-theme="dark"] .digital-twin-mobile-record summary {
+    color: #9cf3b5;
+  }
+
+  :root[data-theme="dark"] .digital-twin-mobile-record dd {
+    color: #e7f3ea;
+  }
+}
+
+@media (max-width: 360px) {
+  .digital-twin-metric-grid,
+  .digital-twin-reading-grid,
+  .digital-twin-mobile-record-levels {
+    grid-template-columns: 1fr;
+  }
+}
